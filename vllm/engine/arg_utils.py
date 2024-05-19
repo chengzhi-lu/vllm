@@ -79,7 +79,8 @@ class EngineArgs:
     image_feature_size: Optional[int] = None
     scheduler_delay_factor: float = 0.0
     enable_chunked_prefill: bool = False
-
+    scheduler_policy: str = "fcfs"
+    
     guided_decoding_backend: str = 'outlines'
     # Speculative decoding configuration.
     speculative_model: Optional[str] = None
@@ -467,6 +468,13 @@ class EngineArgs:
             'max_num_batched_tokens.')
 
         parser.add_argument(
+            "--scheduler-policy",
+            type=str,
+            default="fcfs",
+            help="Scheduling policy. Can be 'fcfs', 'UncomputedTokensFirst (utf)','WaitingTimeFirst (wtf)','ShortestTokensFirst (stf)', 'LongestTokensFirst (ltf)', 'BlockFullFirst (bff)', or 'random', default is 'fcfs'.",
+        )
+        
+        parser.add_argument(
             '--speculative-model',
             type=nullable_str,
             default=EngineArgs.speculative_model,
@@ -598,6 +606,7 @@ class EngineArgs:
                                  speculative_config.num_lookahead_slots),
             delay_factor=self.scheduler_delay_factor,
             enable_chunked_prefill=self.enable_chunked_prefill,
+            policy=self.scheduler_policy,
             embedding_mode=model_config.embedding_mode,
         )
         lora_config = LoRAConfig(

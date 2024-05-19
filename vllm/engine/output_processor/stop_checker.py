@@ -49,6 +49,7 @@ class StopChecker:
         if ((not sampling_params.ignore_eos)
                 and seq.get_last_token_id() == seq.eos_token_id):
             seq.status = SequenceStatus.FINISHED_STOPPED
+            seq.status_transmit = SequenceStatus.RUNNING_TO_FINISHED_STOPPED
             return
 
         # Check if a stop token was encountered.
@@ -60,6 +61,7 @@ class StopChecker:
                 # Remove last token
                 seq.output_text = seq.output_text[:-new_char_count]
             seq.status = SequenceStatus.FINISHED_STOPPED
+            seq.status_transmit = SequenceStatus.RUNNING_TO_FINISHED_STOPPED
             seq.stop_reason = last_token_id
             return
 
@@ -68,6 +70,7 @@ class StopChecker:
                                             sampling_params)
         if stop_str is not None:
             seq.status = SequenceStatus.FINISHED_STOPPED
+            seq.status_transmit = SequenceStatus.RUNNING_TO_FINISHED_STOPPED
             seq.stop_reason = stop_str
             return
 

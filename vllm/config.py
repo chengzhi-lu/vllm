@@ -608,6 +608,7 @@ class SchedulerConfig:
         num_lookahead_slots: int = 0,
         delay_factor: float = 0.0,
         enable_chunked_prefill: bool = False,
+        policy: str = "fcfs",
         embedding_mode: Optional[bool] = False,
     ) -> None:
         if max_num_batched_tokens is not None:
@@ -634,6 +635,7 @@ class SchedulerConfig:
         self.num_lookahead_slots = num_lookahead_slots
         self.delay_factor = delay_factor
         self.chunked_prefill_enabled = enable_chunked_prefill
+        self.policy = policy
         self.embedding_mode = embedding_mode
 
         self._verify_args()
@@ -654,7 +656,11 @@ class SchedulerConfig:
                 f"max_num_batched_tokens ({self.max_num_batched_tokens}) must "
                 "be greater than or equal to max_num_seqs "
                 f"({self.max_num_seqs}).")
-
+        if self.policy not in ["fcfs", "ltf", "stf", "utf", "random", "wtf","bff"]:
+            raise NotImplementedError(
+                f"Scheduler policy {self.policy} is not implemented."
+            )
+            
         if self.num_lookahead_slots < 0:
             raise ValueError(
                 "num_lookahead_slots "

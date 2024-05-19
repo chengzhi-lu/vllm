@@ -62,7 +62,7 @@ COPY pyproject.toml pyproject.toml
 COPY vllm vllm
 
 # max jobs used by Ninja to build extensions
-ARG max_jobs=2
+ARG max_jobs=10
 ENV MAX_JOBS=${max_jobs}
 # number of threads used by nvcc
 ARG nvcc_threads=8
@@ -122,21 +122,21 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # doc requires source code
 # we hide them inside `test_docs/` , so that this source code
 # will not be imported by other tests
-RUN mkdir test_docs
-RUN mv docs test_docs/
-RUN mv vllm test_docs/
-
-#################### TEST IMAGE ####################
-
-#################### OPENAI API SERVER ####################
-# openai api server alternative
-FROM vllm-base AS vllm-openai
-
-# install additional dependencies for openai api server
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install accelerate hf_transfer modelscope
-
-ENV VLLM_USAGE_SOURCE production-docker-image
-
-ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server"]
-#################### OPENAI API SERVER ####################
+#RUN mkdir test_docs
+#RUN mv docs test_docs/
+#RUN mv vllm test_docs/
+#
+##################### TEST IMAGE ####################
+#
+##################### OPENAI API SERVER ####################
+## openai api server alternative
+#FROM vllm-base AS vllm-openai
+#
+## install additional dependencies for openai api server
+#RUN --mount=type=cache,target=/root/.cache/pip \
+#    pip install accelerate hf_transfer modelscope
+#
+#ENV VLLM_USAGE_SOURCE production-docker-image
+#
+#ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+##################### OPENAI API SERVER ####################

@@ -2,6 +2,7 @@ import time
 from typing import Iterable, List, Optional, Type, Union
 
 from transformers import GenerationConfig, PreTrainedTokenizer
+import numpy as np
 
 import vllm
 from vllm.config import (CacheConfig, DecodingConfig, DeviceConfig, LoadConfig,
@@ -21,7 +22,7 @@ from vllm.executor.ray_utils import initialize_ray_cluster
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
 from vllm.outputs import (EmbeddingRequestOutput, RequestOutput,
-                          RequestOutputFactory)
+                          RequestOutputFactory, AdditionalInfo)
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams
 from vllm.sequence import (EmbeddingSequenceGroupOutput, ExecuteModelRequest,
@@ -572,6 +573,9 @@ class LLMEngine:
         scheduled_seq_groups: List[ScheduledSequenceGroup],
         ignored_seq_groups: List[SequenceGroup],
         seq_group_metadata_list: List[SequenceGroupMetadata],
+        num_running_to_waiting: int,
+        num_waiting_to_running: int,
+        recomputed_token_nums: int,
     ) -> List[Union[RequestOutput, EmbeddingRequestOutput]]:
         """Apply the model output to the sequences in the scheduled seq groups.
 
@@ -602,17 +606,19 @@ class LLMEngine:
 
         # Free the finished sequence groups.
         self.scheduler.free_finished_seq_groups()
-
+        additional_info = AdditionalInfo(
+            num_running_to_waiting=num_running_to_waiting,num_waiting_to_running=num_waiting_to_running,recomputed_token_nums=recomputed_token_nums
+            )
         # Create the outputs.
         request_outputs: List[Union[RequestOutput,
                                     EmbeddingRequestOutput]] = []
         for scheduled_seq_group in scheduled_seq_groups:
             seq_group = scheduled_seq_group.seq_group
             seq_group.maybe_set_first_token_time(now)
-            request_output = RequestOutputFactory.create(seq_group)
+            request_output = RequestOutputFactory.create(seq_group,additional_info)
             request_outputs.append(request_output)
         for seq_group in ignored_seq_groups:
-            request_output = RequestOutputFactory.create(seq_group)
+            request_output = RequestOutputFactory.create(seq_group,additional_info)
             request_outputs.append(request_output)
         return request_outputs
 
@@ -685,7 +691,9 @@ class LLMEngine:
 
         request_outputs = self._process_model_outputs(
             output, scheduler_outputs.scheduled_seq_groups,
-            scheduler_outputs.ignored_seq_groups, seq_group_metadata_list)
+            scheduler_outputs.ignored_seq_groups, seq_group_metadata_list,
+            num_running_to_waiting=scheduler_outputs.num_running_to_waiting,
+            num_waiting_to_running=scheduler_outputs.num_waiting_to_running,recomputed_token_nums=scheduler_outputs.recomputed_token_nums)
 
         # Log stats.
         self.do_log_stats(scheduler_outputs, output)
@@ -720,7 +728,21 @@ class LLMEngine:
         num_running_sys = len(self.scheduler.running)
         num_swapped_sys = len(self.scheduler.swapped)
         num_waiting_sys = len(self.scheduler.waiting)
-
+        
+        # Free internel memory in GPU blocks of the seq in waiting queue
+        num_in_page_fragements_each_seq = 0
+        num_in_page_fragements = 0
+        for seq_group in self.scheduler.running:
+            for seq in seq_group.get_seqs():
+                for token_block in seq.logical_token_blocks:
+                    num_in_page_fragements_each_seq += token_block.get_num_empty_slots()
+                if len(seq.logical_token_blocks) > 0:
+                    num_in_page_fragements += num_in_page_fragements_each_seq / len(
+                        seq.logical_token_blocks
+                    )
+                else:
+                    num_in_page_fragements += 0
+                    
         # KV Cache Usage in %
         num_total_gpu = self.cache_config.num_gpu_blocks
         gpu_cache_usage_sys = 0.
@@ -841,6 +863,8 @@ class LLMEngine:
             num_running_sys=num_running_sys,
             num_swapped_sys=num_swapped_sys,
             num_waiting_sys=num_waiting_sys,
+            num_in_page_fragements=num_in_page_fragements,
+            
             #   KV Cache Usage in %
             gpu_cache_usage_sys=gpu_cache_usage_sys,
             cpu_cache_usage_sys=cpu_cache_usage_sys,

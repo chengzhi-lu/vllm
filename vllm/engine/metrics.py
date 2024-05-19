@@ -176,6 +176,10 @@ class Stats:
     num_running_sys: int
     num_waiting_sys: int
     num_swapped_sys: int
+
+    num_in_page_fragements: int
+
+    
     #   KV Cache Usage in %
     gpu_cache_usage_sys: float
     cpu_cache_usage_sys: float
@@ -344,6 +348,7 @@ class StatLogger:
                 "Running: %d reqs, Swapped: %d reqs, "
                 "Pending: %d reqs, GPU KV cache usage: %.1f%%, "
                 "CPU KV cache usage: %.1f%%.",
+                "In PageFragmeents: %d",
                 prompt_throughput,
                 generation_throughput,
                 stats.num_running_sys,
@@ -351,6 +356,7 @@ class StatLogger:
                 stats.num_waiting_sys,
                 stats.gpu_cache_usage_sys * 100,
                 stats.cpu_cache_usage_sys * 100,
+                stats.num_in_page_fragements,
             )
 
             # Reset tracked stats for next interval.

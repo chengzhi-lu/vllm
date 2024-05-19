@@ -1,6 +1,6 @@
 import time
 from typing import List, Optional, Union
-
+from dataclasses import dataclass
 from vllm.lora.request import LoRARequest
 from vllm.sequence import (PromptLogprobs, RequestMetrics, SampleLogprobs,
                            SequenceGroup, SequenceStatus)
@@ -74,7 +74,11 @@ class EmbeddingOutput:
     def __repr__(self) -> str:
         return (f"EmbeddingOutput("
                 f"embedding={len(self.embedding)}")
-
+@dataclass
+class AdditionalInfo:
+    num_running_to_waiting: int
+    num_waiting_to_running: int
+    recomputed_token_nums: int
 
 class RequestOutput:
     """The output data of a completion request to the LLM.
@@ -100,6 +104,12 @@ class RequestOutput:
         finished: bool,
         metrics: Optional[RequestMetrics] = None,
         lora_request: Optional[LoRARequest] = None,
+        token_chunk_size: Optional[int] = None,
+        wasted_block_size: Optional[int] = None,
+        total_block_size: Optional[int] = None,
+        num_running_to_waiting: Optional[int] = None,
+        num_waiting_to_running: Optional[int] = None,
+        recomputed_token_nums: Optional[int] = None,
     ) -> None:
         self.request_id = request_id
         self.prompt = prompt
@@ -109,9 +119,15 @@ class RequestOutput:
         self.finished = finished
         self.metrics = metrics
         self.lora_request = lora_request
+        self.token_chunk_size = token_chunk_size
+        self.wasted_block_size = wasted_block_size
+        self.total_block_size = total_block_size
+        self.num_running_to_waiting = num_running_to_waiting
+        self.num_waiting_to_running = num_waiting_to_running
+        self.recomputed_token_nums = recomputed_token_nums
 
     @classmethod
-    def from_seq_group(cls, seq_group: SequenceGroup) -> "RequestOutput":
+    def from_seq_group(cls, seq_group: SequenceGroup, token_chunk_size: int,num_running_to_waiting: int, num_waiting_to_running: int,recomputed_token_nums: int) -> "RequestOutput":
         if seq_group.sampling_params is None:
             raise ValueError(
                 "Sampling parameters are missing for a CompletionRequest.")
@@ -144,7 +160,13 @@ class RequestOutput:
                              SequenceStatus.get_finished_reason(seq.status),
                              seq.stop_reason) for seq in top_n_seqs
         ]
-
+        wasted_block_size = 0
+        total_block_size = 0
+        for seq in seqs:
+            for token_block in seq.logical_token_blocks:
+                wasted_block_size += token_block.get_num_empty_slots()
+                total_block_size += token_block.block_size
+        # Create the request output.
         # Every sequence in the sequence group should have the same prompt.
         prompt = seq_group.prompt
         prompt_token_ids = seq_group.prompt_token_ids
@@ -159,7 +181,13 @@ class RequestOutput:
                    outputs,
                    finished,
                    seq_group.metrics,
-                   lora_request=seq_group.lora_request)
+                   lora_request=seq_group.lora_request,
+                   token_chunk_siz=token_chunk_size,
+                   wasted_block_size=wasted_block_size,
+                   total_block_size=total_block_size,
+                   num_running_to_waiting=num_running_to_waiting,
+                   num_waiting_to_running=num_waiting_to_running,
+                   recomputed_token_nums=recomputed_token_nums,)
 
     def __repr__(self) -> str:
         return (f"RequestOutput(request_id={self.request_id}, "
@@ -169,7 +197,8 @@ class RequestOutput:
                 f"outputs={self.outputs}, "
                 f"finished={self.finished}, "
                 f"metrics={self.metrics}, "
-                f"lora_request={self.lora_request})")
+                f"lora_request={self.lora_request}), "
+                f"token_chunk_size={self.token_chunk_size})")
 
 
 class EmbeddingRequestOutput:
@@ -221,10 +250,11 @@ class EmbeddingRequestOutput:
 class RequestOutputFactory:
 
     @staticmethod
-    def create(seq_group):
+    def create(seq_group, additional_info:AdditionalInfo=None):
         # Determine the type based on a condition, for example:
         if hasattr(seq_group,
                    'embeddings') and seq_group.embeddings is not None:
             return EmbeddingRequestOutput.from_seq_group(seq_group)
         else:
-            return RequestOutput.from_seq_group(seq_group)
+            
+            return RequestOutput.from_seq_group(seq_group,seq_group.token_chunk_size,additional_info.num_running_to_waiting,additional_info.num_waiting_to_running,additional_info.recomputed_token_nums)

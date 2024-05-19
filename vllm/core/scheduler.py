@@ -130,6 +130,9 @@ class SchedulerOutputs:
     # The number of requests in the running queue
     running_queue_size: int
     preempted: int
+    num_waiting_to_running: int
+    num_running_to_waiting: int
+    recomputed_token_nums: int
 
     def __post_init__(self):
         # Swap in and swap out should never happen at the same time.
@@ -397,6 +400,7 @@ class Scheduler:
 
         decode_seq_groups: List[ScheduledSequenceGroup] = []
         prefill_seq_groups: List[ScheduledSequenceGroup] = []
+        recomputed_token_nums: int = 0
         preempted: List[SequenceGroup] = []
         swapped_out: List[SequenceGroup] = []
 
@@ -407,7 +411,7 @@ class Scheduler:
         now = time.time()
         running_queue = policy.sort_by_priority(now, running_queue)
         while running_queue:
-            seq_group = running_queue[0]
+            seq_group: SequenceGroup = running_queue[0]
             num_running_tokens = self._get_num_new_tokens(
                 seq_group, SequenceStatus.RUNNING, enable_chunking, budget)
 
@@ -445,12 +449,14 @@ class Scheduler:
                     break
             else:
                 self._append_slots(seq_group, blocks_to_copy)
+                seq_group.reset_waiting_iter_nums()
                 is_prefill = seq_group.is_prefill()
                 if is_prefill:
                     prefill_seq_groups.append(
                         ScheduledSequenceGroup(
                             seq_group=seq_group,
                             token_chunk_size=num_running_tokens))
+                    recomputed_token_nums+=num_running_tokens
                 else:
                     decode_seq_groups.append(
                         ScheduledSequenceGroup(seq_group=seq_group,
@@ -475,7 +481,7 @@ class Scheduler:
             blocks_to_swap_out=blocks_to_swap_out,
             blocks_to_copy=blocks_to_copy,
             num_lookahead_slots=self._get_num_lookahead_slots(
-                is_prefill=False))
+                is_prefill=False)), recomputed_token_nums
 
     def _schedule_swapped(
         self,
@@ -610,6 +616,7 @@ class Scheduler:
         budget: SchedulingBudget,
         curr_loras: Optional[Set[int]],
         enable_chunking: bool = False,
+        policy: Optional[Policy] = None,
     ) -> Tuple[deque, SchedulerPrefillOutputs]:
         """Schedule sequence groups that are in prefill stage.
 
@@ -642,7 +649,8 @@ class Scheduler:
         # We don't sort waiting queue because we assume it is sorted.
         # Copy the queue so that the input queue is not modified.
         waiting_queue = deque([s for s in waiting_queue])
-
+        if policy is not None:
+            waiting_queue = policy.sort_by_priority(time.time(), waiting_queue)
         leftover_waiting_sequences: Deque[SequenceGroup] = deque()
         while self._passed_delay(time.time()) and waiting_queue:
             seq_group = waiting_queue[0]
@@ -847,8 +855,9 @@ class Scheduler:
             self.swapped, SchedulerSwappedInOutputs.create_empty())
 
         # Decoding should be always scheduled first by fcfs.
-        fcfs_policy = PolicyFactory.get_policy(policy_name="fcfs")
-        remaining_running, running_scheduled = self._schedule_running(
+        # fcfs_policy = PolicyFactory.get_policy(policy_name="fcfs")
+        fcfs_policy = PolicyFactory.get_policy(policy_name=self.scheduler_config.policy)
+        remaining_running, running_scheduled,recomputed_token_nums  = self._schedule_running(
             self.running,
             budget,
             curr_loras,
@@ -859,7 +868,7 @@ class Scheduler:
         # If preemption happens, it means we don't have space for swap-in.
         if len(running_scheduled.preempted) + len(
                 running_scheduled.swapped_out) == 0:
-            remaining_swapped, swapped_in = self._schedule_swapped(
+            remaining_swapped, swapped_in, = self._schedule_swapped(
                 self.swapped, budget, curr_loras, fcfs_policy)
 
         # Schedule new prefills.
@@ -906,6 +915,9 @@ class Scheduler:
             running_queue_size=len(self.running),
             preempted=(len(running_scheduled.preempted) +
                        len(running_scheduled.swapped_out)),
+            num_running_to_waiting=len(running_scheduled.preempted),
+            num_waiting_to_running=len(running_scheduled.prefill_seq_groups),
+            recomputed_token_nums=recomputed_token_nums,
         )
 
     def _schedule(self) -> SchedulerOutputs:
@@ -1027,6 +1039,7 @@ class Scheduler:
         self.block_manager.allocate(seq_group)
         for seq in seq_group.get_seqs(status=SequenceStatus.WAITING):
             seq.status = SequenceStatus.RUNNING
+            seq.status_transmit = SequenceStatus.WAITING_TO_RUNNING
 
     def _append_slots(
         self,
@@ -1095,10 +1108,12 @@ class Scheduler:
         self,
         seq_group: SequenceGroup,
     ) -> None:
+        seq_group.update_waiting_iter_nums()
         seqs = seq_group.get_seqs(status=SequenceStatus.RUNNING)
         assert len(seqs) == 1
         for seq in seqs:
             seq.status = SequenceStatus.WAITING
+            seq.status_transmit = SequenceStatus.RUNNING_TO_WAITING
             self.free_seq(seq)
             seq.reset_state_for_recompute()
 

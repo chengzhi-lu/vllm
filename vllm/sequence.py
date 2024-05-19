@@ -46,6 +46,10 @@ class SequenceStatus(enum.Enum):
     FINISHED_LENGTH_CAPPED = enum.auto()
     FINISHED_ABORTED = enum.auto()
     FINISHED_IGNORED = enum.auto()
+    INIT_WAITING = enum.auto()
+    WAITING_TO_RUNNING = enum.auto()
+    RUNNING_TO_WAITING = enum.auto()
+    RUNNING_TO_FINISHED_STOPPED= enum.auto()
 
     @staticmethod
     def is_finished(status: "SequenceStatus") -> bool:
@@ -92,6 +96,7 @@ class RequestMetrics:
     """
     arrival_time: float
     last_token_time: float
+    waiting_iter_nums: int
     first_scheduled_time: Optional[float]
     first_token_time: Optional[float]
     time_in_queue: Optional[float]
@@ -240,6 +245,7 @@ class Sequence:
         # Initialize the logical token blocks with the prompt token ids.
         self._append_tokens_to_blocks(prompt_token_ids)
         self.status = SequenceStatus.WAITING
+        self.status_transmit = SequenceStatus.INIT_WAITING
         self.stop_reason: Union[int, str, None] = None
 
         # Used for incremental detokenization
@@ -438,6 +444,7 @@ class SequenceGroup:
         self.sampling_params = sampling_params
         self.metrics = RequestMetrics(arrival_time=arrival_time,
                                       last_token_time=arrival_time,
+                                      waiting_iter_nums=0,
                                       first_scheduled_time=None,
                                       first_token_time=None,
                                       time_in_queue=None)
@@ -531,7 +538,13 @@ class SequenceGroup:
 
     def get_finished_seqs(self) -> List[Sequence]:
         return [seq for seq in self.seqs_dict.values() if seq.is_finished()]
+    
+    def update_waiting_iter_nums(self):
+        self.metrics.waiting_iter_nums += 1
 
+    def reset_waiting_iter_nums(self):
+        self.metrics.waiting_iter_nums = 0
+        
     def update_num_computed_tokens(self, num_new_computed_tokens: int):
         """Update number of tokens computed so far."""
         for seq in self.seqs_dict.values():
