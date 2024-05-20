@@ -614,11 +614,12 @@ class LLMEngine:
                                     EmbeddingRequestOutput]] = []
         for scheduled_seq_group in scheduled_seq_groups:
             seq_group = scheduled_seq_group.seq_group
+            token_chunk_size = scheduled_seq_group.token_chunk_size
             seq_group.maybe_set_first_token_time(now)
-            request_output = RequestOutputFactory.create(seq_group,additional_info)
+            request_output = RequestOutputFactory.create(seq_group,additional_info,token_chunk_size)
             request_outputs.append(request_output)
         for seq_group in ignored_seq_groups:
-            request_output = RequestOutputFactory.create(seq_group,additional_info)
+            request_output = RequestOutputFactory.create(seq_group,additional_info,0)
             request_outputs.append(request_output)
         return request_outputs
 

@@ -2,11 +2,9 @@ from typing import Optional, Tuple, Type
 
 import torch
 
-try:
-    from vllm._C import cache_ops as vllm_cache_ops
-    from vllm._C import ops as vllm_ops
-except ImportError:
-    pass
+from vllm._C import cache_ops as vllm_cache_ops
+from vllm._C import ops as vllm_ops
+
 
 
 # activation ops

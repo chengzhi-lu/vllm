@@ -182,7 +182,7 @@ class RequestOutput:
                    finished,
                    seq_group.metrics,
                    lora_request=seq_group.lora_request,
-                   token_chunk_siz=token_chunk_size,
+                   token_chunk_size=token_chunk_size,
                    wasted_block_size=wasted_block_size,
                    total_block_size=total_block_size,
                    num_running_to_waiting=num_running_to_waiting,
@@ -250,11 +250,11 @@ class EmbeddingRequestOutput:
 class RequestOutputFactory:
 
     @staticmethod
-    def create(seq_group, additional_info:AdditionalInfo=None):
+    def create(seq_group, additional_info:AdditionalInfo=None, token_chunk_size:int=0):
         # Determine the type based on a condition, for example:
         if hasattr(seq_group,
                    'embeddings') and seq_group.embeddings is not None:
             return EmbeddingRequestOutput.from_seq_group(seq_group)
         else:
             
-            return RequestOutput.from_seq_group(seq_group,seq_group.token_chunk_size,additional_info.num_running_to_waiting,additional_info.num_waiting_to_running,additional_info.recomputed_token_nums)
+            return RequestOutput.from_seq_group(seq_group,token_chunk_size, additional_info.num_running_to_waiting,additional_info.num_waiting_to_running,additional_info.recomputed_token_nums)
