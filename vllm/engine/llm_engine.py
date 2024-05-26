@@ -101,7 +101,7 @@ class LLMEngine:
         log_stats: bool,
         usage_context: UsageContext = UsageContext.ENGINE_CONTEXT,
     ) -> None:
-        logger.info(
+        logger.debug(
             "Initializing an LLM engine (v%s) with config: "
             "model=%r, speculative_config=%r, tokenizer=%r, "
             "skip_tokenizer_init=%s, tokenizer_mode=%s, revision=%s, "

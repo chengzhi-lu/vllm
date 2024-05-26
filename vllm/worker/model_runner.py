@@ -829,11 +829,11 @@ class ModelRunner:
         per sequence in the batch.
         """
         assert not self.model_config.enforce_eager
-        logger.info("Capturing the model for CUDA graphs. This may lead to "
+        logger.debug("Capturing the model for CUDA graphs. This may lead to "
                     "unexpected consequences if the model is not static. To "
                     "run the model in eager mode, set 'enforce_eager=True' or "
                     "use '--enforce-eager' in the CLI.")
-        logger.info("CUDA graphs can take additional 1~3 GiB memory per GPU. "
+        logger.debug("CUDA graphs can take additional 1~3 GiB memory per GPU. "
                     "If you are running out of memory, consider decreasing "
                     "`gpu_memory_utilization` or enforcing eager mode. "
                     "You can also reduce the `max_num_seqs` as needed "
@@ -899,7 +899,7 @@ class ModelRunner:
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
         # This usually takes < 10 seconds.
-        logger.info("Graph capturing finished in %.0f secs.", elapsed_time)
+        logger.debug("Graph capturing finished in %.0f secs.", elapsed_time)
 
     @property
     def vocab_size(self) -> int:
