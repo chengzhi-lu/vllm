@@ -161,7 +161,6 @@ def _apply_min_tokens_penalty(
     # list of indices in logits that will be set to -inf
     logits_to_penalize: List[Tuple[int, int]] = []
     logits_applied = 0
-    st = time.time()
     for seq_group in sampling_metadata.seq_groups:
         seq_ids = seq_group.seq_ids
         sampling_params = seq_group.sampling_params
@@ -188,16 +187,11 @@ def _apply_min_tokens_penalty(
                 # itertools.product pairs each seq index with every token id
                 logits_to_penalize.extend(
                     itertools.product(seqs_to_penalize, token_ids_to_penalize))
-    et =time.time()
-    print(f"traverse logits time = {et - st}")
 
-    st = time.time()
     if logits_to_penalize:
         # use zip and * to group indices along each dimension
         # eg. [ (1,2), (1,3), (5,6) ] -> ( (1,1,5), (2,3,6) )
         logits[tuple(zip(*logits_to_penalize))] = -float("inf")
-    et =time.time()
-    print(f"apply to logits applied time = {et - st}")
 
     # verifies that no rows in logits were missed unexpectedly
     assert logits_applied == logits.shape[0]
@@ -1016,8 +1010,6 @@ def _build_sampler_output(
     """
 
     sampler_output = []
-    import time
-    st = time.time()
     for (seq_group, sample_result, group_prompt_logprobs,
          group_sample_logprobs) in zip(sampling_metadata.seq_groups,
                                        sample_results, prompt_logprobs,
@@ -1033,8 +1025,6 @@ def _build_sampler_output(
         sampler_output.append(
             CompletionSequenceGroupOutput(seq_outputs, group_prompt_logprobs))
 
-    et = time.time()
-    print(f"build_sampler_output {et - st}")
     # If not specified, store None values in SamplerOutput.
     if on_device_tensors is not None:
         (sampled_token_probs, logprobs_tensor,

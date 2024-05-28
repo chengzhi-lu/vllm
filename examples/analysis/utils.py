@@ -285,10 +285,10 @@ class Utils:
         with open(saved_seq_file, "w") as f:
             json.dump(saved_seq, f)
 
-    def load_seq_from_file(BASE_DIR, seq_file_name="saved_seq.json"):
+    def load_seq_from_file(BASE_DIR, DATA_DIR, seq_file_name="saved_seq.json"):
         import json
 
-        saved_seq_file = os.path.join(BASE_DIR, seq_file_name)
+        saved_seq_file = os.path.join(BASE_DIR, DATA_DIR, seq_file_name)
         if os.path.exists(saved_seq_file):
             with open(saved_seq_file, "r") as f:
                 saved_seq = json.load(f)
@@ -359,7 +359,6 @@ class Utils:
                 except Exception as e:
                     print("error", e)
                 et = time.time()
-                print(et-st)
                 if (
                     insert_new_request
                     and request_round == insert_new_request_round

@@ -1,13 +1,15 @@
 import argparse
+import time
 from typing import List, Tuple, Dict
 from queue import Queue
-from vllm import EngineArgs, LLMEngine, SamplingParams
+from vllm import EngineArgs, LLMEngine, RequestOutput, SamplingParams
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import pandas as pd
 import multiprocessing as mp
 from multiprocessing import Queue as MQueue
 import os
-from utils import Utils
+import uuid
+from utils import IterMetrics, RequestMetrics, Utils
 from rich import print
 from rich import pretty
 
@@ -17,9 +19,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def get_requests() -> Dict[int, Tuple[str, SamplingParams, int]]:
     init_seq = {}
-    saved_seq = Utils.load_seq_from_file(
-        BASE_DIR, "seq_data", "selected_seq_new.json"
-    )
+    saved_seq = Utils.load_seq_from_file(BASE_DIR, "selected_seq.json")
     for p_len in saved_seq:
         prompt_len = int(p_len)
         prompt = saved_seq[p_len]
@@ -28,8 +28,8 @@ def get_requests() -> Dict[int, Tuple[str, SamplingParams, int]]:
             SamplingParams(
                 temperature=0.0,
                 logprobs=1,
-                min_tokens=1,
-                max_tokens=1,
+                min_tokens=3,
+                max_tokens=4,
             ),
             prompt_len,
         )
@@ -40,15 +40,12 @@ def get_requests() -> Dict[int, Tuple[str, SamplingParams, int]]:
 def create_init_prompts(
     seqs: Dict[int, Tuple[str, SamplingParams, int]],
     prompts_queue: Queue,
-    init_prompt_nums: int,
+    batch_size: int,
+    init_prompt_length: int,
     prefill_mode: str,
 ):
     if prefill_mode == "vertical":
-        # create a batch whose size is $init_prompt_nums$ and each seq length is 1
-        selected_seqs = [seqs[1]] * init_prompt_nums
-    elif prefill_mode == "horizonal":
-        # create a batch whose size is 1 and each seq length is init_prompt_nums
-        selected_seqs = [seqs[init_prompt_nums]]
+        selected_seqs = [seqs[init_prompt_length]] * batch_size
     for i in range(len(selected_seqs)):
         prompts_queue.put(selected_seqs[i])
 
@@ -63,7 +60,6 @@ def add_new_request(
 
     add_new_request_notice.get()
     requests = requests * request_nums
-    print("request_nums = ", request_nums)
     for i in range(request_nums):
         prompts_queue.put(requests[i])
 
@@ -104,57 +100,41 @@ def main(
         engine = initialize_engine(args)
     except Exception as e:
         print(e)
-    insert_new_request = False
-    insert_new_request_round = -1
     add_new_request_notice = Queue()
-    print(f"start strategy: {strategy}, prefill_mode: {prefill_mode}")
-    for token_num in range(1912, 1913, 40):
-        for repeat_time in range(2):
-            prompts_queue = Queue()
-            if strategy == "hybrid":
-                updated_token_num = int(token_num / 2)
-                insert_new_request = True
-            elif strategy == "full":
-                updated_token_num = int(token_num)
-                insert_new_request = False
-            try:
-                create_init_prompts(
-                    seqs,
-                    prompts_queue,
-                    updated_token_num,
-                    prefill_mode,
+    token_num_each_seq = max_token_num // batch_size
+    for repeat_time in range(5):
+        prompts_queue = Queue()
+        init_prompt_length = int(token_num_each_seq)
+        insert_new_request = False
+        try:
+            create_init_prompts(
+                seqs,
+                prompts_queue,
+                batch_size,
+                init_prompt_length,
+                prefill_mode,
+            )
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                executor.submit(
+                    Utils.process_requests,
+                    engine=engine,
+                    prompts_queue=prompts_queue,
+                    add_new_request_notice=add_new_request_notice,
+                    strategy=strategy,
+                    result_queue=result_queue,
+                    batch_size=batch_size,
+                    enable_chunk_prefill=enable_chunk_prefill,
+                    policy=policy,
+                    repeat_time=repeat_time,
+                    max_token_num=max_token_num,
+                    random_seed=10,
+                    prefill_mode=prefill_mode,
+                    insert_new_request=insert_new_request,
+                    insert_new_request_round=3,
                 )
-                with ThreadPoolExecutor(max_workers=2) as executor:
-                    executor.submit(
-                        Utils.process_requests,
-                        engine=engine,
-                        prompts_queue=prompts_queue,
-                        add_new_request_notice=add_new_request_notice,
-                        strategy=strategy,
-                        result_queue=result_queue,
-                        batch_size=updated_token_num,
-                        enable_chunk_prefill=enable_chunk_prefill,
-                        policy=policy,
-                        repeat_time=repeat_time,
-                        max_token_num=max_token_num,
-                        random_seed=10,
-                        prefill_mode=prefill_mode,
-                        insert_new_request=insert_new_request,
-                        insert_new_request_round=insert_new_request_round,
-                    )
-                    # wait for all threads to finish
-                    if insert_new_request:
-                        executor.submit(
-                            add_new_request,
-                            seqs,
-                            prompts_queue,
-                            add_new_request_notice,
-                            token_num - updated_token_num,
-                        )
-                    executor.shutdown(wait=True)
-
-            except Exception as e:
-                print(e)
+                executor.shutdown(wait=True)
+        except Exception as e:
+            print(e)
 
 
 def skip_combination(df, batch_size, policy="fcfs", random_seed=10):
@@ -172,12 +152,12 @@ def skip_combination(df, batch_size, policy="fcfs", random_seed=10):
 
 if __name__ == "__main__":
     os.environ["HF_TOKEN"] = "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"
-    test_type = "diff_prefill_decode_compare_swap"
+    test_type = "diff_prefill_bs_compare_swap"
     rerun = True
     with mp.Manager() as manager:
         result_queue = manager.Queue()
         max_token_nums = [2048]
-        batch_sizes = [2048]
+        batch_sizes = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
         total_iter_result, total_request_result = Utils.load_tmp_result(
             test_type, BASE_DIR
         )
@@ -186,7 +166,7 @@ if __name__ == "__main__":
         default_policy = "fcfs"
         strategies = ["full"]
         # If prefill mode is horizonal, the sequences length is equals to the token nums, otherwise, the batch size equals to the token nums  # noqa: E501
-        prefill_modes = ["horizonal", "vertical"]
+        prefill_modes = ["vertical"]
         for strategy in strategies:
             for batch_size in batch_sizes:
                 for prefill_mode in prefill_modes:
@@ -198,10 +178,6 @@ if __name__ == "__main__":
                                     batch_size,
                                 )
                                 and not rerun
-                                and (
-                                    prefill_mode == "horizonal"
-                                    and strategy == "hybrid"
-                                )
                             ):
                                 continue
                             with ProcessPoolExecutor(max_workers=2) as executor:
@@ -229,6 +205,21 @@ if __name__ == "__main__":
                                 total_request_result = pd.concat(
                                     [total_request_result, request_result]
                                 )
-
+                            if len(total_iter_result) > 0:
+                                Utils.save_tmp_result(
+                                    total_iter_result,
+                                    total_request_result,
+                                    test_type,
+                                    BASE_DIR,
+                                )
                         except Exception as e:
                             print(e)
+        if len(total_iter_result) > 0:
+            Utils.save_result(
+                total_iter_result,
+                total_request_result,
+                enable_chunk_prefill,
+                test_type,
+                rerun,
+                BASE_DIR,
+            )

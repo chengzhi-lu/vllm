@@ -8,13 +8,13 @@ import argparse
 def save_seq_to_file(selected_seq):
     import json
 
-    with open("selected_seq.json", "w") as f:
+    with open("selected_seq_new.json", "w") as f:
         json.dump(selected_seq, f)
 
 
 def filter_data():
     dataset_path = (
-        "/root/InferSchedule/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
+        "/root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
     )
     parser = argparse.ArgumentParser(
         description="Demo on using the LLMEngine class directly"
@@ -56,7 +56,12 @@ def filter_data():
             prompt_len = len(prompt_token_ids)
             if prompt_len not in selected_seqs and prompt_len in all_need_seq:
                 selected_seqs[prompt_len] = prompt
-        print(selected_seqs.keys())
+        print(max(selected_seqs.keys()))
+        print(
+            set([i for i in range(1, 2049)]).difference(
+                set(selected_seqs.keys())
+            )
+        )
         save_seq_to_file(selected_seqs)
 
 
