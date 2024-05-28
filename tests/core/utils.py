@@ -25,6 +25,7 @@ def create_dummy_prompt(
                       inputs={
                           "prompt": prompt_str,
                           "prompt_token_ids": prompt_tokens,
+                          "multi_modal_data": None,
                       },
                       block_size=block_size)
     seq_group = SequenceGroup(request_id=request_id,
@@ -102,7 +103,11 @@ def create_seq_group(
     for seq_id_offset, output_len in enumerate(seq_output_lens):
         seq = Sequence(
             seq_id=seq_id_start + seq_id_offset,
-            inputs={"prompt_token_ids": prompt_token_ids},
+            inputs={
+                "prompt": "",
+                "prompt_token_ids": prompt_token_ids,
+                "multi_modal_data": None,
+            },
             block_size=16,
         )
 

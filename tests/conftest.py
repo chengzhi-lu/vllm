@@ -13,7 +13,7 @@ from transformers import (AutoModelForCausalLM, AutoProcessor, AutoTokenizer,
 from vllm import LLM, SamplingParams
 from vllm.config import TokenizerPoolConfig, VisionLanguageConfig
 from vllm.distributed import destroy_model_parallel
-from vllm.inputs import TextPrompt
+from vllm.inputs import PromptInputs
 from vllm.logger import init_logger
 from vllm.sequence import MultiModalData, SampleLogprobs
 
@@ -395,23 +395,24 @@ class VllmRunner:
         images: Optional[torch.Tensor] = None,
     ) -> List[Tuple[List[List[int]], List[str]]]:
         if images is not None:
-            assert len(prompts) == len(images)
+            assert len(prompts) == images.shape[0]
 
-        prompt_inputs: List[TextPrompt] = []
+        prompt_inputs: List[PromptInputs] = []
         for i, prompt in enumerate(prompts):
-            prompt = TextPrompt(prompt=prompt)
-            if images is not None:
-                prompt["multi_modal_data"] = MultiModalData(
-                    type=MultiModalData.Type.IMAGE,
-                    data=images[i:i + 1],
-                )
+            image = None if images is None else images[i:i + 1]
+            mm_data = None if image is None else MultiModalData(
+                type=MultiModalData.Type.IMAGE,
+                data=image,
+            )
 
-            prompt_inputs.append(prompt)
+            prompt_inputs.append({
+                "prompt": prompt,
+                "multi_modal_data": mm_data,
+            })
 
         req_outputs = self.model.generate(prompt_inputs,
                                           sampling_params=sampling_params)
-
-        outputs: List[Tuple[List[List[int]], List[str]]] = []
+        outputs = []
         for req_output in req_outputs:
             prompt_str = req_output.prompt
             prompt_ids = req_output.prompt_token_ids
