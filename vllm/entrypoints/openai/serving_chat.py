@@ -291,6 +291,7 @@ class OpenAIServingChat(OpenAIServing):
                             token_ids=delta_token_ids,
                             top_logprobs=top_logprobs,
                             num_output_top_logprobs=request.top_logprobs,
+                            initial_text_offset=len(previous_texts[i]),
                         )
                     else:
                         logprobs = None
