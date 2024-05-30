@@ -190,6 +190,26 @@ async def test_single_completion(server, client: openai.AsyncOpenAI,
     "model_name",
     [MODEL_NAME, "zephyr-lora", "zephyr-lora2"],
 )
+async def test_no_logprobs(server, client: openai.AsyncOpenAI,
+                           model_name: str):
+    # test using token IDs
+    completion = await client.completions.create(
+        model=MODEL_NAME,
+        prompt=[0, 0, 0, 0, 0],
+        max_tokens=5,
+        temperature=0.0,
+        logprobs=None,
+    )
+    choice = completion.choices[0]
+    assert choice.logprobs is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    # first test base model, then test loras
+    "model_name",
+    [MODEL_NAME, "zephyr-lora", "zephyr-lora2"],
+)
 async def test_zero_logprobs(server, client: openai.AsyncOpenAI,
                              model_name: str):
     # test using token IDs
@@ -205,6 +225,70 @@ async def test_zero_logprobs(server, client: openai.AsyncOpenAI,
     assert choice.logprobs.token_logprobs is not None
     assert choice.logprobs.top_logprobs is not None
     assert len(choice.logprobs.top_logprobs[0]) <= 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "model_name",
+    [MODEL_NAME, "zephyr-lora"],
+)
+async def test_some_logprobs(server, client: openai.AsyncOpenAI,
+                             model_name: str):
+    # test using token IDs
+    completion = await client.completions.create(
+        model=MODEL_NAME,
+        prompt=[0, 0, 0, 0, 0],
+        max_tokens=5,
+        temperature=0.0,
+        logprobs=5,
+    )
+    choice = completion.choices[0]
+    assert choice.logprobs is not None
+    assert choice.logprobs.token_logprobs is not None
+    assert choice.logprobs.top_logprobs is not None
+    assert len(choice.logprobs.top_logprobs[0]) <= 6
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "model_name",
+    [MODEL_NAME, "zephyr-lora"],
+)
+async def test_too_many_completion_logprobs(server, client: openai.AsyncOpenAI,
+                                            model_name: str):
+
+    with pytest.raises(
+        (openai.BadRequestError, openai.APIError)):  # test using token IDs
+        await client.completions.create(
+            model=MODEL_NAME,
+            prompt=[0, 0, 0, 0, 0],
+            max_tokens=5,
+            temperature=0.0,
+            logprobs=6,
+        )
+        ...
+    with pytest.raises(
+        (openai.BadRequestError, openai.APIError)):  # test using token IDs
+        stream = await client.completions.create(
+            model=MODEL_NAME,
+            prompt=[0, 0, 0, 0, 0],
+            max_tokens=5,
+            temperature=0.0,
+            logprobs=6,
+            stream=True,
+        )
+        async for chunk in stream:
+            ...
+
+    # the server should still work afterwards
+    completion = await client.completions.create(
+        model=model_name,
+        prompt=[0, 0, 0, 0, 0],
+        max_tokens=5,
+        temperature=0.0,
+    )
+    completion = completion.choices[0].text
+    assert completion is not None and len(completion) >= 0
 
 
 @pytest.mark.asyncio
@@ -255,9 +339,13 @@ async def test_single_chat_session(server, client: openai.AsyncOpenAI,
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("model_name", [MODEL_NAME])
-async def test_too_many_logprobs(server, client: openai.AsyncOpenAI,
-                                 model_name: str):
+@pytest.mark.parametrize(
+    # first test base model, then test loras
+    "model_name",
+    [MODEL_NAME, "zephyr-lora", "zephyr-lora2"],
+)
+async def test_no_logprobs_chat(server, client: openai.AsyncOpenAI,
+                                model_name: str):
     messages = [{
         "role": "system",
         "content": "you are a helpful assistant"
