@@ -30,12 +30,6 @@ class LLM:
     this class generates texts from the model, using an intelligent batching
     mechanism and efficient memory management.
 
-    NOTE: This class is intended to be used for offline inference. For online
-    serving, use the :class:`~vllm.AsyncLLMEngine` class instead.
-
-    NOTE: For the comprehensive list of arguments, see
-    :class:`~vllm.EngineArgs`.
-
     Args:
         model: The name or path of a HuggingFace Transformers model.
         tokenizer: The name or path of a HuggingFace Transformers tokenizer.
