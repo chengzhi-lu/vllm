@@ -651,6 +651,12 @@ class SchedulerConfig:
         enable_chunked_prefill: If True, prefill requests can be chunked based
             on the remaining max_num_batched_tokens.
         embedding_mode: Whether the running model is for embedding.
+        preemption_mode: Whether to perform preemption by swapping or 
+            recomputation. If not specified, we determine the mode as follows:
+            We use recomputation by default since it incurs lower overhead than
+            swapping. However, when the sequence group has multiple sequences
+            (e.g., beam search), recomputation is not currently supported. In
+            such a case, we use swapping instead.
     """
 
     def __init__(
@@ -664,6 +670,7 @@ class SchedulerConfig:
         enable_chunked_prefill: bool = False,
         policy: str = "fcfs",
         embedding_mode: Optional[bool] = False,
+        preemption_mode: Optional[str] = None
     ) -> None:
         if max_num_batched_tokens is not None:
             self.max_num_batched_tokens = max_num_batched_tokens
@@ -691,6 +698,7 @@ class SchedulerConfig:
         self.chunked_prefill_enabled = enable_chunked_prefill
         self.policy = policy
         self.embedding_mode = embedding_mode
+        self.preemption_mode = preemption_mode
 
         self._verify_args()
 
