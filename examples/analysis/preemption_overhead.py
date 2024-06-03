@@ -14,12 +14,10 @@ from rich import pretty
 pretty.install()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-
+# test preemption overhead for same prompt.
 def get_requests() -> Dict[int, Tuple[str, SamplingParams, int]]:
     init_seq = {}
-    saved_seq = Utils.load_seq_from_file(
-        BASE_DIR, "seq_data", "selected_seq.json"
-    )
+    saved_seq = Utils.load_seq_from_file(BASE_DIR, "selected_seq.json")
     for p_len in saved_seq:
         prompt_len = int(p_len)
         prompt = saved_seq[p_len]
@@ -98,8 +96,8 @@ def main(
     if enable_chunk_prefill:
         args.enable_chunked_prefill = True
         args.max_num_batched_tokens = max_token_num
+    seqs = get_requests()
     try:
-        seqs = get_requests()
         engine = initialize_engine(args)
     except Exception as e:
         print(e)
@@ -199,7 +197,6 @@ if __name__ == "__main__":
                                     and strategy == "hybrid"
                                 )
                             ):
-                                print("skip this combination")
                                 continue
                             with ProcessPoolExecutor(max_workers=2) as executor:
                                 executor.submit(

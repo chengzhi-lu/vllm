@@ -1,15 +1,13 @@
 import argparse
-import time
 from typing import List, Tuple, Dict
 from queue import Queue
-from vllm import EngineArgs, LLMEngine, RequestOutput, SamplingParams
+from vllm import EngineArgs, LLMEngine, SamplingParams
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import pandas as pd
 import multiprocessing as mp
 from multiprocessing import Queue as MQueue
 import os
-import uuid
-from utils import IterMetrics, RequestMetrics, Utils
+from utils import Utils
 from rich import print
 from rich import pretty
 

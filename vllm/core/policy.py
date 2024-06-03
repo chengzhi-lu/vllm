@@ -35,6 +35,24 @@ class FCFS(Policy):
     ) -> float:
         return now - seq_group.metrics.arrival_time
 
+
+
+class SMLFQ(Policy):
+    MLFQ = {}
+    def get_priority(
+        self,
+        now: float,
+        seq_group: SequenceGroup,
+    ) -> float:
+        pass
+        
+class InferSchedule(Policy):
+    gpu_capacity = 100
+    
+    # maximize the number of tokens in the queue while ensuring the sequences with higher probability to finish first. 
+    def get_priority(self, now: float, seq_group: SequenceGroup) -> float:
+        pass
+
 class Random(Policy):
 
     def get_priority(
@@ -108,6 +126,10 @@ class BlockFullPolicy(Policy):
         priority = (empty_slots + seq.block_size - 1) % seq.block_size
         return priority
 
+
+class InferSchedule(Policy):
+    def get_priority(self, now: float, seq_group: SequenceGroup) -> float:
+        return super().get_priority(now, seq_group)
 
 class PolicyFactory:
 

@@ -767,7 +767,7 @@ class Scheduler:
             remaining_waiting, prefills = self._schedule_prefills(
                 self.waiting, budget, curr_loras, enable_chunking=False)
 
-        fcfs_policy = PolicyFactory.get_policy(policy_name="fcfs")
+        policy = PolicyFactory.get_policy(policy_name="fcfs")
         # Don't schedule decodes if prefills are scheduled.
         # NOTE: If `_schedule_prefills` doesn't enable chunking, self.running
         # only contains decode requests, not chunked prefills.
@@ -776,7 +776,7 @@ class Scheduler:
                 self.running,
                 budget,
                 curr_loras,
-                fcfs_policy,
+                policy,
                 enable_chunking=False)
 
             # If any sequence group is preempted, do not swap in any sequence
@@ -784,7 +784,7 @@ class Scheduler:
             if len(running_scheduled.preempted) + len(
                     running_scheduled.swapped_out) == 0:
                 remaining_swapped, swapped_in = self._schedule_swapped(
-                    self.swapped, budget, curr_loras, fcfs_policy)
+                    self.swapped, budget, curr_loras, policy)
 
         assert (budget.num_batched_tokens <=
                 self.scheduler_config.max_num_batched_tokens)
@@ -827,6 +827,106 @@ class Scheduler:
             preempted=preempted,
         )
 
+
+
+    def _schedule_smlfq(self):
+        """Schedule queued requests.
+        
+        Schedule the chunk prefill requests and decode requests hybrid with skip-MLFQ. This policy 1. put all requests together. 2. predict the execution time. 3. use the execution time to schedule requests.
+        
+        
+        Chunked prefill allows to chunk prefill requests, batch them together
+        with decode requests. This policy 1. schedule as many decoding requests
+        as possible. 2. schedule chunked prefill requests that are not
+        finished. 3. schedule swapped request. 4. schedule new prefill
+        requests.
+
+        The policy can sustain the high GPU utilization because it can put
+        prefill and decodes requests to the same batch, while it improves
+        inter token latency because decodes requests don't need to blocked
+        by prefill requests.
+        """  # noqa: E501
+        policy = PolicyFactory.get_policy(policy_name=self.scheduler_config.policy)
+        budget = SchedulingBudget(
+            token_budget=self.scheduler_config.max_num_batched_tokens,
+            max_num_seqs=self.scheduler_config.max_num_seqs,
+        )
+        curr_loras: Set[int] = set()
+
+        remaining_waiting, prefills = (self.waiting,
+                                       SchedulerPrefillOutputs.create_empty())
+        remaining_running, running_scheduled = (
+            self.running, SchedulerRunningOutputs.create_empty())
+        remaining_swapped, swapped_in = (
+            self.swapped, SchedulerSwappedInOutputs.create_empty())
+
+        # add 
+
+
+        remaining_running, running_scheduled,recomputed_token_nums  = self._schedule_running(
+            self.running,
+            budget,
+            curr_loras,
+            policy,
+            enable_chunking=True)
+
+        # Schedule swapped out requests.
+        # If preemption happens, it means we don't have space for swap-in.
+        if len(running_scheduled.preempted) + len(
+                running_scheduled.swapped_out) == 0:
+            remaining_swapped, swapped_in, = self._schedule_swapped(
+                self.swapped, budget, curr_loras, policy)
+
+        # Schedule new prefills.
+        remaining_waiting, prefills = self._schedule_prefills(
+            self.waiting, budget, curr_loras, enable_chunking=True)
+
+        assert (budget.num_batched_tokens <=
+                self.scheduler_config.max_num_batched_tokens)
+        assert budget.num_curr_seqs <= self.scheduler_config.max_num_seqs
+
+        # Update waiting requests.
+        self.waiting = remaining_waiting
+        self.waiting.extendleft(running_scheduled.preempted)
+        # Update new running requests.
+        self.running = remaining_running
+        self.running.extend([s.seq_group for s in prefills.seq_groups])
+        self.running.extend(
+            [s.seq_group for s in running_scheduled.decode_seq_groups])
+        self.running.extend(
+            [s.seq_group for s in running_scheduled.prefill_seq_groups])
+        self.running.extend(
+            [s.seq_group for s in swapped_in.decode_seq_groups])
+        self.running.extend(
+            [s.seq_group for s in swapped_in.prefill_seq_groups])
+        # Update swapped requests.
+        self.swapped = remaining_swapped
+        self.swapped.extend(running_scheduled.swapped_out)
+        return SchedulerOutputs(
+            scheduled_seq_groups=(prefills.seq_groups +
+                                  running_scheduled.prefill_seq_groups +
+                                  swapped_in.prefill_seq_groups +
+                                  running_scheduled.decode_seq_groups +
+                                  swapped_in.decode_seq_groups),
+            num_prefill_groups=(len(prefills.seq_groups) +
+                                len(swapped_in.prefill_seq_groups) +
+                                len(running_scheduled.prefill_seq_groups)),
+            num_batched_tokens=budget.num_batched_tokens,
+            blocks_to_swap_in=swapped_in.blocks_to_swap_in,
+            blocks_to_swap_out=running_scheduled.blocks_to_swap_out,
+            blocks_to_copy=running_scheduled.blocks_to_copy +
+            swapped_in.blocks_to_copy,
+            ignored_seq_groups=prefills.ignored_seq_groups,
+            num_lookahead_slots=running_scheduled.num_lookahead_slots,
+            running_queue_size=len(self.running),
+            preempted=(len(running_scheduled.preempted) +
+                       len(running_scheduled.swapped_out)),
+            num_running_to_waiting=len(running_scheduled.preempted),
+            num_waiting_to_running=len(running_scheduled.prefill_seq_groups),
+            recomputed_token_nums=recomputed_token_nums,
+        )
+
+
     def _schedule_chunked_prefill(self):
         """Schedule queued requests.
         
@@ -856,12 +956,12 @@ class Scheduler:
 
         # Decoding should be always scheduled first by fcfs.
         # fcfs_policy = PolicyFactory.get_policy(policy_name="fcfs")
-        fcfs_policy = PolicyFactory.get_policy(policy_name=self.scheduler_config.policy)
+        policy = PolicyFactory.get_policy(policy_name=self.scheduler_config.policy)
         remaining_running, running_scheduled,recomputed_token_nums  = self._schedule_running(
             self.running,
             budget,
             curr_loras,
-            fcfs_policy,
+            policy,
             enable_chunking=True)
 
         # Schedule swapped out requests.
@@ -869,7 +969,7 @@ class Scheduler:
         if len(running_scheduled.preempted) + len(
                 running_scheduled.swapped_out) == 0:
             remaining_swapped, swapped_in, = self._schedule_swapped(
-                self.swapped, budget, curr_loras, fcfs_policy)
+                self.swapped, budget, curr_loras, policy)
 
         # Schedule new prefills.
         remaining_waiting, prefills = self._schedule_prefills(
