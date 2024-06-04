@@ -17,7 +17,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # test preemption overhead for same prompt.
 def get_requests() -> Dict[int, Tuple[str, SamplingParams, int]]:
     init_seq = {}
-    saved_seq = Utils.load_seq_from_file(BASE_DIR, "selected_seq.json")
+    saved_seq = Utils.load_seq_from_file(BASE_DIR, "seq_data", "selected_seq.json")
     for p_len in saved_seq:
         prompt_len = int(p_len)
         prompt = saved_seq[p_len]
@@ -165,7 +165,7 @@ def skip_combination(df, batch_size, policy="fcfs", random_seed=10):
 
 
 if __name__ == "__main__":
-    os.environ["HF_TOKEN"] = "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"
+    # os.environ["HF_TOKEN"] = "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"
     test_type = "diff_prefill_decode_compare_swap"
     rerun = True
     with mp.Manager() as manager:
