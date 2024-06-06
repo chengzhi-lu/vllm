@@ -291,7 +291,6 @@ def get_test_params(test_type):
 
 
 if __name__ == "__main__":
-    os.environ["HF_TOKEN"] = "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"
     test_type = "scheduling_policy_swap"
     rerun = True
     # test_type = "scheduling_policy_swap_pp"

@@ -1,61 +1,97 @@
 # use JackFram/llama-68m in the huggingface to predict the eos of the prompt
-from transformers import AutoTokenizer, LlamaForCausalLM
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from typing import List
 import json
 import random
 from dataclasses import dataclass
-import tqdm
+from tqdm import tqdm
+
 
 @dataclass
 class Model:
-    model: LlamaForCausalLM
+    model_name: str
+    model: AutoModelForCausalLM
     tokenizer: AutoTokenizer
 
 
 def load_model(model_name):
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    m = LlamaForCausalLM.from_pretrained(model_name, device_map="cuda:1")
-    model = Model(m, tokenizer)
+    m = AutoModelForCausalLM.from_pretrained(model_name, device_map="cuda:1")
+    model = Model(model_name, m, tokenizer)
     return model
 
 
-def predict(model: Model, prompt):
-    inputs = model.tokenizer(prompt, return_tensors="pt")
-    inputs.to("cuda:1")
+def predict(model: Model, inputs: torch.Tensor):
+    input_length = len(inputs[0])
+
     generate_ids = model.model.generate(
-        inputs.input_ids, max_length=len(inputs.input_ids[0]) + 1
+        inputs,
+        max_length=len(inputs[0]) + 4,
+        repetition_penalty=1.2,
     )
-    result = model.tokenizer.batch_decode(
-        generate_ids,
-        skip_special_tokens=True,
-        clean_up_tokenization_spaces=False,
-    )[0]
-    if model.tokenizer(result).input_ids[-1] == model.tokenizer.eos_token_id:
-        return "++++++"
-    return result
+    generate_ids = generate_ids[:, : input_length + 1]
+    torch.cuda.empty_cache()
+    return generate_ids
 
 
 def compare_result(small_model: Model, large_model: Model, prompt: List[str]):
     false_positive_count = 0  # small_model is not eos and large_model is eos
     false_negtive_count = 0  # small_model is  eos and large_model is not eos
+    true_positive_count = 0
     total_count = 0
     for i in tqdm(range(len(prompt))):
         # compare the output of the two model and loop until the output of large_model is eos
         seq = prompt[i]
-        result1 = predict(small_model, seq)
-        result2 = predict(large_model, seq)
-        while result2 != "++++++":
-            if result1 == "++++++" and result2 != "++++++":
+        inputs = large_model.tokenizer(seq, return_tensors="pt")
+        inputs.to("cuda:1")
+        small_model_generated_ids = predict(small_model, inputs.input_ids)
+        large_model_generated_ids = predict(large_model, inputs.input_ids)
+        large_model_result = large_model_generated_ids[0][-1]
+        small_model_result = small_model_generated_ids[0][-1]
+        large_model_eos = 2
+        small_model_eos = 2
+        while (
+            large_model_result != large_model_eos
+            and len(large_model_generated_ids[0]) < 500
+        ):
+            if (
+                small_model_result == small_model_eos
+                and large_model_result != large_model_eos
+            ):
                 false_positive_count += 1
-
-            seq = seq + result2
-            result1 = predict(small_model, seq)
-            result2 = predict(large_model, seq)
+            elif (
+                small_model_result == small_model_eos
+                and large_model_result == large_model_eos
+            ):
+                true_positive_count += 1
+            print(f"\n+++++++\n{large_model_generated_ids},\n++++++++++\n")
+            small_model_generated_ids = predict(
+                small_model, large_model_generated_ids
+            )
+            large_model_generated_ids = predict(
+                large_model, large_model_generated_ids
+            )
+            small_model_result = small_model_generated_ids[0][-1]
+            large_model_result = large_model_generated_ids[0][-1]
+            print(
+                f"\n========\n{small_model_generated_ids},\n----------\n{large_model_generated_ids},\n========\n"
+            )
             total_count += 1
-        if result1 != "++++++" and result2 == "++++++":
+        print("result1", small_model_result, "result2", large_model_result)
+        if (
+            small_model_result != small_model_eos
+            and large_model_result == large_model_eos
+        ):
             false_negtive_count += 1
-
-    return false_positive_count, false_negtive_count, total_count
+        if len(seq) >= 500:
+            print("seq is too long")
+    return (
+        false_positive_count,
+        false_negtive_count,
+        true_positive_count,
+        total_count,
+    )
 
 
 def get_prompt():
@@ -81,7 +117,7 @@ def get_prompt():
         random.seed(1)
         random.shuffle(dataset)
         for i in range(len(dataset)):
-            if len(set(selected_seqs)) == 100:
+            if len(set(selected_seqs)) == 1:
                 break
 
             # Tokenize the prompts and completions.
@@ -92,12 +128,16 @@ def get_prompt():
 
 if __name__ == "__main__":
     test_prompts = get_prompt()
-    small_model = "JackFram/llama-68m"
-    large_model = "meta-llama/Llama-2-13b-hf"
-    small_model = load_model(small_model)
-    large_model = load_model(small_model)
-    print(test_prompts)
-    false_positive_count, false_negtive_count, total_count = compare_result(
-        small_model, large_model, test_prompts
+    small_model_name = "JackFram/llama-68m"
+    large_model_name = "meta-llama/Llama-2-13b-hf"
+    small_model = load_model(small_model_name)
+    large_model = load_model(large_model_name)
+    (
+        false_positive_count,
+        false_negtive_count,
+        true_positive,
+        total_count,
+    ) = compare_result(small_model, large_model, test_prompts)
+    print(
+        f"false_positive_count: {false_positive_count}, false_negtive_count: {false_negtive_count}, true_positive: {true_positive}, total_count: {total_count}"
     )
-    print(false_negtive_count, false_positive_count, total_count)
