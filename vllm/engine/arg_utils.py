@@ -520,7 +520,7 @@ class EngineArgs:
             "--scheduler-policy",
             type=str,
             default="fcfs",
-            help="Scheduling policy. Can be 'fcfs', 'UncomputedTokensFirst (utf)','WaitingTimeFirst (wtf)','ShortestTokensFirst (stf)', 'LongestTokensFirst (ltf)', 'BlockFullFirst (bff)', or 'random', default is 'fcfs'.",
+            help="Scheduling policy. Can be 'fcfs', 'UncomputedTokensFirst (utf)','WaitingTimeFirst (wtf)','ShortestTokensFirst (stf)', 'LongestTokensFirst (ltf)', 'BlockFullFirst (bff)','infer', or 'random', default is 'fcfs'",
         )
         
         parser.add_argument(
