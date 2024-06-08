@@ -669,7 +669,6 @@ class SchedulerConfig:
         delay_factor: float = 0.0,
         enable_chunked_prefill: bool = False,
         policy: str = "fcfs",
-        preemption_mode: Optional[str] = None,
         embedding_mode: Optional[bool] = False,
         preemption_mode: Optional[str] = None
     ) -> None:

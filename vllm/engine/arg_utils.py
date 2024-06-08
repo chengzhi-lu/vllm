@@ -701,7 +701,6 @@ class EngineArgs:
             policy=self.scheduler_policy,
             preemption_mode=self.default_preemption_mode,
             embedding_mode=model_config.embedding_mode,
-            preemption_mode=self.preemption_mode,
         )
         lora_config = LoRAConfig(
             max_lora_rank=self.max_lora_rank,

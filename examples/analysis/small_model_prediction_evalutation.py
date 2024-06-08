@@ -28,24 +28,10 @@ def load_model(model_name):
     return model
 
 
-def apply_repetition_penalty(logits, generated_tokens, penalty=1.2):
-    for token in set(generated_tokens):
-        logits[token] /= penalty
-    return logits
-
-
-# def check_repetition(sequence, n):
-#     if len(sequence) < n * 2:
-#         return False
-#     n_grams = [sequence[i : i + n] for i in range(len(sequence) - n + 1)]
-#     return len(n_grams) != len(set(tuple(x) for x in n_grams))
-
-
 def predict(model: Model, inputs: torch.Tensor, eos_token_id: int = 2):
     eos_poss = []
     next_token = inputs[0][-1]
-    generated_tokens = [next_token]
-    repetition_penalty = 1.2
+    print(model.model)
     with torch.no_grad():
         while next_token != eos_token_id:
             generate_ids = model.model(
@@ -55,20 +41,14 @@ def predict(model: Model, inputs: torch.Tensor, eos_token_id: int = 2):
             logits = generate_ids["logits"]
             probs = torch.nn.functional.softmax(logits, dim=-1)
             next_token_probs = probs[:, -1]
-            next_token_probs = apply_repetition_penalty(
-                next_token_probs[0], generated_tokens, repetition_penalty
-            )
-
             print(torch.max(next_token_probs))
             next_token = torch.argmax(next_token_probs, dim=-1).item()
             next_token_tensor = torch.tensor(
                 [[next_token]], device=inputs.device
             )
             inputs = torch.cat((inputs, next_token_tensor), dim=1)
-            print(inputs.shape, model.tokenizer.batch_decode(inputs))
-            eos_position = get_eos_position(
-                next_token_probs.unsqueeze(0), eos_token_id
-            )
+            print(next_token, model.tokenizer.batch_decode(inputs))
+            eos_position = get_eos_position(next_token_probs, eos_token_id)
             eos_poss.append(eos_position)
     torch.cuda.empty_cache()
     return eos_poss
@@ -111,7 +91,7 @@ def get_prompt():
         ]
 
         # Shuffle the dataset.
-        random.seed(1)
+        random.seed(2)
         random.shuffle(dataset)
         for i in range(len(dataset)):
             if len(set(selected_seqs)) == 10:

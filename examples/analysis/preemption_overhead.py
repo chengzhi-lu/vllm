@@ -26,8 +26,8 @@ def get_requests() -> Dict[int, Tuple[str, SamplingParams, int]]:
             SamplingParams(
                 temperature=0.0,
                 logprobs=1,
-                min_tokens=5,
-                max_tokens=6,
+                min_tokens=300,
+                max_tokens=301,
             ),
             prompt_len,
         )
@@ -43,26 +43,13 @@ def create_init_prompts(
 ):
     if prefill_mode == "vertical":
         # create a batch whose size is $init_prompt_nums$ and each seq length is 1
-        selected_seqs = [seqs[1]] * init_prompt_nums
+        selected_seqs = [seqs[16]] * init_prompt_nums
     elif prefill_mode == "horizonal":
         # create a batch whose size is 1 and each seq length is init_prompt_nums
         selected_seqs = [seqs[init_prompt_nums]]
     for i in range(len(selected_seqs)):
         prompts_queue.put(selected_seqs[i])
 
-
-def add_new_request(
-    requests: List[Tuple[str, SamplingParams, int]],
-    prompts_queue: Queue,
-    add_new_request_notice: Queue,
-    request_nums: int,
-):
-    """Add a new request to the queue, every 1 seconds."""
-
-    add_new_request_notice.get()
-    requests = requests * request_nums
-    for i in range(request_nums):
-        prompts_queue.put(requests[i])
 
 
 def initialize_engine(args: argparse.Namespace) -> LLMEngine:
@@ -103,54 +90,38 @@ def main(
         print(e)
     add_new_request_notice = Queue()
     print(f"start preemption: {default_preemption_mode}")
-    for token_num in range(4, max_token_num, 40):
-        for repeat_time in range(5):
-            prompts_queue = Queue()
-            if strategy == "hybrid":
-                updated_token_num = int(token_num / 2)
-                insert_new_request = True
-            elif strategy == "full":
-                updated_token_num = int(token_num)
-                insert_new_request = False
-            try:
-                create_init_prompts(
-                    seqs,
-                    prompts_queue,
-                    updated_token_num,
-                    prefill_mode,
+    for repeat_time in range(5):
+        prompts_queue = Queue()
+        try:
+            create_init_prompts(
+                seqs,
+                prompts_queue,
+                batch_size,
+                prefill_mode,
+            )
+            insert_new_request=False
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                executor.submit(
+                    Utils.process_requests,
+                    engine=engine,
+                    prompts_queue=prompts_queue,
+                    add_new_request_notice=add_new_request_notice,
+                    strategy=strategy,
+                    result_queue=result_queue,
+                    batch_size=batch_size,
+                    enable_chunk_prefill=enable_chunk_prefill,
+                    policy=policy,
+                    repeat_time=repeat_time,
+                    max_token_num=max_token_num,
+                    random_seed=10,
+                    prefill_mode=prefill_mode,
+                    insert_new_request=insert_new_request,
+                    insert_new_request_round=3,
+                    preemption_mode=args.default_preemption_mode
                 )
-                with ThreadPoolExecutor(max_workers=2) as executor:
-                    executor.submit(
-                        Utils.process_requests,
-                        engine=engine,
-                        prompts_queue=prompts_queue,
-                        add_new_request_notice=add_new_request_notice,
-                        strategy=strategy,
-                        result_queue=result_queue,
-                        batch_size=updated_token_num,
-                        enable_chunk_prefill=enable_chunk_prefill,
-                        policy=policy,
-                        repeat_time=repeat_time,
-                        max_token_num=max_token_num,
-                        random_seed=10,
-                        prefill_mode=prefill_mode,
-                        insert_new_request=insert_new_request,
-                        insert_new_request_round=3,
-                        preemption_mode=args.default_preemption_mode
-                    )
-                    # print(insert_new_request)
-                    # wait for all threads to finish
-                    if insert_new_request:
-                        executor.submit(
-                            add_new_request,
-                            seqs,
-                            prompts_queue,
-                            add_new_request_notice,
-                            20000 + token_num - updated_token_num,
-                        )
-                    executor.shutdown(wait=True)
-            except Exception as e:
-                print(e)
+                executor.shutdown(wait=True)
+        except Exception as e:
+            print(e)
 
 
 def skip_combination(df, batch_size, policy="fcfs", random_seed=10):
@@ -172,7 +143,7 @@ if __name__ == "__main__":
     with mp.Manager() as manager:
         result_queue = manager.Queue()
         max_token_nums = [1912]
-        batch_sizes = [1912]
+        batch_sizes = [512]
         total_iter_result, total_request_result = Utils.load_tmp_result(
             test_type, BASE_DIR
         )
