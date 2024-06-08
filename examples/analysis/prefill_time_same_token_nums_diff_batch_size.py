@@ -149,7 +149,6 @@ def skip_combination(df, batch_size, policy="fcfs", random_seed=10):
 
 
 if __name__ == "__main__":
-    os.environ["HF_TOKEN"] = "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"
     test_type = "diff_prefill_bs_compare_swap"
     rerun = True
     with mp.Manager() as manager:

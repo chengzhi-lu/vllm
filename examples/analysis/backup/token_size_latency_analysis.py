@@ -281,7 +281,7 @@ def skip_combination(df, batch_size, policy, random_seed, request_num):
 
 
 if __name__ == "__main__":
-    os.environ["HF_TOKEN"] = "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"
+    os.environ["HF_TOKEN"] = "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"
     test_type = "token_latency_swap_multi_tokens_limit"
     # test_type = "token_latency_swap_pp"
     rerun = True
