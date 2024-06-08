@@ -85,6 +85,8 @@ class EngineArgs:
     scheduler_policy: str = "fcfs"
     
     guided_decoding_backend: str = 'outlines'
+    default_preemption_mode: str = None
+    
     # Speculative decoding configuration.
     speculative_model: Optional[str] = None
     num_speculative_tokens: Optional[int] = None
@@ -644,6 +646,7 @@ class EngineArgs:
             delay_factor=self.scheduler_delay_factor,
             enable_chunked_prefill=self.enable_chunked_prefill,
             policy=self.scheduler_policy,
+            preemption_mode=self.default_preemption_mode,
             embedding_mode=model_config.embedding_mode,
         )
         lora_config = LoRAConfig(

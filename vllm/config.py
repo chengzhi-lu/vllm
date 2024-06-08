@@ -663,6 +663,7 @@ class SchedulerConfig:
         delay_factor: float = 0.0,
         enable_chunked_prefill: bool = False,
         policy: str = "fcfs",
+        preemption_mode: Optional[str] = None,
         embedding_mode: Optional[bool] = False,
     ) -> None:
         if max_num_batched_tokens is not None:
@@ -690,6 +691,7 @@ class SchedulerConfig:
         self.delay_factor = delay_factor
         self.chunked_prefill_enabled = enable_chunked_prefill
         self.policy = policy
+        self.preemption_mode = preemption_mode
         self.embedding_mode = embedding_mode
 
         self._verify_args()

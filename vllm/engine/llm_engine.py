@@ -208,6 +208,7 @@ class LLMEngine:
         self.load_config = load_config
         self.decoding_config = decoding_config or DecodingConfig()
         self.log_stats = log_stats
+        self.stats = None
 
         if not self.model_config.skip_tokenizer_init:
             self.tokenizer = self._init_tokenizer()
@@ -667,6 +668,7 @@ class LLMEngine:
         num_running_to_waiting: int,
         num_waiting_to_running: int,
         recomputed_token_nums: int,
+        num_preemption_iter: int
     ) -> List[Union[RequestOutput, EmbeddingRequestOutput]]:
         """Apply the model output to the sequences in the scheduled seq groups.
 
@@ -698,8 +700,12 @@ class LLMEngine:
         # Free the finished sequence groups.
         self.scheduler.free_finished_seq_groups()
         additional_info = AdditionalInfo(
-            num_running_to_waiting=num_running_to_waiting,num_waiting_to_running=num_waiting_to_running,recomputed_token_nums=recomputed_token_nums
+            num_running_to_waiting=num_running_to_waiting,
+            num_waiting_to_running=num_waiting_to_running,
+            recomputed_token_nums=recomputed_token_nums,
+            num_preemption_iter=num_preemption_iter
             )
+
         # Create the outputs.
         request_outputs: List[Union[RequestOutput,
                                     EmbeddingRequestOutput]] = []
@@ -780,12 +786,16 @@ class LLMEngine:
                 execute_model_req=execute_model_req)
         else:
             output = []
-
+        
         request_outputs = self._process_model_outputs(
-            output, scheduler_outputs.scheduled_seq_groups,
-            scheduler_outputs.ignored_seq_groups, seq_group_metadata_list,
+            output, 
+            scheduler_outputs.scheduled_seq_groups,
+            scheduler_outputs.ignored_seq_groups, 
+            seq_group_metadata_list,
             num_running_to_waiting=scheduler_outputs.num_running_to_waiting,
-            num_waiting_to_running=scheduler_outputs.num_waiting_to_running,recomputed_token_nums=scheduler_outputs.recomputed_token_nums)
+            num_waiting_to_running=scheduler_outputs.num_waiting_to_running,
+            recomputed_token_nums=scheduler_outputs.recomputed_token_nums,
+            num_preemption_iter=scheduler_outputs.preempted)
 
         # Log stats.
         self.do_log_stats(scheduler_outputs, output)
@@ -803,16 +813,18 @@ class LLMEngine:
     def do_log_stats(
             self,
             scheduler_outputs: Optional[SchedulerOutputs] = None,
-            model_output: Optional[List[SamplerOutput]] = None) -> None:
+            model_output: Optional[List[SamplerOutput]] = None,
+            ) -> None:
         """Forced log when no requests active."""
+        stats = self._get_stats(scheduler_outputs, model_output)
         if self.log_stats:
-            self.stat_logger.log(
-                self._get_stats(scheduler_outputs, model_output))
+            self.stat_logger.log(stats)
 
     def _get_stats(
             self,
             scheduler_outputs: Optional[SchedulerOutputs],
-            model_output: Optional[List[SamplerOutput]] = None) -> Stats:
+            model_output: Optional[List[SamplerOutput]] = None,
+            ) -> Stats:
         """Get Stats to be Logged to Prometheus.
 
         Args:
@@ -955,8 +967,8 @@ class LLMEngine:
             spec_decode_metrics = model_output[0].spec_decode_worker_metrics
         else:
             spec_decode_metrics = None
-
-        return Stats(
+        
+        self.stats = Stats(
             now=now,
             # System stats
             #   Scheduler State
@@ -987,6 +999,7 @@ class LLMEngine:
             n_requests=n_requests,
             finished_reason_requests=finished_reason_requests,
         )
+        return self.stats
 
     def add_lora(self, lora_request: LoRARequest) -> bool:
         return self.model_executor.add_lora(lora_request)

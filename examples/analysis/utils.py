@@ -22,6 +22,7 @@ class RequestMetrics:
     strategy: str
     enable_chunk_prefill: bool
     policy: str
+    preemption_mode: str
 
 
 @dataclass
@@ -34,6 +35,7 @@ class IterMetrics:
     num_running_to_waiting: int
     num_waiting_to_running: int
     recomputed_token_nums: int
+    num_preemption_iter: int
     prefill_token_num_each_request: str
     cvs: float
     current_stage: str
@@ -88,6 +90,7 @@ class Utils:
         num_running_to_waiting = 0
         num_waiting_to_running = 0
         recomputed_token_nums = 0
+        num_preemption_iter = 0
         request_num_each_round = 0
         for request_output in request_outputs:
             request_num_each_round += 1
@@ -95,6 +98,7 @@ class Utils:
             num_waiting_to_running = request_output.num_running_to_waiting
             num_running_to_waiting = request_output.num_waiting_to_running
             recomputed_token_nums = request_output.recomputed_token_nums
+            num_preemption_iter = request_output.num_preemption_iter
             if len(request_output.outputs[0].token_ids) == 0:
                 # prefill stage
                 prefill_token_nums += request_output.token_chunk_size
@@ -145,6 +149,7 @@ class Utils:
             num_running_to_waiting=num_running_to_waiting,
             num_waiting_to_running=num_waiting_to_running,
             recomputed_token_nums=recomputed_token_nums,
+            num_preemption_iter=num_preemption_iter,
             current_stage=current_stage,
             wasted_block_sizes=wasted_block_sizes,
             total_block_sizes=total_block_sizes,
@@ -181,22 +186,46 @@ class Utils:
         chunks = ""
         if not enable_chunk_prefill:
             chunks = "not_chunks_"
+        
+        dir_request_result_tmp = os.path.join(
+            BASE_DIR, "data/tmp"
+        )
+
+        if not os.path.exists(dir_request_result_tmp):
+            os.makedirs(dir_request_result_tmp)
 
         request_result_tmp_path = os.path.join(
-            BASE_DIR, "data/tmp", f"tmp_{test_type}_request_level.csv"
+            dir_request_result_tmp, f"tmp_{test_type}_request_level.csv"
         )
 
-        request_result_path = os.path.join(
+
+        dir_request_result = os.path.join(
             BASE_DIR,
             "data/request_level",
+        )
+
+        if not os.path.exists(dir_request_result):
+            os.makedirs(dir_request_result)
+
+        request_result_path = os.path.join(
+            dir_request_result,
             f"{chunks}request_result_{test_type}_policy.csv",
         )
+
         iter_result_tmp_path = os.path.join(
             BASE_DIR, "data/tmp", f"tmp_{test_type}_iter_level.csv"
         )
-        iter_result_path = os.path.join(
+
+        dir_iter_result = os.path.join(
             BASE_DIR,
             "data/iter_level",
+        )
+
+        if not os.path.exists(dir_iter_result):
+            os.makedirs(dir_iter_result)
+
+        iter_result_path = os.path.join(
+            dir_iter_result,
             f"{chunks}iter_result_{test_type}_policy.csv",
         )
 
@@ -268,11 +297,16 @@ class Utils:
     def save_tmp_result(
         total_iter_result, total_request_result, test_type, BASE_DIR
     ):
+        path = os.path.join(BASE_DIR, "data/tmp")
+
+        if not os.path.exists(path):
+            os.makedirs(path)
+
         iter_result_path = os.path.join(
-            BASE_DIR, "data/tmp", f"tmp_{test_type}_iter_level.csv"
+            path, f"tmp_{test_type}_iter_level.csv"
         )
         request_result_path = os.path.join(
-            BASE_DIR, "data/tmp", f"tmp_{test_type}_request_level.csv"
+            path, f"tmp_{test_type}_request_level.csv"
         )
         total_iter_result.to_csv(iter_result_path, index=False)
         total_request_result.to_csv(request_result_path, index=False)
@@ -313,6 +347,7 @@ class Utils:
         prefill_mode: str = "vertical",
         insert_new_request: bool = False,
         insert_new_request_round: int = -1,
+        preemption_mode: str = "recompute"
     ):
         """Continuously process a list of prompts and handle the outputs."""
         namespace = uuid.NAMESPACE_URL
@@ -351,6 +386,7 @@ class Utils:
                         enable_chunk_prefill=enable_chunk_prefill,
                         strategy=strategy,
                         policy=policy,
+                        preemption_mode=preemption_mode
                     )
                 request_round = request_round + 1
                 st = time.time()
@@ -359,6 +395,15 @@ class Utils:
                 except Exception as e:
                     print("error", e)
                 et = time.time()
+
+                # try:
+                #     if engine.log_stats:
+                #         if engine.stat_logger._local_interval_elapsed(engine.stats.now):
+                #             print(f"The iteration time: {et - st}")
+                #     print(engine.stats.now)
+                # except Exception as e:
+                #     print("error", e)
+                
                 if (
                     insert_new_request
                     and request_round == insert_new_request_round

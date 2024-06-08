@@ -308,6 +308,12 @@ class Scheduler:
                                        if self.enable_artificial_preemption
                                        else 0)
         self.num_cumulative_preemption: int = 0
+        self.preemption_mode: PreemptionMode = None
+
+        if self.scheduler_config.preemption_mode == "swap":
+            self.preemption_mode = PreemptionMode.SWAP
+        elif self.scheduler_config.preemption_mode == "recompute":
+            self.preemption_mode = PreemptionMode.RECOMPUTE
 
     @property
     def lora_enabled(self) -> bool:
@@ -419,6 +425,14 @@ class Scheduler:
                 break
 
             running_queue.popleft()
+            # if self.preemption_mode == PreemptionMode.SWAP:
+            #     logger.info("The preemption mode is %s", "swap")
+            # if self.preemption_mode == PreemptionMode.RECOMPUTE:
+            #     logger.info("The preemption mode is %s", "recompute")
+
+            # logger.warning(
+            #         "preemption mode: ", self.preemption_mode)
+            
             while not self._can_append_slots(seq_group):
                 budget.subtract_num_batched_tokens(seq_group.request_id,
                                                    num_running_tokens)
@@ -431,8 +445,19 @@ class Scheduler:
                 if running_queue:
                     # Preempt the lowest-priority sequence groups.
                     victim_seq_group = running_queue.pop()
-                    preempted_mode = self._preempt(victim_seq_group,
-                                                   blocks_to_swap_out)
+
+                    # logger.warning(
+                    # "preemption mode: ", self.preemption_mode)
+
+                    if self.preemption_mode:
+                        preempted_mode = self._preempt(victim_seq_group,
+                                                    blocks_to_swap_out,
+                                                    self.preemption_mode)
+                    else:
+                        preempted_mode = self._preempt(victim_seq_group,
+                                                    blocks_to_swap_out
+                                                    )
+
                     if preempted_mode == PreemptionMode.RECOMPUTE:
                         preempted.append(victim_seq_group)
                     else:
@@ -440,8 +465,15 @@ class Scheduler:
                 else:
                     # No other sequence groups can be preempted.
                     # Preempt the current sequence group.
-                    preempted_mode = self._preempt(seq_group,
-                                                   blocks_to_swap_out)
+                    
+                    if self.preemption_mode:
+                        preempted_mode = self._preempt(seq_group,
+                                                    blocks_to_swap_out,
+                                                    self.preemption_mode)
+                    else:
+                        preempted_mode = self._preempt(seq_group,
+                                                    blocks_to_swap_out)
+
                     if preempted_mode == PreemptionMode.RECOMPUTE:
                         preempted.append(seq_group)
                     else:

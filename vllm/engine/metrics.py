@@ -228,6 +228,7 @@ class StatLogger:
         self.metrics = Metrics(labelnames=list(labels.keys()),
                                max_model_len=max_model_len)
 
+
     def info(self, type: str, obj: SupportsMetricsInfo) -> None:
         if type == "cache_config":
             self.metrics.info_cache_config.info(obj.metrics_info())
@@ -340,14 +341,19 @@ class StatLogger:
             self._log_prometheus_interval(
                 prompt_throughput=prompt_throughput,
                 generation_throughput=generation_throughput)
-
+            
+            logger.info(
+                "Num preemption per iter: %d",
+                stats.num_preemption_iter
+            )
+            
             # Log to stdout.
             logger.info(
                 "Avg prompt throughput: %.1f tokens/s, "
                 "Avg generation throughput: %.1f tokens/s, "
                 "Running: %d reqs, Swapped: %d reqs, "
                 "Pending: %d reqs, GPU KV cache usage: %.1f%%, "
-                "CPU KV cache usage: %.1f%%.",
+                "CPU KV cache usage: %.1f%%."
                 "In PageFragmeents: %d",
                 prompt_throughput,
                 generation_throughput,

@@ -102,7 +102,7 @@ def main(
     except Exception as e:
         print(e)
     add_new_request_notice = Queue()
-    print(f"start strategy: {strategy}, prefill_mode: {prefill_mode}")
+    print(f"start preemption: {default_preemption_mode}")
     for token_num in range(4, max_token_num, 40):
         for repeat_time in range(5):
             prompts_queue = Queue()
@@ -136,7 +136,9 @@ def main(
                         prefill_mode=prefill_mode,
                         insert_new_request=insert_new_request,
                         insert_new_request_round=3,
+                        preemption_mode=args.default_preemption_mode
                     )
+                    # print(insert_new_request)
                     # wait for all threads to finish
                     if insert_new_request:
                         executor.submit(
@@ -144,7 +146,7 @@ def main(
                             seqs,
                             prompts_queue,
                             add_new_request_notice,
-                            token_num - updated_token_num,
+                            20000 + token_num - updated_token_num,
                         )
                     executor.shutdown(wait=True)
             except Exception as e:
@@ -165,8 +167,7 @@ def skip_combination(df, batch_size, policy="fcfs", random_seed=10):
 
 
 if __name__ == "__main__":
-    # os.environ["HF_TOKEN"] = "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"
-    test_type = "diff_prefill_decode_compare_swap"
+    test_type = "preemption_overhead_swapout"
     rerun = True
     with mp.Manager() as manager:
         result_queue = manager.Queue()
@@ -176,62 +177,65 @@ if __name__ == "__main__":
             test_type, BASE_DIR
         )
         enable_chunk_prefill = True
-        default_preemption_mode = "swap"
+        # default_preemption_mode = "swap"
+        preemption_modes = ["swap", "recompute"]
         default_policy = "fcfs"
-        strategies = ["full", "hybrid"]
+        strategies = ["hybrid"]
         # If prefill mode is horizonal, the sequences length is equals to the token nums, otherwise, the batch size equals to the token nums  # noqa: E501
-        prefill_modes = ["horizonal", "vertical"]
-        for strategy in strategies:
-            for batch_size in batch_sizes:
+        prefill_modes = ["vertical"]
+        for preemption_mode in preemption_modes:
+            for strategy in strategies:
                 for prefill_mode in prefill_modes:
-                    for max_token_num in max_token_nums:
-                        try:
-                            if (
-                                skip_combination(
-                                    total_iter_result,
-                                    batch_size,
-                                )
-                                and not rerun
-                                and (
-                                    prefill_mode == "horizonal"
-                                    and strategy == "hybrid"
-                                )
-                            ):
-                                continue
-                            with ProcessPoolExecutor(max_workers=2) as executor:
-                                executor.submit(
-                                    main,
-                                    max_token_num=max_token_num,
-                                    batch_size=batch_size,
-                                    result_queue=result_queue,
-                                    enable_chunk_prefill=enable_chunk_prefill,
-                                    policy=default_policy,
-                                    default_preemption_mode=default_preemption_mode,
-                                    strategy=strategy,
-                                    prefill_mode=prefill_mode,
-                                )
-                                executor.shutdown(wait=True)
-                            while not result_queue.empty():
-                                item = result_queue.get()
-                                iter_result, request_result = (
-                                    item[0],
-                                    item[1],
-                                )
-                                total_iter_result = pd.concat(
-                                    [total_iter_result, iter_result]
-                                )
-                                total_request_result = pd.concat(
-                                    [total_request_result, request_result]
-                                )
-                            if len(total_iter_result) > 0:
-                                Utils.save_tmp_result(
-                                    total_iter_result,
-                                    total_request_result,
-                                    test_type,
-                                    BASE_DIR,
-                                )
-                        except Exception as e:
-                            print(e)
+                    for batch_size in batch_sizes:
+                        for max_token_num in max_token_nums:
+                            try:
+                                if (
+                                    skip_combination(
+                                        total_iter_result,
+                                        batch_size,
+                                    )
+                                    and not rerun
+                                    and (
+                                        prefill_mode == "horizonal"
+                                        and strategy == "hybrid"
+                                    )
+                                ):
+                                    continue
+                                with ProcessPoolExecutor(max_workers=2) as executor:
+                                    executor.submit(
+                                        main,
+                                        max_token_num=max_token_num,
+                                        batch_size=batch_size,
+                                        result_queue=result_queue,
+                                        enable_chunk_prefill=enable_chunk_prefill,
+                                        policy=default_policy,
+                                        default_preemption_mode=preemption_mode,
+                                        strategy=strategy,
+                                        prefill_mode=prefill_mode,
+                                    )
+                                    executor.shutdown(wait=True)
+                                while not result_queue.empty():
+                                    item = result_queue.get()
+                                    iter_result, request_result = (
+                                        item[0],
+                                        item[1],
+                                    )
+                                    total_iter_result = pd.concat(
+                                        [total_iter_result, iter_result]
+                                    )
+                                    total_request_result = pd.concat(
+                                        [total_request_result, request_result]
+                                    )
+                                if len(total_iter_result) > 0:
+                                    Utils.save_tmp_result(
+                                        total_iter_result,
+                                        total_request_result,
+                                        test_type,
+                                        BASE_DIR,
+                                    )
+                                    print("save tmp results successfully!")
+                            except Exception as e:
+                                print(e)
         if len(total_iter_result) > 0:
             Utils.save_result(
                 total_iter_result,

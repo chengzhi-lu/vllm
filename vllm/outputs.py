@@ -67,6 +67,7 @@ class AdditionalInfo:
     num_running_to_waiting: int
     num_waiting_to_running: int
     recomputed_token_nums: int
+    num_preemption_iter: int
 
 class RequestOutput:
     """The output data of a completion request to the LLM.
@@ -98,6 +99,7 @@ class RequestOutput:
         num_running_to_waiting: Optional[int] = None,
         num_waiting_to_running: Optional[int] = None,
         recomputed_token_nums: Optional[int] = None,
+        num_preemption_iter: Optional[int] = None,
     ) -> None:
         self.request_id = request_id
         self.prompt = prompt
@@ -113,9 +115,10 @@ class RequestOutput:
         self.num_running_to_waiting = num_running_to_waiting
         self.num_waiting_to_running = num_waiting_to_running
         self.recomputed_token_nums = recomputed_token_nums
+        self.num_preemption_iter = num_preemption_iter
 
     @classmethod
-    def from_seq_group(cls, seq_group: SequenceGroup, token_chunk_size: int,num_running_to_waiting: int, num_waiting_to_running: int,recomputed_token_nums: int) -> "RequestOutput":
+    def from_seq_group(cls, seq_group: SequenceGroup, token_chunk_size: int,num_running_to_waiting: int, num_waiting_to_running: int,recomputed_token_nums: int, num_preemption_iter: int) -> "RequestOutput":
         if seq_group.sampling_params is None:
             raise ValueError(
                 "Sampling parameters are missing for a CompletionRequest.")
@@ -175,7 +178,8 @@ class RequestOutput:
                    total_block_size=total_block_size,
                    num_running_to_waiting=num_running_to_waiting,
                    num_waiting_to_running=num_waiting_to_running,
-                   recomputed_token_nums=recomputed_token_nums,)
+                   recomputed_token_nums=recomputed_token_nums,
+                   num_preemption_iter=num_preemption_iter)
 
     def __repr__(self) -> str:
         return (f"RequestOutput(request_id={self.request_id}, "
@@ -244,5 +248,9 @@ class RequestOutputFactory:
                    'embeddings') and seq_group.embeddings is not None:
             return EmbeddingRequestOutput.from_seq_group(seq_group)
         else:
-            
-            return RequestOutput.from_seq_group(seq_group,token_chunk_size, additional_info.num_running_to_waiting,additional_info.num_waiting_to_running,additional_info.recomputed_token_nums)
+            return RequestOutput.from_seq_group(
+                seq_group,token_chunk_size, 
+                additional_info.num_running_to_waiting,
+                additional_info.num_waiting_to_running,
+                additional_info.recomputed_token_nums, 
+                additional_info.num_preemption_iter)
