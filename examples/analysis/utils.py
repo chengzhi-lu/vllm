@@ -390,10 +390,7 @@ class Utils:
                     )
                 request_round = request_round + 1
                 st = time.time()
-                try:
-                    request_outputs: List[RequestOutput] = engine.step()
-                except Exception as e:
-                    print("error", e)
+                request_outputs: List[RequestOutput] = engine.step()
                 et = time.time()
 
                 # try:

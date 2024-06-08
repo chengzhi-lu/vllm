@@ -1,7 +1,7 @@
 from collections import deque
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from typing import Deque
-import numpy as np
+import time
 
 from vllm.sequence import SequenceGroup
 import random
@@ -17,20 +17,27 @@ class AgentModel:
 
     def _init_model(self, model_name):
         model = AutoModelForCausalLM.from_pretrained(model_name)
-
+        model.to("cuda:0")
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         eos_token_id = tokenizer.eos_token_id
         return model, tokenizer, eos_token_id
 
     def generate(self, input_ids):
         # Get the model output
+        input_ids = input_ids.to(self.model.device)
+        # print(input_ids)
         with torch.no_grad():
             output = self.model(input_ids, return_dict=True)
         logits = output["logits"]
         probs = F.softmax(logits, dim=-1)
-        next_token_probs = probs[:, -1, self.eos_token_id]
-        eos_probs = float(torch.sum(next_token_probs))
-        return eos_probs
+        # print(probs)
+        next_token_probs = list(
+            probs[:, -1, self.eos_token_id].to("cpu").numpy()
+        )
+        # print(next_token_probs)
+        # eos_probs = torch.sum(next_token_probs, dim=0)
+        # print(eos_probs)
+        return next_token_probs
 
     def __call__(self, input_ids):
         return self.generate(input_ids)
@@ -83,13 +90,42 @@ class InferSchedule(Policy):
         self.agent_model = AgentModel()
 
     # maximize the number of tokens in the queue while ensuring the sequences with higher probability to finish first.
-    def get_priority(self, now: float, seq_group: SequenceGroup) -> float:
-        seqs = seq_group.get_seqs()
+    def get_priority(
+        self, now: float, seq_groups: Deque[SequenceGroup]
+    ) -> float:
+        st = time.time()
+        seq_groups = list(seq_groups)
         input_tokens = []
-        for seq in seqs:
-            input_tokens.append(seq.get_token_ids())
-        eos_probability = self.agent_model(input_tokens)
-        return eos_probability
+        for seq_group in seq_groups:
+            seqs = seq_group.get_seqs()
+            for seq in seqs:
+                input_tokens.append(seq.get_token_ids())
+        input_tokens = torch.tensor(input_tokens)
+        et = time.time()
+        print("Get input tokens time: ", et - st)
+        st = time.time()
+        if len(input_tokens) == 0:
+            return deque(seq_groups)
+        eos_probabilities = self.agent_model(input_tokens)
+        et = time.time()
+        print("Agent model time: ", et - st)
+        st = time.time()
+        seq_groups_dict = {k: v for k, v in zip(seq_groups, eos_probabilities)}
+        # sort seq_groups by eos probability
+        sorted_seq_groups = sorted(
+            seq_groups_dict.items(), key=lambda x: x[1], reverse=True
+        )
+        seq_groups = deque([i[0] for i in sorted_seq_groups])
+        et = time.time()
+        print("parse result time: ", et - st)
+        return seq_groups
+
+    def sort_by_priority(
+        self,
+        now: float,
+        seq_groups: Deque[SequenceGroup],
+    ) -> Deque[SequenceGroup]:
+        return self.get_priority(now, seq_groups)
 
 
 class Random(Policy):

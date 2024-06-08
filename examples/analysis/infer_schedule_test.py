@@ -104,53 +104,41 @@ def main(
     except Exception as e:
         print(e)
     add_new_request_notice = Queue()
-    print(f"start strategy: {strategy}, prefill_mode: {prefill_mode}")
-    for token_num in range(4, max_token_num, 40):
-        for repeat_time in range(5):
-            prompts_queue = Queue()
-            if strategy == "hybrid":
-                updated_token_num = int(token_num / 2)
-                insert_new_request = True
-            elif strategy == "full":
-                updated_token_num = int(token_num)
-                insert_new_request = False
-            try:
-                create_init_prompts(
-                    seqs,
-                    prompts_queue,
-                    updated_token_num,
-                    prefill_mode,
+    print(
+        f"start strategy: {strategy}, prefill_mode: {prefill_mode}, policy is {policy}"
+    )
+    for repeat_time in range(1):
+        prompts_queue = Queue()
+        updated_token_num = int(batch_size)
+        insert_new_request = False
+        try:
+            create_init_prompts(
+                seqs,
+                prompts_queue,
+                updated_token_num,
+                prefill_mode,
+            )
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                executor.submit(
+                    Utils.process_requests,
+                    engine=engine,
+                    prompts_queue=prompts_queue,
+                    add_new_request_notice=add_new_request_notice,
+                    strategy=strategy,
+                    result_queue=result_queue,
+                    batch_size=updated_token_num,
+                    enable_chunk_prefill=enable_chunk_prefill,
+                    policy=policy,
+                    repeat_time=repeat_time,
+                    max_token_num=max_token_num,
+                    random_seed=10,
+                    prefill_mode=prefill_mode,
+                    insert_new_request=insert_new_request,
+                    insert_new_request_round=3,
                 )
-                with ThreadPoolExecutor(max_workers=2) as executor:
-                    executor.submit(
-                        Utils.process_requests,
-                        engine=engine,
-                        prompts_queue=prompts_queue,
-                        add_new_request_notice=add_new_request_notice,
-                        strategy=strategy,
-                        result_queue=result_queue,
-                        batch_size=updated_token_num,
-                        enable_chunk_prefill=enable_chunk_prefill,
-                        policy=policy,
-                        repeat_time=repeat_time,
-                        max_token_num=max_token_num,
-                        random_seed=10,
-                        prefill_mode=prefill_mode,
-                        insert_new_request=insert_new_request,
-                        insert_new_request_round=3,
-                    )
-                    # wait for all threads to finish
-                    if insert_new_request:
-                        executor.submit(
-                            add_new_request,
-                            seqs,
-                            prompts_queue,
-                            add_new_request_notice,
-                            token_num - updated_token_num,
-                        )
-                    executor.shutdown(wait=True)
-            except Exception as e:
-                print(e)
+                executor.shutdown(wait=True)
+        except Exception as e:
+            print(e)
 
 
 def skip_combination(df, batch_size, policy="fcfs", random_seed=10):
@@ -172,13 +160,13 @@ if __name__ == "__main__":
     with mp.Manager() as manager:
         result_queue = manager.Queue()
         max_token_nums = [1912]
-        batch_sizes = [1912]
+        batch_sizes = [32]
         total_iter_result, total_request_result = Utils.load_tmp_result(
             test_type, BASE_DIR
         )
         enable_chunk_prefill = True
         default_preemption_mode = "swap"
-        policies = ["fcfs", "infer"]
+        policies = ["infer","fcfs"]
         strategies = ["full"]
         # If prefill mode is horizonal, the sequences length is equals to the token nums, otherwise, the batch size equals to the token nums  # noqa: E501
         prefill_modes = ["vertical"]
