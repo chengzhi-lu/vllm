@@ -46,7 +46,7 @@ class Sampler(nn.Module):
         # Whether or not the SamplerOutput should have on-device tensors
         # containing the sampled token ids and probabilities. This is used by
         # speculative decoding.
-        self.include_gpu_probs_tensor = False
+        self.include_gpu_probs_tensor = True
 
     def forward(
         self,
@@ -60,9 +60,7 @@ class Sampler(nn.Module):
         """
         assert logits is not None
         _, vocab_size = logits.shape
-
         logits = _apply_min_tokens_penalty(logits, sampling_metadata)
-
         # Prepare sampling tensors with pinned memory to avoid blocking.
         (sampling_tensors, do_penalties, do_top_p_top_k,
          do_min_p) = SamplingTensors.from_sampling_metadata(
@@ -79,20 +77,17 @@ class Sampler(nn.Module):
         # Apply temperature scaling.
         # Use in-place division to avoid creating a new tensor.
         logits.div_(sampling_tensors.temperatures.unsqueeze_(dim=1))
-
         if do_top_p_top_k:
             logits = _apply_top_k_top_p(logits, sampling_tensors.top_ps,
                                         sampling_tensors.top_ks)
 
         if do_min_p:
             logits = _apply_min_p(logits, sampling_tensors.min_ps)
-
         # We use float32 for probabilities and log probabilities.
         # Compute the probabilities.
         probs = torch.softmax(logits, dim=-1, dtype=torch.float)
         # Compute the log probabilities.
         logprobs = torch.log_softmax(logits, dim=-1, dtype=torch.float)
-
         # Sample the next tokens.
         sample_results, maybe_sampled_tokens_tensor = _sample(
             probs,
@@ -451,11 +446,11 @@ def _multinomial(
 
 
 def _sample_with_torch(
-    probs: torch.Tensor,
-    logprobs: torch.Tensor,
-    sampling_metadata: SamplingMetadata,
-    include_gpu_probs_tensor: bool,
-    modify_greedy_probs: bool,
+        probs: torch.Tensor,
+        logprobs: torch.Tensor,
+        sampling_metadata: SamplingMetadata,
+        include_gpu_probs_tensor: bool,  # default is False
+        modify_greedy_probs: bool,  # default is False
 ) -> Tuple[SampleResultType, Optional[torch.Tensor]]:
     categorized_seq_group_ids: Dict[SamplingType,
                                     List[int]] = {t: []
@@ -808,11 +803,11 @@ def _get_logprobs(
              seq_group, selected_logprobs, ranks, top_token_ids, top_logprobs,
              selected_logprobs_idx, top_logprob_idx)
         prompt_logprobs_per_seq_group.append(prompt_logprobs)
-
         (sampled_logprobs, top_logprob_idx,
          selected_logprobs_idx) = _get_sampled_logprob_if_needed(
-             seq_group, sample_result, selected_logprobs, ranks, top_token_ids,
-             top_logprobs, selected_logprobs_idx, top_logprob_idx)
+             seq_group, sample_result, selected_logprobs, logprobs, ranks,
+             top_token_ids, top_logprobs, selected_logprobs_idx,
+             top_logprob_idx)
         sample_logprobs_per_seq_group.append(sampled_logprobs)
 
     return prompt_logprobs_per_seq_group, sample_logprobs_per_seq_group
@@ -882,6 +877,7 @@ def _get_sampled_logprob_if_needed(
     seq_group: SequenceGroupToSample,
     sample_result: Tuple[List[int], List[int]],
     selected_logprobs: torch.Tensor,
+    logprobs: torch.Tensor,
     ranks: torch.Tensor,
     top_token_ids: torch.Tensor,
     top_logprobs: torch.Tensor,
@@ -898,6 +894,8 @@ def _get_sampled_logprob_if_needed(
         assert len(next_token_ids) > 0
         # Pre-select items from tensor. tolist() is faster than repetitive
         # `.item()` calls.
+        eos_token_items = logprobs[:,
+                                   seq_group.eos_token_id].flatten().tolist()
         selected_logprob_items = selected_logprobs[
             selected_logprobs_idx:selected_logprobs_idx +
             len(next_token_ids)].tolist()
@@ -907,7 +905,9 @@ def _get_sampled_logprob_if_needed(
                   parent_id) in enumerate(zip(next_token_ids, parent_seq_ids)):
             # Get the logprob of a sampled token.
             sampled_logprobs_dict = {
-                next_token_id: (selected_logprob_items[idx], rank_items[idx])
+                next_token_id: (selected_logprob_items[idx], rank_items[idx]),
+                seq_group.eos_token_id:
+                (eos_token_items[idx], rank_items[idx]),
             }
             # Get top K logprobs.
             if num_logprobs > 0:

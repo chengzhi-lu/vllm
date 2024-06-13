@@ -62,12 +62,15 @@ class EmbeddingOutput:
     def __repr__(self) -> str:
         return (f"EmbeddingOutput("
                 f"embedding={len(self.embedding)}")
+
+
 @dataclass
 class AdditionalInfo:
     num_running_to_waiting: int
     num_waiting_to_running: int
     recomputed_token_nums: int
     num_preemption_iter: int
+
 
 class RequestOutput:
     """The output data of a completion request to the LLM.
@@ -118,7 +121,10 @@ class RequestOutput:
         self.num_preemption_iter = num_preemption_iter
 
     @classmethod
-    def from_seq_group(cls, seq_group: SequenceGroup, token_chunk_size: int,num_running_to_waiting: int, num_waiting_to_running: int,recomputed_token_nums: int, num_preemption_iter: int) -> "RequestOutput":
+    def from_seq_group(cls, seq_group: SequenceGroup, token_chunk_size: int,
+                       num_running_to_waiting: int,
+                       num_waiting_to_running: int, recomputed_token_nums: int,
+                       num_preemption_iter: int) -> "RequestOutput":
         if seq_group.sampling_params is None:
             raise ValueError(
                 "Sampling parameters are missing for a CompletionRequest.")
@@ -242,15 +248,17 @@ class EmbeddingRequestOutput:
 class RequestOutputFactory:
 
     @staticmethod
-    def create(seq_group, additional_info:AdditionalInfo=None, token_chunk_size:int=0):
+    def create(seq_group,
+               additional_info: AdditionalInfo,
+               token_chunk_size: int = 0):
         # Determine the type based on a condition, for example:
         if hasattr(seq_group,
                    'embeddings') and seq_group.embeddings is not None:
             return EmbeddingRequestOutput.from_seq_group(seq_group)
         else:
             return RequestOutput.from_seq_group(
-                seq_group,token_chunk_size, 
+                seq_group, token_chunk_size,
                 additional_info.num_running_to_waiting,
                 additional_info.num_waiting_to_running,
-                additional_info.recomputed_token_nums, 
+                additional_info.recomputed_token_nums,
                 additional_info.num_preemption_iter)

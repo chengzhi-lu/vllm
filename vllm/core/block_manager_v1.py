@@ -293,6 +293,10 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         else:
             return AllocStatus.LATER
 
+    def can_allocat_infer(self, required_block_size: int) -> bool:
+        num_free_gpu_blocks = self.gpu_allocator.get_num_free_blocks()
+        return num_free_gpu_blocks - required_block_size >= self.watermark_blocks
+
     def _allocate_sequence(self, \
                            seq: Sequence, \
                            ref_count: int, \

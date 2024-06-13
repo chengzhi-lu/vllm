@@ -59,6 +59,9 @@ class BenchmarkMetrics:
     mean_itl_ms: float
     median_itl_ms: float
     p99_itl_ms: float
+    mean_lat_ms: float
+    median_lat_ms: float
+    p99_lat_ms: float
 
 
 def sample_sharegpt_requests(
@@ -206,6 +209,7 @@ def calculate_metrics(
     itls = []
     tpots = []
     ttfts = []
+    latencies = []
     for i in range(len(outputs)):
         if outputs[i].success:
             # We use the tokenizer to count the number of output tokens for all
@@ -222,6 +226,7 @@ def calculate_metrics(
                     (outputs[i].latency - outputs[i].ttft) / (output_len - 1))
             itls += outputs[i].itl
             ttfts.append(outputs[i].ttft)
+            latencies.append(outputs[i].latency)
             completed += 1
         else:
             actual_output_lens.append(0)
@@ -248,6 +253,9 @@ def calculate_metrics(
         mean_itl_ms=np.mean(itls or 0) * 1000,
         median_itl_ms=np.median(itls or 0) * 1000,
         p99_itl_ms=np.percentile(itls or 0, 99) * 1000,
+        mean_lat_ms=np.mean(latencies or 0) * 1000,
+        median_lat_ms=np.median(latencies or 0) * 1000,
+        p99_lat_ms=np.percentile(latencies or 0, 99) * 1000,
     )
 
     return metrics, actual_output_lens
@@ -351,6 +359,11 @@ async def benchmark(
     print("{:<40} {:<10.2f}".format("Mean ITL (ms):", metrics.mean_itl_ms))
     print("{:<40} {:<10.2f}".format("Median ITL (ms):", metrics.median_itl_ms))
     print("{:<40} {:<10.2f}".format("P99 ITL (ms):", metrics.p99_itl_ms))
+    print("{s:{c}^{n}}".format(s='Request Latency', n=50, c='-'))
+    print("{:<40} {:<10.2f}".format("Mean Lat. (ms):", metrics.mean_lat_ms))
+    print("{:<40} {:<10.2f}".format("Median Lat. (ms):",
+                                    metrics.median_lat_ms))
+    print("{:<40} {:<10.2f}".format("P99 Lat. (ms):", metrics.p99_lat_ms))
     print("=" * 50)
 
     result = {
@@ -370,25 +383,42 @@ async def benchmark(
         "mean_itl_ms": metrics.mean_itl_ms,
         "median_itl_ms": metrics.median_itl_ms,
         "p99_itl_ms": metrics.p99_itl_ms,
+        "mean_lat_ms": metrics.mean_lat_ms,
+        "median_lat_ms": metrics.median_lat_ms,
+        "p99_lat_ms": metrics.p99_lat_ms,
         "input_lens": [output.prompt_len for output in outputs],
         "output_lens": actual_output_lens,
         "ttfts": [output.ttft for output in outputs],
         "itls": [output.itl for output in outputs],
-        "generated_texts": [output.generated_text for output in outputs],
-        "errors": [output.error for output in outputs],
+        # "generated_texts": [output.generated_text for output in outputs],
+        # "errors": [output.error for output in outputs],
+        "latencies": [output.latency for output in outputs],
     }
     return result
 
 
+def check_health(api_url: str) -> bool:
+    import requests
+    ready = False
+    while not ready:
+        try:
+            check_health_url = api_url + "/health"
+            r = requests.get(check_health_url)
+            if r.status_code == 200:
+                ready = True
+        except Exception:
+            continue
+
+
 def main(args: argparse.Namespace):
     print(args)
+
     random.seed(args.seed)
     np.random.seed(args.seed)
 
     backend = args.backend
     model_id = args.model
     tokenizer_id = args.tokenizer if args.tokenizer is not None else args.model
-
     if args.base_url is not None:
         api_url = f"{args.base_url}{args.endpoint}"
     else:
@@ -396,7 +426,7 @@ def main(args: argparse.Namespace):
 
     tokenizer = get_tokenizer(tokenizer_id,
                               trust_remote_code=args.trust_remote_code)
-
+    check_health(f"http://{args.host}:{args.port}")
     if args.dataset is not None:
         warnings.warn(
             "The '--dataset' argument will be deprecated in the next "
@@ -498,7 +528,7 @@ def main(args: argparse.Namespace):
 
         # Save to file
         base_model_id = model_id.split("/")[-1]
-        file_name = f"{backend}-{args.request_rate}qps-{base_model_id}-{current_dt}.json"  #noqa
+        file_name = f"{backend}-{args.request_rate}qps-{base_model_id}-{current_dt}-{args.scheduler_policy}.json"  #noqa
         if args.result_dir:
             file_name = os.path.join(args.result_dir, file_name)
         with open(file_name, "w") as outfile:
@@ -576,7 +606,7 @@ if __name__ == "__main__":
         "--sharegpt-output-len",
         type=int,
         default=None,
-        help="Output length for each request. Overrides the output length "
+        help="Max output length for each request. Overrides the output length "
         "from the ShareGPT dataset.")
     parser.add_argument(
         "--sonnet-input-len",
@@ -639,6 +669,11 @@ if __name__ == "__main__":
         help="Specify directory to save benchmark json results."
         "If not specified, results are saved in the current directory.",
     )
+    parser.add_argument("--scheduler-policy",
+                        type=str,
+                        default="fcfs",
+                        choices=["fcfs", "infer"],
+                        help="Specify the scheduler policy.")
 
     args = parser.parse_args()
     main(args)

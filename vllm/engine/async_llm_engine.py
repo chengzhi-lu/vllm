@@ -238,8 +238,14 @@ class _AsyncLLMEngine(LLMEngine):
             output = []
 
         request_outputs = self._process_model_outputs(
-            output, scheduler_outputs.scheduled_seq_groups,
-            scheduler_outputs.ignored_seq_groups, seq_group_metadata_list)
+            output,
+            scheduler_outputs.scheduled_seq_groups,
+            scheduler_outputs.ignored_seq_groups,
+            seq_group_metadata_list,
+            num_running_to_waiting=scheduler_outputs.num_running_to_waiting,
+            num_waiting_to_running=scheduler_outputs.num_waiting_to_running,
+            recomputed_token_nums=scheduler_outputs.recomputed_token_nums,
+            num_preemption_iter=scheduler_outputs.preempted)
 
         # Log stats.
         self.do_log_stats(scheduler_outputs, output)

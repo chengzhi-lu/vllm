@@ -8,6 +8,7 @@ import os
 from queue import Queue
 from multiprocessing import Queue as MQueue
 import uuid
+import traceback
 
 
 @dataclass
@@ -17,6 +18,7 @@ class RequestMetrics:
     decode_length: int
     request_start_time: float
     request_end_time: float
+    request_latency: float
     batch_size: int
     random_seed: int
     strategy: str
@@ -54,6 +56,7 @@ class IterMetrics:
 
 
 class Utils:
+
     @staticmethod
     def calc_cv(prompt_lens: List[int]):
         if len(prompt_lens) == 0:
@@ -103,14 +106,12 @@ class Utils:
                 # prefill stage
                 prefill_token_nums += request_output.token_chunk_size
                 prefill_token_num_each_request.append(
-                    (request_id, request_output.token_chunk_size)
-                )
+                    (request_id, request_output.token_chunk_size))
                 prefill_stage = True
             elif len(request_output.outputs[0].token_ids) == 1:
                 prefill_token_nums += request_output.token_chunk_size
                 prefill_token_num_each_request.append(
-                    (request_id, request_output.token_chunk_size)
-                )
+                    (request_id, request_output.token_chunk_size))
                 decode_token_nums += 0
                 prefill_stage = True
             else:
@@ -119,8 +120,7 @@ class Utils:
             if request_output.finished:
                 request_metrics[f"{request_id}"].request_end_time = time.time()
                 request_metrics[f"{request_id}"].decode_length = len(
-                    request_output.outputs[0].token_ids
-                )
+                    request_output.outputs[0].token_ids)
             wasted_block_sizes += request_output.wasted_block_size
             total_block_sizes += request_output.total_block_size
         current_stage = "hybrid"
@@ -186,18 +186,14 @@ class Utils:
         chunks = ""
         if not enable_chunk_prefill:
             chunks = "not_chunks_"
-        
-        dir_request_result_tmp = os.path.join(
-            BASE_DIR, "data/tmp"
-        )
+
+        dir_request_result_tmp = os.path.join(BASE_DIR, "data/tmp")
 
         if not os.path.exists(dir_request_result_tmp):
             os.makedirs(dir_request_result_tmp)
 
         request_result_tmp_path = os.path.join(
-            dir_request_result_tmp, f"tmp_{test_type}_request_level.csv"
-        )
-
+            dir_request_result_tmp, f"tmp_{test_type}_request_level.csv")
 
         dir_request_result = os.path.join(
             BASE_DIR,
@@ -212,9 +208,8 @@ class Utils:
             f"{chunks}request_result_{test_type}_policy.csv",
         )
 
-        iter_result_tmp_path = os.path.join(
-            BASE_DIR, "data/tmp", f"tmp_{test_type}_iter_level.csv"
-        )
+        iter_result_tmp_path = os.path.join(BASE_DIR, "data/tmp",
+                                            f"tmp_{test_type}_iter_level.csv")
 
         dir_iter_result = os.path.join(
             BASE_DIR,
@@ -235,31 +230,25 @@ class Utils:
             if os.path.exists(iter_result_path):
                 tmp = pd.read_csv(iter_result_path)
                 total_iter_result_policy = total_request_result[
-                    "policy"
-                ].unique()
+                    "policy"].unique()
                 total_iter_result_batch_size = total_request_result[
-                    "batch_size"
-                ].unique()
+                    "batch_size"].unique()
                 # remove all rows that have the same policy and batch_size
                 tmp = tmp[
                     ~(tmp["policy"].isin(total_iter_result_policy))
-                    | ~(tmp["batch_size"].isin(total_iter_result_batch_size))
-                ]
+                    | ~(tmp["batch_size"].isin(total_iter_result_batch_size))]
                 total_iter_result = pd.concat([tmp, total_iter_result])
             else:
                 total_iter_result.to_csv(iter_result_path, index=False)
             if os.path.exists(request_result_path):
                 tmp = pd.read_csv(request_result_path)
                 total_request_result_policy = total_request_result[
-                    "policy"
-                ].unique()
+                    "policy"].unique()
                 total_request_result_batch_size = total_request_result[
-                    "batch_size"
-                ].unique()
-                tmp = tmp[
-                    ~(tmp["policy"].isin(total_request_result_policy))
-                    | ~(tmp["batch_size"].isin(total_request_result_batch_size))
-                ]
+                    "batch_size"].unique()
+                tmp = tmp[~(tmp["policy"].isin(total_request_result_policy))
+                          | ~(tmp["batch_size"].
+                              isin(total_request_result_batch_size))]
                 total_request_result = pd.concat([tmp, total_request_result])
             else:
                 total_request_result.to_csv(
@@ -277,15 +266,12 @@ class Utils:
 
     @staticmethod
     def load_tmp_result(test_type, BASE_DIR):
-        iter_result_path = os.path.join(
-            BASE_DIR, "data/tmp", f"tmp_{test_type}_iter_level.csv"
-        )
+        iter_result_path = os.path.join(BASE_DIR, "data/tmp",
+                                        f"tmp_{test_type}_iter_level.csv")
         request_result_path = os.path.join(
-            BASE_DIR, "data/tmp", f"tmp_{test_type}_request_level.csv"
-        )
+            BASE_DIR, "data/tmp", f"tmp_{test_type}_request_level.csv")
         if os.path.exists(iter_result_path) and os.path.exists(
-            request_result_path
-        ):
+                request_result_path):
             total_iter_result = pd.read_csv(iter_result_path)
             total_request_result = pd.read_csv(request_result_path)
         else:
@@ -294,20 +280,17 @@ class Utils:
         return total_iter_result, total_request_result
 
     @staticmethod
-    def save_tmp_result(
-        total_iter_result, total_request_result, test_type, BASE_DIR
-    ):
+    def save_tmp_result(total_iter_result, total_request_result, test_type,
+                        BASE_DIR):
         path = os.path.join(BASE_DIR, "data/tmp")
 
         if not os.path.exists(path):
             os.makedirs(path)
 
-        iter_result_path = os.path.join(
-            path, f"tmp_{test_type}_iter_level.csv"
-        )
+        iter_result_path = os.path.join(path,
+                                        f"tmp_{test_type}_iter_level.csv")
         request_result_path = os.path.join(
-            path, f"tmp_{test_type}_request_level.csv"
-        )
+            path, f"tmp_{test_type}_request_level.csv")
         total_iter_result.to_csv(iter_result_path, index=False)
         total_request_result.to_csv(request_result_path, index=False)
 
@@ -332,6 +315,21 @@ class Utils:
             return saved_seq
 
     @staticmethod
+    def update_request_end_time(
+        request_outputs: List[RequestOutput],
+        request_metrics: Dict[str, RequestMetrics],
+    ):
+        for request_output in request_outputs:
+            request_metrics[
+                request_output.
+                request_id].request_end_time = request_output.metrics.finished_time
+            if request_output.finished:
+                request_metrics[request_output.request_id].request_latency = (
+                    request_metrics[request_output.request_id].request_end_time
+                    - (request_metrics[
+                        request_output.request_id].request_start_time))
+
+    @staticmethod
     def process_requests(
         engine: LLMEngine,
         prompts_queue: Queue,
@@ -347,7 +345,7 @@ class Utils:
         prefill_mode: str = "vertical",
         insert_new_request: bool = False,
         insert_new_request_round: int = -1,
-        preemption_mode: str = "recompute"
+        preemption_mode: str = "recompute",
     ):
         """Continuously process a list of prompts and handle the outputs."""
         namespace = uuid.NAMESPACE_URL
@@ -359,16 +357,15 @@ class Utils:
         iter_metrics: List[IterMetrics] = []
         duplicate_prompt = 0
         try:
-            while not prompts_queue.empty() or engine.has_unfinished_requests():
+            while not prompts_queue.empty() or engine.has_unfinished_requests(
+            ):
                 while not prompts_queue.empty():
                     prompt, sampling_params, prompt_len = prompts_queue.get()
                     prompt_lens.append(prompt_len)
                     if prompt_len in prompt_lens:
                         request_id = str(
-                            uuid.uuid5(
-                                namespace, prompt + str(duplicate_prompt)
-                            )
-                        )
+                            uuid.uuid5(namespace,
+                                       prompt + str(duplicate_prompt)))
                         duplicate_prompt += 1
                     else:
                         request_id = str(uuid.uuid5(namespace, prompt))
@@ -381,18 +378,19 @@ class Utils:
                         decode_length=0,
                         request_start_time=st,
                         request_end_time=0,
+                        request_latency=-1,
                         batch_size=batch_size,
                         random_seed=random_seed,
                         enable_chunk_prefill=enable_chunk_prefill,
                         strategy=strategy,
                         policy=policy,
-                        preemption_mode=preemption_mode
+                        preemption_mode=preemption_mode,
                     )
                 request_round = request_round + 1
                 st = time.time()
                 request_outputs: List[RequestOutput] = engine.step()
                 et = time.time()
-
+                Utils.update_request_end_time(request_outputs, request_metrics)
                 # try:
                 #     if engine.log_stats:
                 #         if engine.stat_logger._local_interval_elapsed(engine.stats.now):
@@ -400,11 +398,9 @@ class Utils:
                 #     print(engine.stats.now)
                 # except Exception as e:
                 #     print("error", e)
-                
-                if (
-                    insert_new_request
-                    and request_round == insert_new_request_round
-                ):
+
+                if (insert_new_request
+                        and request_round == insert_new_request_round):
                     add_new_request_notice.put(1)
                 request_metrics, iter_metric = Utils.parse_iter_metric(
                     start_time=st,
@@ -425,10 +421,10 @@ class Utils:
 
         except Exception as e:
             print(e)
+            traceback.print_exc()
         try:
             request_result_metric = Utils.convert_request_metrics(
-                request_metrics
-            )
+                request_metrics)
             iter_result_metric = Utils.convert_iter_metrics(iter_metrics)
         except Exception as e:
             print(e)

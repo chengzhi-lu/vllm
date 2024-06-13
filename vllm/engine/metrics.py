@@ -179,7 +179,6 @@ class Stats:
 
     num_in_page_fragements: int
 
-    
     #   KV Cache Usage in %
     gpu_cache_usage_sys: float
     cpu_cache_usage_sys: float
@@ -190,6 +189,7 @@ class Stats:
     time_to_first_tokens_iter: List[float]
     time_per_output_tokens_iter: List[float]
     num_preemption_iter: int
+    num_preemption_tokens_iter: int
 
     # Request stats (should have _requests suffix)
     #   Latency
@@ -219,6 +219,7 @@ class StatLogger:
         self.last_local_log = time.time()
         self.local_interval = local_interval
 
+        self.last_num_preemption_iter = 0
         # Tracked stats over current local logging interval.
         self.num_prompt_tokens: List[int] = []
         self.num_generation_tokens: List[int] = []
@@ -227,7 +228,6 @@ class StatLogger:
         self.labels = labels
         self.metrics = Metrics(labelnames=list(labels.keys()),
                                max_model_len=max_model_len)
-
 
     def info(self, type: str, obj: SupportsMetricsInfo) -> None:
         if type == "cache_config":
@@ -329,7 +329,10 @@ class StatLogger:
         # Save tracked stats for token counters.
         self.num_prompt_tokens.append(stats.num_prompt_tokens_iter)
         self.num_generation_tokens.append(stats.num_generation_tokens_iter)
-
+        self.last_num_preemption_iter += stats.num_preemption_iter
+        if stats.num_preemption_iter > 0:
+            logger.info("Num preemption: %d", self.last_num_preemption_iter)
+            logger.info("")
         # Log locally every local_interval seconds.
         if self._local_interval_elapsed(stats.now):
             # Compute summary metrics for tracked stats (and log them
@@ -341,12 +344,7 @@ class StatLogger:
             self._log_prometheus_interval(
                 prompt_throughput=prompt_throughput,
                 generation_throughput=generation_throughput)
-            
-            logger.info(
-                "Num preemption per iter: %d",
-                stats.num_preemption_iter
-            )
-            
+
             # Log to stdout.
             logger.info(
                 "Avg prompt throughput: %.1f tokens/s, "
@@ -354,16 +352,11 @@ class StatLogger:
                 "Running: %d reqs, Swapped: %d reqs, "
                 "Pending: %d reqs, GPU KV cache usage: %.1f%%, "
                 "CPU KV cache usage: %.1f%%, "
-                "In PageFragmeents: %d.",
-                prompt_throughput,
-                generation_throughput,
-                stats.num_running_sys,
-                stats.num_swapped_sys,
-                stats.num_waiting_sys,
+                "Preemption per iter: %d", prompt_throughput,
+                generation_throughput, stats.num_running_sys,
+                stats.num_swapped_sys, stats.num_waiting_sys,
                 stats.gpu_cache_usage_sys * 100,
-                stats.cpu_cache_usage_sys * 100,
-                stats.num_in_page_fragements,
-            )
+                stats.cpu_cache_usage_sys * 100, stats.num_preemption_iter)
 
             # Reset tracked stats for next interval.
             self.num_prompt_tokens = []

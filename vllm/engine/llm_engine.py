@@ -5,7 +5,6 @@ from typing import Sequence as GenericSequence
 from typing import Type, TypeVar, Union
 
 from transformers import GenerationConfig, PreTrainedTokenizer
-import numpy as np
 
 import vllm
 from vllm.config import (CacheConfig, DecodingConfig, DeviceConfig, LoadConfig,
@@ -665,10 +664,10 @@ class LLMEngine:
         scheduled_seq_groups: List[ScheduledSequenceGroup],
         ignored_seq_groups: List[SequenceGroup],
         seq_group_metadata_list: List[SequenceGroupMetadata],
-        num_running_to_waiting: int,
-        num_waiting_to_running: int,
-        recomputed_token_nums: int,
-        num_preemption_iter: int
+        num_running_to_waiting: int = 0,
+        num_waiting_to_running: int = 0,
+        recomputed_token_nums: int = 0,
+        num_preemption_iter: int = 0
     ) -> List[Union[RequestOutput, EmbeddingRequestOutput]]:
         """Apply the model output to the sequences in the scheduled seq groups.
 
@@ -703,8 +702,7 @@ class LLMEngine:
             num_running_to_waiting=num_running_to_waiting,
             num_waiting_to_running=num_waiting_to_running,
             recomputed_token_nums=recomputed_token_nums,
-            num_preemption_iter=num_preemption_iter
-            )
+            num_preemption_iter=num_preemption_iter)
 
         # Create the outputs.
         request_outputs: List[Union[RequestOutput,
@@ -713,10 +711,12 @@ class LLMEngine:
             seq_group = scheduled_seq_group.seq_group
             token_chunk_size = scheduled_seq_group.token_chunk_size
             seq_group.maybe_set_first_token_time(now)
-            request_output = RequestOutputFactory.create(seq_group,additional_info,token_chunk_size)
+            request_output = RequestOutputFactory.create(
+                seq_group, additional_info, token_chunk_size)
             request_outputs.append(request_output)
         for seq_group in ignored_seq_groups:
-            request_output = RequestOutputFactory.create(seq_group,additional_info,0)
+            request_output = RequestOutputFactory.create(
+                seq_group, additional_info, 0)
             request_outputs.append(request_output)
         return request_outputs
 
@@ -786,11 +786,11 @@ class LLMEngine:
                 execute_model_req=execute_model_req)
         else:
             output = []
-        
+
         request_outputs = self._process_model_outputs(
-            output, 
+            output,
             scheduler_outputs.scheduled_seq_groups,
-            scheduler_outputs.ignored_seq_groups, 
+            scheduler_outputs.ignored_seq_groups,
             seq_group_metadata_list,
             num_running_to_waiting=scheduler_outputs.num_running_to_waiting,
             num_waiting_to_running=scheduler_outputs.num_waiting_to_running,
@@ -811,20 +811,20 @@ class LLMEngine:
         return request_outputs
 
     def do_log_stats(
-            self,
-            scheduler_outputs: Optional[SchedulerOutputs] = None,
-            model_output: Optional[List[SamplerOutput]] = None,
-            ) -> None:
+        self,
+        scheduler_outputs: Optional[SchedulerOutputs] = None,
+        model_output: Optional[List[SamplerOutput]] = None,
+    ) -> None:
         """Forced log when no requests active."""
         stats = self._get_stats(scheduler_outputs, model_output)
         if self.log_stats:
             self.stat_logger.log(stats)
 
     def _get_stats(
-            self,
-            scheduler_outputs: Optional[SchedulerOutputs],
-            model_output: Optional[List[SamplerOutput]] = None,
-            ) -> Stats:
+        self,
+        scheduler_outputs: Optional[SchedulerOutputs],
+        model_output: Optional[List[SamplerOutput]] = None,
+    ) -> Stats:
         """Get Stats to be Logged to Prometheus.
 
         Args:
@@ -840,21 +840,22 @@ class LLMEngine:
         num_running_sys = len(self.scheduler.running)
         num_swapped_sys = len(self.scheduler.swapped)
         num_waiting_sys = len(self.scheduler.waiting)
-        
+
         # Free internel memory in GPU blocks of the seq in waiting queue
         num_in_page_fragements_each_seq = 0
-        num_in_page_fragements = 0
+        num_in_page_fragements = 0.0
+
         for seq_group in self.scheduler.running:
             for seq in seq_group.get_seqs():
                 for token_block in seq.logical_token_blocks:
-                    num_in_page_fragements_each_seq += token_block.get_num_empty_slots()
-                if len(seq.logical_token_blocks) > 0:
-                    num_in_page_fragements += num_in_page_fragements_each_seq / len(
-                        seq.logical_token_blocks
+                    num_in_page_fragements_each_seq += token_block.get_num_empty_slots(
                     )
+                if len(seq.logical_token_blocks) > 0:
+                    num_in_page_fragements += num_in_page_fragements_each_seq / float(
+                        len(seq.logical_token_blocks))
                 else:
                     num_in_page_fragements += 0
-                    
+
         # KV Cache Usage in %
         num_total_gpu = self.cache_config.num_gpu_blocks
         gpu_cache_usage_sys = 0.
@@ -877,7 +878,10 @@ class LLMEngine:
         time_per_output_tokens_iter: List[float] = []
         num_preemption_iter = (0 if scheduler_outputs is None else
                                scheduler_outputs.preempted)
-
+        num_preemption_tokens_iter = 0
+        for seq_group in self.scheduler.swapped:
+            for seq in seq_group.get_seqs():
+                num_preemption_tokens_iter += seq.get_len()
         # Request stats
         #   Latency
         time_e2e_requests: List[float] = []
@@ -967,7 +971,7 @@ class LLMEngine:
             spec_decode_metrics = model_output[0].spec_decode_worker_metrics
         else:
             spec_decode_metrics = None
-        
+
         self.stats = Stats(
             now=now,
             # System stats
@@ -975,8 +979,9 @@ class LLMEngine:
             num_running_sys=num_running_sys,
             num_swapped_sys=num_swapped_sys,
             num_waiting_sys=num_waiting_sys,
-            num_in_page_fragements=num_in_page_fragements,
-            
+            num_in_page_fragements=int(num_in_page_fragements),
+            num_preemption_tokens_iter=num_preemption_tokens_iter,
+
             #   KV Cache Usage in %
             gpu_cache_usage_sys=gpu_cache_usage_sys,
             cpu_cache_usage_sys=cpu_cache_usage_sys,

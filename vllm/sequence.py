@@ -51,7 +51,7 @@ class SequenceStatus(enum.Enum):
     INIT_WAITING = enum.auto()
     WAITING_TO_RUNNING = enum.auto()
     RUNNING_TO_WAITING = enum.auto()
-    RUNNING_TO_FINISHED_STOPPED= enum.auto()
+    RUNNING_TO_FINISHED_STOPPED = enum.auto()
 
     @staticmethod
     def is_finished(status: "SequenceStatus") -> bool:
@@ -251,6 +251,7 @@ class Sequence:
         # Used for incremental detokenization
         self.prefix_offset = 0
         self.read_offset = 0
+        self.eos_token_prob = 0.0
         # Input + output tokens
         self.tokens: Optional[List[str]] = None
 
@@ -269,6 +270,9 @@ class Sequence:
     @property
     def lora_int_id(self) -> int:
         return self.lora_request.lora_int_id if self.lora_request else 0
+
+    def get_eos_token_prob(self) -> float:
+        return self.eos_token_prob
 
     def get_output_text_to_return(self, buffer_length: int):
         # We return the full output text if the sequence is finished.
@@ -325,6 +329,16 @@ class Sequence:
         self._append_tokens_to_blocks([token_id])
         self.output_logprobs.append(logprobs)
         self.data.append_token_id(token_id, logprobs[token_id].logprob)
+        if self.eos_token_id in logprobs:
+            eos_token_prob = logprobs.get(self.eos_token_id,
+                                          Logprob(0.0)).logprob
+            self.eos_token_prob = max(self.eos_token_prob, eos_token_prob)
+        else:
+            self.eos_token_prob = 0.0
+
+    @property
+    def logical_token_block_size(self) -> int:
+        return len(self.logical_token_blocks)
 
     def get_len(self) -> int:
         return self.data.get_len()
@@ -448,6 +462,10 @@ class SequenceGroup:
         self.embeddings = embeddings
         self.pooling_params = pooling_params
         self.encoder_seq = encoder_seq
+        self.eos_token_id = self.seqs_dict[next(iter(
+            self.seqs_dict))].eos_token_id
+        self._total_token_block_size = sum(
+            [seq.logical_token_block_size for seq in seqs])
 
     @property
     def prompt(self) -> Optional[str]:
@@ -470,6 +488,13 @@ class SequenceGroup:
     @property
     def lora_int_id(self) -> int:
         return self.lora_request.lora_int_id if self.lora_request else 0
+
+    @property
+    def total_token_block_size(self) -> int:
+        if self.is_prefill():
+            return self._total_token_block_size
+        else:
+            return self._total_token_block_size + len(self.get_seqs())
 
     def get_last_latency(self, now: float) -> Optional[float]:
         """Sets the last token time for Request level timings."""
@@ -544,13 +569,13 @@ class SequenceGroup:
 
     def get_finished_seqs(self) -> List[Sequence]:
         return [seq for seq in self.seqs_dict.values() if seq.is_finished()]
-    
+
     def update_waiting_iter_nums(self):
         self.metrics.waiting_iter_nums += 1
 
     def reset_waiting_iter_nums(self):
         self.metrics.waiting_iter_nums = 0
-        
+
     def update_num_computed_tokens(self, num_new_computed_tokens: int):
         """Update number of tokens computed so far."""
         for seq in self.seqs_dict.values():
@@ -637,23 +662,22 @@ class SequenceGroupMetadata:
                            model.
     """
 
-    def __init__(
-        self,
-        request_id: str,
-        is_prompt: bool,
-        seq_data: Dict[int, SequenceData],
-        sampling_params: SamplingParams,
-        block_tables: Dict[int, List[int]],
-        do_sample: bool = True,
-        pooling_params: Optional[PoolingParams] = None,
-        token_chunk_size: Optional[int] = None,
-        lora_request: Optional[LoRARequest] = None,
-        computed_block_nums: Optional[List[int]] = None,
-        state: Optional[SequenceGroupState] = None,
-        multi_modal_data: Optional["MultiModalData"] = None,
-        encoder_seq_data: Optional[SequenceData] = None,
-        cross_block_table: Optional[List[int]] = None,
-    ) -> None:
+    def __init__(self,
+                 request_id: str,
+                 is_prompt: bool,
+                 seq_data: Dict[int, SequenceData],
+                 sampling_params: SamplingParams,
+                 block_tables: Dict[int, List[int]],
+                 do_sample: bool = True,
+                 pooling_params: Optional[PoolingParams] = None,
+                 token_chunk_size: Optional[int] = None,
+                 lora_request: Optional[LoRARequest] = None,
+                 computed_block_nums: Optional[List[int]] = None,
+                 state: Optional[SequenceGroupState] = None,
+                 multi_modal_data: Optional["MultiModalData"] = None,
+                 encoder_seq_data: Optional[SequenceData] = None,
+                 cross_block_table: Optional[List[int]] = None,
+                 eos_token_id: Optional[int] = None) -> None:
         self.request_id = request_id
         self.is_prompt = is_prompt
         self.seq_data = seq_data
@@ -668,7 +692,7 @@ class SequenceGroupMetadata:
         self.cross_block_table = cross_block_table
         self._token_chunk_size = token_chunk_size
         self.do_sample = do_sample
-
+        self.eos_token_id = eos_token_id
         # The number of speculative tokens adopted in this request.
         # None means specuative decoding is not used.
         # Zero means speculative decoding is disabled for some reasons.

@@ -89,10 +89,9 @@ class EngineArgs:
     scheduler_delay_factor: float = 0.0
     enable_chunked_prefill: bool = False
     scheduler_policy: str = "fcfs"
-    
+
     guided_decoding_backend: str = 'outlines'
-    default_preemption_mode: str = None
-    
+
     # Speculative decoding configuration.
     speculative_model: Optional[str] = None
     num_speculative_tokens: Optional[int] = None
@@ -522,9 +521,10 @@ class EngineArgs:
             "--scheduler-policy",
             type=str,
             default="fcfs",
-            help="Scheduling policy. Can be 'fcfs', 'UncomputedTokensFirst (utf)','WaitingTimeFirst (wtf)','ShortestTokensFirst (stf)', 'LongestTokensFirst (ltf)', 'BlockFullFirst (bff)','infer', or 'random', default is 'fcfs'",
+            help=
+            "Scheduling policy. Can be 'fcfs', 'UncomputedTokensFirst (utf)','WaitingTimeFirst (wtf)','ShortestTokensFirst (stf)', 'LongestTokensFirst (ltf)', 'BlockFullFirst (bff)','infer', or 'random', default is 'fcfs'",
         )
-        
+
         parser.add_argument(
             '--speculative-model',
             type=nullable_str,
@@ -576,11 +576,11 @@ class EngineArgs:
                             'This should be a JSON string that will be '
                             'parsed into a dictionary.')
         parser.add_argument(
-            '--preemption_mode',
+            '--preemption-mode',
             type=str,
             default=None,
             help='If \'recompute\', the engine performs preemption by block '
-            'swapping; If \'swap\', the engine performs preemption by block '
+            'recomputation; If \'swap\', the engine performs preemption by block'
             'swapping.')
 
         parser.add_argument(
@@ -699,7 +699,7 @@ class EngineArgs:
             delay_factor=self.scheduler_delay_factor,
             enable_chunked_prefill=self.enable_chunked_prefill,
             policy=self.scheduler_policy,
-            preemption_mode=self.default_preemption_mode,
+            preemption_mode=self.preemption_mode,
             embedding_mode=model_config.embedding_mode,
         )
         lora_config = LoRAConfig(

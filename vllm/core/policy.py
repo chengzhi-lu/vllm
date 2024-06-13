@@ -1,6 +1,6 @@
 from collections import deque
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from typing import Deque
+from typing import Deque, Dict
 import time
 
 from vllm.sequence import SequenceGroup
@@ -10,10 +10,10 @@ import torch
 
 
 class AgentModel:
+
     def __init__(self, model_name: str = "JackFram/llama-160m"):
         self.model, self.tokenizer, self.eos_token_id = self._init_model(
-            model_name
-        )
+            model_name)
 
     def _init_model(self, model_name):
         model = AutoModelForCausalLM.from_pretrained(model_name)
@@ -31,9 +31,8 @@ class AgentModel:
         logits = output["logits"]
         probs = F.softmax(logits, dim=-1)
         # print(probs)
-        next_token_probs = list(
-            probs[:, -1, self.eos_token_id].to("cpu").numpy()
-        )
+        next_token_probs = list(probs[:, -1,
+                                      self.eos_token_id].to("cpu").numpy())
         # print(next_token_probs)
         # eos_probs = torch.sum(next_token_probs, dim=0)
         # print(eos_probs)
@@ -44,6 +43,7 @@ class AgentModel:
 
 
 class Policy:
+
     def get_priority(
         self,
         now: float,
@@ -61,11 +61,11 @@ class Policy:
                 seq_groups,
                 key=lambda seq_group: self.get_priority(now, seq_group),
                 reverse=True,
-            )
-        )
+            ))
 
 
 class FCFS(Policy):
+
     def get_priority(
         self,
         now: float,
@@ -74,29 +74,19 @@ class FCFS(Policy):
         return now - seq_group.metrics.arrival_time
 
 
-class SMLFQ(Policy):
-    MLFQ = {}
+class InferScheduleAgentModel(Policy):
 
-    def get_priority(
-        self,
-        now: float,
-        seq_group: SequenceGroup,
-    ) -> float:
-        pass
-
-
-class InferSchedule(Policy):
     def __init__(self):
         self.agent_model = AgentModel()
 
     # maximize the number of tokens in the queue while ensuring the sequences with higher probability to finish first.
-    def get_priority(
-        self, now: float, seq_groups: Deque[SequenceGroup]
-    ) -> float:
+    def get_sorted_seq_group(
+            self, now: float,
+            seq_groups: Deque[SequenceGroup]) -> Deque[SequenceGroup]:
         st = time.time()
-        seq_groups = list(seq_groups)
+        new_seq_groups = [seq for seq in seq_groups]
         input_tokens = []
-        for seq_group in seq_groups:
+        for seq_group in new_seq_groups:
             seqs = seq_group.get_seqs()
             for seq in seqs:
                 input_tokens.append(seq.get_token_ids())
@@ -105,30 +95,49 @@ class InferSchedule(Policy):
         print("Get input tokens time: ", et - st)
         st = time.time()
         if len(input_tokens) == 0:
-            return deque(seq_groups)
+            return deque(new_seq_groups)
         eos_probabilities = self.agent_model(input_tokens)
         et = time.time()
         print("Agent model time: ", et - st)
         st = time.time()
-        seq_groups_dict = {k: v for k, v in zip(seq_groups, eos_probabilities)}
+        seq_groups_dict = {
+            k: v
+            for k, v in zip(new_seq_groups, eos_probabilities)
+        }
         # sort seq_groups by eos probability
-        sorted_seq_groups = sorted(
-            seq_groups_dict.items(), key=lambda x: x[1], reverse=True
-        )
+        sorted_seq_groups = sorted(seq_groups_dict.items(),
+                                   key=lambda x: x[1],
+                                   reverse=True)
         seq_groups = deque([i[0] for i in sorted_seq_groups])
         et = time.time()
         print("parse result time: ", et - st)
-        return seq_groups
+        return deque(new_seq_groups)
 
     def sort_by_priority(
         self,
         now: float,
         seq_groups: Deque[SequenceGroup],
     ) -> Deque[SequenceGroup]:
-        return self.get_priority(now, seq_groups)
+        return self.get_sorted_seq_group(now, seq_groups)
+
+
+class InferSchedule(Policy):
+
+    def get_priority(
+        self,
+        now: float,
+        seq_group: SequenceGroup,
+    ) -> float:
+        eos_token_probs = []
+        for seq_id, seq in seq_group.seqs_dict.items():
+            eos_token_probs.append(seq.get_eos_token_prob())
+        priority = max(
+            eos_token_probs) + seq_group.metrics.waiting_iter_nums**2
+        return priority
 
 
 class Random(Policy):
+
     def get_priority(
         self,
         now: float,
@@ -138,6 +147,7 @@ class Random(Policy):
 
 
 class UncomputedTokensFirst(Policy):
+
     def get_priority(
         self,
         now: float,
@@ -147,6 +157,7 @@ class UncomputedTokensFirst(Policy):
 
 
 class WaitingTimeFirst(Policy):
+
     def get_priority(
         self,
         now: float,
@@ -156,6 +167,7 @@ class WaitingTimeFirst(Policy):
 
 
 class ShortestTokensFirst(Policy):
+
     def get_priority(
         self,
         now: float,
@@ -170,6 +182,7 @@ class ShortestTokensFirst(Policy):
 
 
 class LongestTokensFirst(Policy):
+
     def get_priority(
         self,
         now: float,
@@ -184,6 +197,7 @@ class LongestTokensFirst(Policy):
 
 
 class BlockFullPolicy(Policy):
+
     def get_priority(
         self,
         now: float,
