@@ -1,6 +1,7 @@
 from collections import deque
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from typing import Deque, Dict
+import numpy as np
 import time
 
 from vllm.sequence import SequenceGroup
@@ -129,10 +130,10 @@ class InferSchedule(Policy):
         seq_group: SequenceGroup,
     ) -> float:
         eos_token_probs = []
+        # token_blocks = seq_group.total_token_block_size
         for seq_id, seq in seq_group.seqs_dict.items():
             eos_token_probs.append(seq.get_eos_token_prob())
-        priority = max(
-            eos_token_probs) + seq_group.metrics.waiting_iter_nums**2
+        priority = max(eos_token_probs) + seq_group.metrics.waiting_iter_nums**2
         return priority
 
 

@@ -44,6 +44,7 @@ class SequenceStatus(enum.Enum):
     WAITING = enum.auto()
     RUNNING = enum.auto()
     SWAPPED = enum.auto()
+    All = enum.auto()
     FINISHED_STOPPED = enum.auto()
     FINISHED_LENGTH_CAPPED = enum.auto()
     FINISHED_ABORTED = enum.auto()
@@ -251,7 +252,7 @@ class Sequence:
         # Used for incremental detokenization
         self.prefix_offset = 0
         self.read_offset = 0
-        self.eos_token_prob = 0.0
+        self.eos_token_prob = -1000.0
         # Input + output tokens
         self.tokens: Optional[List[str]] = None
 
@@ -331,10 +332,10 @@ class Sequence:
         self.data.append_token_id(token_id, logprobs[token_id].logprob)
         if self.eos_token_id in logprobs:
             eos_token_prob = logprobs.get(self.eos_token_id,
-                                          Logprob(0.0)).logprob
+                                          Logprob(-1000.0)).logprob
             self.eos_token_prob = max(self.eos_token_prob, eos_token_prob)
         else:
-            self.eos_token_prob = 0.0
+            self.eos_token_prob = -1000.0
 
     @property
     def logical_token_block_size(self) -> int:
@@ -552,9 +553,17 @@ class SequenceGroup:
         self,
         status: Optional[SequenceStatus] = None,
     ) -> List[Sequence]:
-        return list(self.seqs_dict.values()) if status is None else [
-            seq for seq in self.seqs_dict.values() if seq.status == status
-        ]
+        sequences = self.seqs_dict.values()
+        if status is None or status == SequenceStatus.All:
+            result = list(sequences)
+        else:
+            result = [seq for seq in sequences if seq.status == status]
+
+        return result
+        # return list(self.seqs_dict.values(
+        # )) if status is None or status == SequenceStatus.All else [
+        #     seq for seq in self.seqs_dict.values() if seq.status == status
+        # ]
 
     def is_encoder_decoder(self) -> bool:
         return self.encoder_seq is not None

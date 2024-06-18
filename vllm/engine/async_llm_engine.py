@@ -220,8 +220,13 @@ class _AsyncLLMEngine(LLMEngine):
         and updates the scheduler with the model outputs. Finally, it decodes
         the sequences and returns the newly generated results.
         """
+        st = time.time()
+        if self.et != 0:
+            print("interval time is", st - self.et)
         seq_group_metadata_list, scheduler_outputs = self.scheduler.schedule()
-
+        et = time.time()
+        print("schedule time is", et - st)
+        st = time.time()
         if not scheduler_outputs.is_empty():
             # Execute the model.
             execute_model_req = ExecuteModelRequest(
@@ -236,7 +241,9 @@ class _AsyncLLMEngine(LLMEngine):
                 execute_model_req)
         else:
             output = []
-
+        et = time.time()
+        print("execute time is", et - st)
+        st = time.time()
         request_outputs = self._process_model_outputs(
             output,
             scheduler_outputs.scheduled_seq_groups,
@@ -257,7 +264,8 @@ class _AsyncLLMEngine(LLMEngine):
             # the RPC thread in the workers so that they can process any other
             # queued control plane messages, such as add/remove lora adapters.
             await self.model_executor.stop_remote_worker_execution_loop_async()
-
+        self.et = time.time()
+        print("handle output time is", self.et - st)
         return request_outputs
 
     async def process_model_inputs_async(
@@ -353,7 +361,7 @@ class AsyncLLMEngine:
         self.log_requests = log_requests
         self.max_log_len = max_log_len
         self.engine = self._init_engine(*args, **kwargs)
-
+        self.et = 0.0
         self.background_loop: Optional[asyncio.Future] = None
         # We need to keep a reference to unshielded
         # task as well to prevent it from being garbage

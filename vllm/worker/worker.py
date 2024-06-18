@@ -1,6 +1,7 @@
 """A GPU worker class."""
 import gc
 import os
+import time
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
@@ -252,6 +253,7 @@ class Worker(WorkerBase):
         # `blocks_to_copy` is a gpu tensor. The src and tgt of
         # blocks to copy are in the same device, and `blocks_to_copy`
         # can be used directly within cuda kernels.
+        # st = time.time()
         blocks_to_copy = torch.tensor(execute_model_req.blocks_to_copy,
                                       device=self.device,
                                       dtype=torch.int64).view(-1, 2)
@@ -262,8 +264,17 @@ class Worker(WorkerBase):
             "blocks_to_copy": blocks_to_copy,
         }
         broadcast_tensor_dict(data, src=0)
-
+        # et = time.time()
+        # print(f"-------Broadcast time: {et - st}s")
+        
+        
+        # st = time.time()
+        # print(f"-------blocks_to_swap_in: ({blocks_to_swap_in.shape})")
+        # print(f"-------blocks_to_swap_out: ({blocks_to_swap_out.shape})")
+        # print(f"-------blocks_to_copy: ({blocks_to_copy.shape})")
         self.cache_swap(blocks_to_swap_in, blocks_to_swap_out, blocks_to_copy)
+        # et = time.time()
+        # print(f"-------Cache swap time: {et - st}s")
 
         # If there is no input, we don't need to execute the model.
         if num_seq_groups == 0:
@@ -271,7 +282,6 @@ class Worker(WorkerBase):
 
         output = self.model_runner.execute_model(seq_group_metadata_list,
                                                  self.gpu_cache)
-
         # Worker only supports single-step execution. Wrap the output in a list
         # to conform to interface.
         return [output]

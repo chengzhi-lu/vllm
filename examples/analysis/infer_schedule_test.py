@@ -99,14 +99,13 @@ def main(
     args.max_num_seqs = batch_size
     args.scheduler_policy = policy
     args.default_preemption_mode = preemption_mode
-    # args.gpu_memory_utilization = 0.5
-    if enable_chunk_prefill:
-        args.enable_chunked_prefill = True
-        args.max_num_batched_tokens = max_token_num
+    args.enable_chunked_prefill = True
+    args.max_num_batched_tokens = max_token_num
     try:
         seqs = get_requests()
         engine = initialize_engine(args)
     except Exception as e:
+        traceback.print_exc()
         print(e)
     add_new_request_notice = Queue()
     print(
@@ -165,8 +164,8 @@ if __name__ == "__main__":
         total_iter_result, total_request_result = Utils.load_tmp_result(
             test_type, BASE_DIR)
         enable_chunk_prefill = True
-        default_preemption_mode = "swap"
-        policies = ["infer", "fcfs"]
+        preemption_mode = "swap"
+        policies = ["fcfs"]
         strategies = ["full"]
         # If prefill mode is horizonal, the sequences length is equals to the token nums, otherwise, the batch size equals to the token nums  # noqa: E501
         prefill_modes = ["vertical"]
@@ -194,8 +193,7 @@ if __name__ == "__main__":
                                         enable_chunk_prefill=
                                         enable_chunk_prefill,
                                         policy=policy,
-                                        default_preemption_mode=
-                                        default_preemption_mode,
+                                        preemption_mode=preemption_mode,
                                         strategy=strategy,
                                         prefill_mode=prefill_mode,
                                     )
@@ -210,21 +208,22 @@ if __name__ == "__main__":
                                         [total_iter_result, iter_result])
                                     total_request_result = pd.concat(
                                         [total_request_result, request_result])
-                                if len(total_iter_result) > 0:
-                                    Utils.save_tmp_result(
-                                        total_iter_result,
-                                        total_request_result,
-                                        test_type,
-                                        BASE_DIR,
-                                    )
+                            #     if len(total_iter_result) > 0:
+                            #         Utils.save_tmp_result(
+                            #             total_iter_result,
+                            #             total_request_result,
+                            #             test_type,
+                            #             BASE_DIR,
+                            #         )
                             except Exception as e:
+                                traceback.print_exc()
                                 print(e)
-        if len(total_iter_result) > 0:
-            Utils.save_result(
-                total_iter_result,
-                total_request_result,
-                enable_chunk_prefill,
-                test_type,
-                rerun,
-                BASE_DIR,
-            )
+
+        #     Utils.save_result(
+        #         total_iter_result,
+        #         total_request_result,
+        #         enable_chunk_prefill,
+        #         test_type,
+        #         rerun,
+        #         BASE_DIR,
+        #   )

@@ -419,14 +419,11 @@ class Utils:
                 )
                 iter_metrics.append(iter_metric)
 
-        except Exception as e:
-            print(e)
-            traceback.print_exc()
-        try:
             request_result_metric = Utils.convert_request_metrics(
                 request_metrics)
             iter_result_metric = Utils.convert_iter_metrics(iter_metrics)
         except Exception as e:
+            traceback.print_exc()
             print(e)
         result_queue.put((iter_result_metric, request_result_metric))
         return
