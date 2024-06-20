@@ -1,5 +1,5 @@
 # list scheduler_policy
-scheduler_policy=(fcfs infer fcfs)
+scheduler_policy=(infer)
 # start vllm server
 model_name="meta-llama/Llama-2-13b-chat-hf"
 dataset_name="sharegpt"
@@ -11,7 +11,7 @@ for policy in "${scheduler_policy[@]}"; do
             --model $model_name --swap-space 32\
             --preemption-mode $preemption_mode --scheduler-policy $policy \
             --enable-chunked-prefill --max-num-batched-tokens 2048 \
-            --max-num-seqs 128 \
+            --max-num-seqs 128\
             --disable-log-requests >> api_server.log 2>&1 &
     pid=$!
     # run benchmark and save the output to benchmark.log

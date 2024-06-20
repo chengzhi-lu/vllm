@@ -268,13 +268,13 @@ class Worker(WorkerBase):
         # print(f"-------Broadcast time: {et - st}s")
         
         
-        # st = time.time()
-        # print(f"-------blocks_to_swap_in: ({blocks_to_swap_in.shape})")
-        # print(f"-------blocks_to_swap_out: ({blocks_to_swap_out.shape})")
-        # print(f"-------blocks_to_copy: ({blocks_to_copy.shape})")
+        st = time.time()
+        print(f"-------blocks_to_swap_in: ({blocks_to_swap_in.shape})")
+        print(f"-------blocks_to_swap_out: ({blocks_to_swap_out.shape})")
+        print(f"-------blocks_to_copy: ({blocks_to_copy.shape})")
         self.cache_swap(blocks_to_swap_in, blocks_to_swap_out, blocks_to_copy)
-        # et = time.time()
-        # print(f"-------Cache swap time: {et - st}s")
+        et = time.time()
+        print(f"-------Cache swap time: {et - st}s")
 
         # If there is no input, we don't need to execute the model.
         if num_seq_groups == 0:

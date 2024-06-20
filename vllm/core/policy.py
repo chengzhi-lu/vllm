@@ -26,17 +26,12 @@ class AgentModel:
     def generate(self, input_ids):
         # Get the model output
         input_ids = input_ids.to(self.model.device)
-        # print(input_ids)
         with torch.no_grad():
             output = self.model(input_ids, return_dict=True)
         logits = output["logits"]
         probs = F.softmax(logits, dim=-1)
-        # print(probs)
         next_token_probs = list(probs[:, -1,
                                       self.eos_token_id].to("cpu").numpy())
-        # print(next_token_probs)
-        # eos_probs = torch.sum(next_token_probs, dim=0)
-        # print(eos_probs)
         return next_token_probs
 
     def __call__(self, input_ids):
@@ -130,10 +125,19 @@ class InferSchedule(Policy):
         seq_group: SequenceGroup,
     ) -> float:
         eos_token_probs = []
+        decoding_length =0
         # token_blocks = seq_group.total_token_block_size
         for seq_id, seq in seq_group.seqs_dict.items():
             eos_token_probs.append(seq.get_eos_token_prob())
-        priority = max(eos_token_probs) + seq_group.metrics.waiting_iter_nums**2
+            decoding_length += seq.get_output_len()
+        eos_token_probs = np.mean(eos_token_probs)
+        if eos_token_probs == -1000.0:
+            priority = len(seq_group.prompt_token_ids)
+        else:
+            probs=np.exp(eos_token_probs)
+            waiting_percent = seq_group.metrics.waiting_iter_nums / decoding_length
+            priority = probs+waiting_percent
+        # priority = max(eos_token_probs) + seq_group.metrics.waiting_iter_nums 
         return priority
 
 

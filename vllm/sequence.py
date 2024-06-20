@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
 import torch
+import numpy as np
 
 from vllm.block import LogicalTokenBlock
 from vllm.inputs import LLMInputs
@@ -252,7 +253,7 @@ class Sequence:
         # Used for incremental detokenization
         self.prefix_offset = 0
         self.read_offset = 0
-        self.eos_token_prob = -1000.0
+        self.eos_token_prob = [] 
         # Input + output tokens
         self.tokens: Optional[List[str]] = None
 
@@ -273,7 +274,10 @@ class Sequence:
         return self.lora_request.lora_int_id if self.lora_request else 0
 
     def get_eos_token_prob(self) -> float:
-        return self.eos_token_prob
+        if len(self.eos_token_prob) < 17 or -1000.0 in self.eos_token_prob:
+            return -1000.0
+        else:
+            return np.mean(self.eos_token_prob)
 
     def get_output_text_to_return(self, buffer_length: int):
         # We return the full output text if the sequence is finished.
@@ -333,9 +337,12 @@ class Sequence:
         if self.eos_token_id in logprobs:
             eos_token_prob = logprobs.get(self.eos_token_id,
                                           Logprob(-1000.0)).logprob
-            self.eos_token_prob = max(self.eos_token_prob, eos_token_prob)
+            self.eos_token_prob.append(eos_token_prob)
+            if len(self.eos_token_prob) > 17:
+                self.eos_token_prob = self.eos_token_prob[-17:]
+
         else:
-            self.eos_token_prob = -1000.0
+            self.eos_token_prob.append(-1000.0)
 
     @property
     def logical_token_block_size(self) -> int:

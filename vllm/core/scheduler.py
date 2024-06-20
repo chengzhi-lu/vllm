@@ -36,6 +36,18 @@ class PreemptionMode(enum.Enum):
     SWAP = enum.auto()
     RECOMPUTE = enum.auto()
 
+class SwapMode(enum.Enum):
+    """Swap modes.
+
+    1. Swap out the blocks of the preempted sequences to CPU memory
+    and swap them back in when the sequences are resumed.
+    2. Discard the blocks of the preempted sequences and
+    recompute them when the sequences are resumed, treating the sequences as
+    new prompts.
+
+    """
+    FULL = enum.auto()
+    PARTIAL = enum.auto()
 
 class PreemptionReason(enum.Enum):
     """ Preemption reasons.
@@ -363,6 +375,8 @@ class Scheduler:
             self.preemption_mode = PreemptionMode.SWAP
         elif self.scheduler_config.preemption_mode == "recompute":
             self.preemption_mode = PreemptionMode.RECOMPUTE
+        self.iter_nums=0
+        self.has_finished_seqs = False
 
     @property
     def lora_enabled(self) -> bool:
@@ -441,8 +455,9 @@ class Scheduler:
         # In this case, the policy is responsible for deciding which sequence
         # groups to preempt.
         now = time.time()
-        running_queue = policy.sort_by_priority(now, running_queue)
-        victim_running_seqs = []
+        if self.iter_nums % 10 == 0 or self.has_finished_seqs:
+            running_queue = policy.sort_by_priority(now, running_queue)
+            self.has_finished_seqs = False
         while running_queue:
             seq_group: SequenceGroup = running_queue[0]
             num_running_tokens = self._get_num_new_tokens(
@@ -459,45 +474,22 @@ class Scheduler:
                 num_running_seqs = seq_group.get_max_num_running_seqs()
                 budget.subtract_num_seqs(seq_group.request_id,
                                          num_running_seqs)
-                if curr_loras is not None and seq_group.lora_int_id > 0:
-                    curr_loras.remove(seq_group.lora_int_id)
 
-                # if running_queue:
-                #     # Preempt the lowest-priority sequence groups.
-                #     victim_seq_group = running_queue.pop()
-
-                #     # logger.warning(
-                #     # "preemption mode: ", self.preemption_mode)
-
-                #     if self.preemption_mode:
-                #         preempted_mode = self._preempt(victim_seq_group,
-                #                                        blocks_to_swap_out,
-                #                                        self.preemption_mode)
-                #     else:
-                #         preempted_mode = self._preempt(victim_seq_group,
-                #                                        blocks_to_swap_out)
-
-                #     if preempted_mode == PreemptionMode.RECOMPUTE:
-                #         preempted.append(victim_seq_group)
-                #     else:
-                #         swapped_out.append(victim_seq_group)
-                # else:
-                #     # No other sequence groups can be preempted.
-                    # Preempt the current sequence group.
-
+                swap_mode = SwapMode.FULL
+                if len(self.waiting) == 0:
+                    swap_mode = SwapMode.PARTIAL 
                 if self.preemption_mode:
                     preempted_mode = self._preempt(seq_group,
                                                     blocks_to_swap_out,
-                                                    self.preemption_mode)
+                                                    self.preemption_mode,swap_mode)
                 else:
                     preempted_mode = self._preempt(seq_group,
-                                                    blocks_to_swap_out)
+                                                    blocks_to_swap_out,None,swap_mode)
 
                 if preempted_mode == PreemptionMode.RECOMPUTE:
                     preempted.append(seq_group)
                 else:
                     swapped_out.append(seq_group)
-                # break
             else:
                 self._append_slots(seq_group, blocks_to_copy)
                 seq_group.reset_waiting_iter_nums()
@@ -1119,10 +1111,9 @@ class Scheduler:
                                                       waiting_queue)
 
         et = time.time()
-        # print(f"sort_by_priority: {et - st}")
+        print(f"sort_by_priority: {et - st}")
         self.enable_chunking = enable_chunking
         # init the a SchedulerPreemption class
-        st = time.time()
         decode_seq_groups_running: List[SequenceGroup] = []
         decode_seq_groups_swapped: List[SequenceGroup] = []
         prefill_seq_groups_running: List[SequenceGroup] = []
@@ -1159,17 +1150,13 @@ class Scheduler:
             num_lookahead_slots_swapped=num_lookahead_slots_swapped,
             num_lookahead_slots_prefill=num_lookahead_slots_prefill,
         )
-        et = time.time()
-        # print(f"init SchedulerPreemption: {et - st}")
 
         preemption_time = 0.0
         allocation_time = 0.0
         check_time = 0.0
         remove_time = 0.0
         total_block_size = 0
-        loop_st = time.time()
         budget_can_schedule = True
-        # print(f"sorted_decoding_queue before: {len(sorted_decoding_queue)}")
         while sorted_decoding_queue:
             seq_group: SequenceGroup = sorted_decoding_queue[0]
             sorted_decoding_queue.popleft()
@@ -1255,12 +1242,6 @@ class Scheduler:
                     recomputed_token_nums=recomputed_token_nums,
                 )
 
-        # print(
-            # f"preemption time: {preemption_time}, allocation time: {allocation_time}, check time: {check_time}, remove time:{remove_time}"
-        # )
-        loop_et = time.time()
-        # print(f"loop time: {loop_et - loop_st}")
-        st = time.time()
         running_scheduler_output = SchedulerRunningOutputs(
             decode_seq_groups=scheduler_preemption.decode_seq_groups_running,
             prefill_seq_groups=scheduler_preemption.prefill_seq_groups_running,
@@ -1283,8 +1264,6 @@ class Scheduler:
             num_lookahead_slots=scheduler_preemption.
             num_lookahead_slots_prefill,
             ignored_seq_groups=scheduler_preemption.ignored_seq_groups)
-        et = time.time()
-        # print(f"prepare SchedulerOutputs: {et - st}")
         return running_queue, swapped_queue, waiting_queue, running_scheduler_output, swapped_scheduler_output, waiting_scheduler_output, recomputed_token_nums
 
     def _schedule_default(self) -> SchedulerOutputs:
@@ -1403,7 +1382,6 @@ class Scheduler:
             max_num_seqs=self.scheduler_config.max_num_seqs,
         )
         curr_loras: Set[int] = set()
-
         remaining_waiting, prefills = (self.waiting,
                                        SchedulerPrefillOutputs.create_empty())
         remaining_running, running_scheduled = (
@@ -1412,7 +1390,6 @@ class Scheduler:
             self.swapped, SchedulerSwappedInOutputs.create_empty())
         policy = PolicyFactory.get_policy(
             policy_name=self.scheduler_config.policy)
-        st = time.time()
         if self.scheduler_config.policy == "infer":
             remaining_running, running_scheduled, recomputed_token_nums = self._schedule_running_preemption(
             self.running, budget, curr_loras, policy, enable_chunking=True) 
@@ -1426,6 +1403,8 @@ class Scheduler:
             # )
             # et = time.time()
             # print(f"schedule infer time: {et - st}")
+            # remaining_swapped, swapped_in, = self._schedule_swapped(
+                # self.swapped, budget, curr_loras, policy)
         else:
             remaining_running, running_scheduled, recomputed_token_nums = self._schedule_running(
             self.running, budget, curr_loras, policy, enable_chunking=True)
@@ -1440,7 +1419,7 @@ class Scheduler:
         # Schedule new prefills.
         remaining_waiting, prefills = self._schedule_prefills(
             self.waiting, budget, curr_loras, enable_chunking=True)
-        et = time.time()
+        # et = time.time()
         # print(f"schedule chunked prefill time: {et - st}")
 
         assert (budget.num_batched_tokens <=
@@ -1464,6 +1443,7 @@ class Scheduler:
         # Update swapped requests.
         self.swapped = remaining_swapped
         self.swapped.extend(running_scheduled.swapped_out)
+        self.iter_nums += 1
         return SchedulerOutputs(
             scheduled_seq_groups=(prefills.seq_groups +
                                   running_scheduled.prefill_seq_groups +
@@ -1610,6 +1590,7 @@ class Scheduler:
     def free_finished_seq_groups(self) -> None:
         self.running = deque(seq_group for seq_group in self.running
                              if not seq_group.is_finished())
+        self.has_finished_seqs = True
 
     def _allocate_and_set_running(self, seq_group: SequenceGroup) -> None:
         self.block_manager.allocate(seq_group)
@@ -1644,6 +1625,7 @@ class Scheduler:
         seq_group: SequenceGroup,
         blocks_to_swap_out: List[Tuple[int, int]],
         preemption_mode: Optional[PreemptionMode] = None,
+        swap_mode: Optional[SwapMode] = None
     ) -> PreemptionMode:
         # If preemption mode is not specified, we determine the mode as follows:
         # We use recomputation by default since it incurs lower overhead than
@@ -1681,7 +1663,10 @@ class Scheduler:
         if preemption_mode == PreemptionMode.RECOMPUTE:
             self._preempt_by_recompute(seq_group)
         elif preemption_mode == PreemptionMode.SWAP:
-            self._preempt_by_swap(seq_group, blocks_to_swap_out)
+            if swap_mode == SwapMode.FULL:
+                self._preempt_by_swap(seq_group, blocks_to_swap_out, self.scheduler_config.max_num_seqs)
+            else:
+                self._preempt_by_swap(seq_group, blocks_to_swap_out, 0)
         else:
             raise AssertionError("Invalid preemption mode.")
         return preemption_mode
@@ -1703,8 +1688,9 @@ class Scheduler:
         self,
         seq_group: SequenceGroup,
         blocks_to_swap_out: List[Tuple[int, int]],
+        swap_out_block_num: int = 0
     ) -> None:
-        self._swap_out(seq_group, blocks_to_swap_out)
+        self._swap_out(seq_group, blocks_to_swap_out, swap_out_block_num)
 
     def _swap_in(
         self,
@@ -1720,6 +1706,7 @@ class Scheduler:
         self,
         seq_group: SequenceGroup,
         blocks_to_swap_out: List[Tuple[int, int]],
+        swap_out_block_num: int = 0
     ) -> None:
         if not self.block_manager.can_swap_out(seq_group):
             # FIXME(woosuk): Abort the sequence group instead of aborting the
@@ -1727,7 +1714,7 @@ class Scheduler:
             raise RuntimeError(
                 "Aborted due to the lack of CPU swap space. Please increase "
                 "the swap space to avoid this error.")
-        mapping = self.block_manager.swap_out(seq_group)
+        mapping = self.block_manager.swap_out(seq_group,swap_out_blocks_num=swap_out_block_num)
         blocks_to_swap_out.extend(mapping)
         for seq in seq_group.get_seqs(status=SequenceStatus.RUNNING):
             seq.status = SequenceStatus.SWAPPED

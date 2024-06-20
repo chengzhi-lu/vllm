@@ -13,6 +13,7 @@ import warnings
 from collections import defaultdict
 from functools import lru_cache, partial, wraps
 from platform import uname
+import time
 from typing import (Any, AsyncIterator, Awaitable, Callable, Dict, Generic,
                     Hashable, List, Optional, OrderedDict, Tuple, TypeVar,
                     Union)
@@ -673,4 +674,14 @@ def deprecate_kwargs(
 
         return inner  # type: ignore
 
+    return wrapper
+
+def time_it(fn: Callable[..., Any], *args, **kwargs):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = fn(*args, **kwargs)
+        end_time = time.time()
+        logger.info(f"Time elapsed for {fn.__name__}: {end_time - start_time:.3f}s")
+        return result
     return wrapper
