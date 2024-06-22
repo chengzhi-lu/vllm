@@ -269,9 +269,10 @@ class Worker(WorkerBase):
         
         
         st = time.time()
-        print(f"-------blocks_to_swap_in: ({blocks_to_swap_in.shape})")
-        print(f"-------blocks_to_swap_out: ({blocks_to_swap_out.shape})")
-        print(f"-------blocks_to_copy: ({blocks_to_copy.shape})")
+        if blocks_to_swap_in.shape[0] > 0 or blocks_to_swap_out.shape[0] > 0 or blocks_to_copy.shape[0] > 0:
+            print(f"-------blocks_to_swap_in: ({blocks_to_swap_in.shape})")
+            print(f"-------blocks_to_swap_out: ({blocks_to_swap_out.shape})")
+            print(f"-------blocks_to_copy: ({blocks_to_copy.shape})")
         self.cache_swap(blocks_to_swap_in, blocks_to_swap_out, blocks_to_copy)
         et = time.time()
         print(f"-------Cache swap time: {et - st}s")

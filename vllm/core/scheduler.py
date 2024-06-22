@@ -469,15 +469,17 @@ class Scheduler:
             running_queue.popleft()
 
             if not self._can_append_slots(seq_group):
-                budget.subtract_num_batched_tokens(seq_group.request_id,
-                                                   num_running_tokens)
-                num_running_seqs = seq_group.get_max_num_running_seqs()
-                budget.subtract_num_seqs(seq_group.request_id,
-                                         num_running_seqs)
-
                 swap_mode = SwapMode.FULL
                 if len(self.waiting) == 0:
                     swap_mode = SwapMode.PARTIAL 
+                if swap_mode == SwapMode.FULL:
+                    budget.subtract_num_batched_tokens(seq_group.request_id,
+                                                   num_running_tokens)
+                elif swap_mode == SwapMode.PARTIAL:
+                    budget.subtract_num_batched_tokens(seq_group.request_id, num_running_tokens//2) 
+                num_running_seqs = seq_group.get_max_num_running_seqs()
+                budget.subtract_num_seqs(seq_group.request_id,
+                                         num_running_seqs)
                 if self.preemption_mode:
                     preempted_mode = self._preempt(seq_group,
                                                     blocks_to_swap_out,
@@ -490,6 +492,8 @@ class Scheduler:
                     preempted.append(seq_group)
                 else:
                     swapped_out.append(seq_group)
+                
+
             else:
                 self._append_slots(seq_group, blocks_to_copy)
                 seq_group.reset_waiting_iter_nums()
@@ -1403,17 +1407,17 @@ class Scheduler:
             # )
             # et = time.time()
             # print(f"schedule infer time: {et - st}")
-            # remaining_swapped, swapped_in, = self._schedule_swapped(
-                # self.swapped, budget, curr_loras, policy)
+            remaining_swapped, swapped_in, = self._schedule_swapped(
+                    self.swapped, budget, curr_loras, policy)
         else:
             remaining_running, running_scheduled, recomputed_token_nums = self._schedule_running(
             self.running, budget, curr_loras, policy, enable_chunking=True)
 
-        # Schedule swapped out requests.
-        # If preemption happens, it means we don't have space for swap-in.
-        if len(running_scheduled.preempted) + len(
+            # Schedule swapped out requests.
+            # If preemption happens, it means we don't have space for swap-in.
+            if len(running_scheduled.preempted) + len(
                 running_scheduled.swapped_out) == 0:
-            remaining_swapped, swapped_in, = self._schedule_swapped(
+                remaining_swapped, swapped_in, = self._schedule_swapped(
                 self.swapped, budget, curr_loras, policy)
 
         # Schedule new prefills.
@@ -1625,7 +1629,7 @@ class Scheduler:
         seq_group: SequenceGroup,
         blocks_to_swap_out: List[Tuple[int, int]],
         preemption_mode: Optional[PreemptionMode] = None,
-        swap_mode: Optional[SwapMode] = None
+        swap_mode: SwapMode = SwapMode.FULL 
     ) -> PreemptionMode:
         # If preemption mode is not specified, we determine the mode as follows:
         # We use recomputation by default since it incurs lower overhead than
@@ -1649,7 +1653,7 @@ class Scheduler:
                 preemption_mode = PreemptionMode.SWAP
             else:
                 preemption_mode = PreemptionMode.RECOMPUTE
-
+        
         if self.num_cumulative_preemption % 50 == 0 and self.num_cumulative_preemption > 0:
             logger.warning(
                 "Sequence group %s is preempted by %s mode because there is "
@@ -1664,9 +1668,9 @@ class Scheduler:
             self._preempt_by_recompute(seq_group)
         elif preemption_mode == PreemptionMode.SWAP:
             if swap_mode == SwapMode.FULL:
-                self._preempt_by_swap(seq_group, blocks_to_swap_out, self.scheduler_config.max_num_seqs)
-            else:
                 self._preempt_by_swap(seq_group, blocks_to_swap_out, 0)
+            else:
+                self._preempt_by_swap(seq_group, blocks_to_swap_out, seq_group.total_token_block_size//2)
         else:
             raise AssertionError("Invalid preemption mode.")
         return preemption_mode

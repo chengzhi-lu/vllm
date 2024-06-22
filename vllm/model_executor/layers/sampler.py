@@ -46,7 +46,7 @@ class Sampler(nn.Module):
         # Whether or not the SamplerOutput should have on-device tensors
         # containing the sampled token ids and probabilities. This is used by
         # speculative decoding.
-        self.include_gpu_probs_tensor = True
+        self.include_gpu_probs_tensor =  False
 
     def forward(
         self,
@@ -60,6 +60,7 @@ class Sampler(nn.Module):
         """
         assert logits is not None
         _, vocab_size = logits.shape
+        st = time.time()
         logits = _apply_min_tokens_penalty(logits, sampling_metadata)
         # Prepare sampling tensors with pinned memory to avoid blocking.
         (sampling_tensors, do_penalties, do_top_p_top_k,
@@ -85,10 +86,16 @@ class Sampler(nn.Module):
             logits = _apply_min_p(logits, sampling_tensors.min_ps)
         # We use float32 for probabilities and log probabilities.
         # Compute the probabilities.
+        et = time.time()
+        print(f"**********Logits handling time: {et-st}")
+        st = time.time()
         probs = torch.softmax(logits, dim=-1, dtype=torch.float)
         # Compute the log probabilities.
         logprobs = torch.log_softmax(logits, dim=-1, dtype=torch.float)
         # Sample the next tokens.
+        et = time.time()
+        print(f"**********Probs calc time: {et-st}")
+        st = time.time()
         sample_results, maybe_sampled_tokens_tensor = _sample(
             probs,
             logprobs,
@@ -103,10 +110,14 @@ class Sampler(nn.Module):
             on_device_tensors = (probs, logprobs, maybe_sampled_tokens_tensor)
         else:
             on_device_tensors = None
-
+        et = time.time()
+        print(f"**********Sampling time: {et-st}")
         # Get the logprobs query results.
+        st = time.time()
         prompt_logprobs, sample_logprobs = _get_logprobs(
             logprobs, sampling_metadata, sample_results)
+        et = time.time()
+        print(f"**********sample logprobs calc time: {et-st}")
         return _build_sampler_output(sample_results,
                                      sampling_metadata,
                                      prompt_logprobs,
@@ -282,6 +293,7 @@ def _greedy_sample(
         seq_group has do_sample=False, tuple contains ([], [])
     """
     samples = samples.tolist()
+    torch.cuda.synchronize()
     sample_idx = 0
     results: SampleResultType = []
     for seq_group in selected_seq_groups:
@@ -293,7 +305,8 @@ def _greedy_sample(
         num_parent_seqs = len(seq_ids)
         assert num_parent_seqs == 1, (
             "Greedy sampling should have only one seq.")
-        parent_ids = list(range(num_parent_seqs))
+        # parent_ids = list(range(num_parent_seqs))
+        parent_ids = [0]
         next_token_ids = [samples[sample_idx]]
         results.append((next_token_ids, parent_ids))
         sample_idx += num_parent_seqs
