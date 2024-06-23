@@ -14,7 +14,7 @@ from vllm.core.evictor_v1 import EvictionPolicy, Evictor, make_evictor
 from vllm.core.interfaces import AllocStatus, BlockSpaceManager
 from vllm.logger import init_logger
 from vllm.sequence import Sequence, SequenceGroup, SequenceStatus
-from vllm.utils import Device,time_it
+from vllm.utils import Device, time_it
 
 logger = init_logger(__name__)
 
@@ -328,6 +328,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             # block_device_table[block.block_number] = Device.GPU
 
         return block_table
+
     def allocate(self, seq_group: SequenceGroup) -> None:
         is_encoder_decoder = seq_group.is_encoder_decoder()
         check_no_caching_or_swa_for_blockmgr_encdec(self, seq_group)
@@ -484,7 +485,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             # Copy on Write: Allocate a new block and copy the tokens.
             new_block = self._allocate_last_physical_block(seq)
             # block_device_table[new_block.block_number]=Device.GPU
-            
+
             block_table[-1] = new_block
             self.gpu_allocator.free(last_block)
             # del block_device_table[last_block.block_number]
@@ -543,7 +544,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
 
     def _swap_block_table(
             self, block_table: BlockTable, src_allocator: BlockAllocatorBase,
-            dest_allocator: BlockAllocatorBase, 
+            dest_allocator: BlockAllocatorBase,
             mapping: Dict[PhysicalTokenBlock,
                           PhysicalTokenBlock]) -> BlockTable:
         new_block_table = []
@@ -565,14 +566,14 @@ class BlockSpaceManagerV1(BlockSpaceManager):
     def swap_in(self, seq_group: SequenceGroup) -> List[Tuple[int, int]]:
 
         request_id = seq_group.request_id
-        
+
         # CPU block -> GPU block.
         # dict is efficient in lookup `if cpu_block in mapping`
         mapping: Dict[PhysicalTokenBlock, PhysicalTokenBlock] = {}
         for seq in seq_group.get_seqs(status=SequenceStatus.SWAPPED):
             block_table = self.block_tables[seq.seq_id]
             # block_device_table = self.block_device_tables[seq.seq_id]
-            swapped_in_block_indices= {} 
+            swapped_in_block_indices = {}
             swapping_in_blocks = []
             cpu_device = Device.CPU
             # gpu_device = Device.GPU
@@ -588,15 +589,16 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             if len(swapped_in_block_indices) == 0:
                 swapping_in_blocks = block_table
 
-        
             swapped_in_blocks = self._swap_block_table(swapping_in_blocks,
-                                                         self.cpu_allocator,
-                                                         self.gpu_allocator,
-                                                         mapping)
+                                                       self.cpu_allocator,
+                                                       self.gpu_allocator,
+                                                       mapping)
             if len(swapped_in_block_indices) > 0:
-                for block_indx, index_value in swapped_in_block_indices.items():
+                for block_indx, index_value in swapped_in_block_indices.items(
+                ):
                     swapped_in_block = swapped_in_blocks[index_value]
-                    self.block_tables[seq.seq_id][block_indx] = swapped_in_block
+                    self.block_tables[
+                        seq.seq_id][block_indx] = swapped_in_block
             else:
                 self.block_tables[seq.seq_id] = swapped_in_blocks
         if seq_group.is_encoder_decoder():
@@ -613,10 +615,11 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         blocks = self._get_physical_blocks(seq_group)
         return len(blocks) <= self.cpu_allocator.get_num_free_blocks()
 
-
-    def swap_out(self, seq_group: SequenceGroup, swap_out_blocks_num:int=0) -> List[Tuple[int, int]]:
+    def swap_out(self,
+                 seq_group: SequenceGroup,
+                 swap_out_blocks_num: int = -1) -> List[Tuple[int, int]]:
         request_id = seq_group.request_id
-    
+
         # GPU block -> CPU block.
         # dict is efficient in lookup `if gpu_block in mapping`
         mapping: Dict[PhysicalTokenBlock, PhysicalTokenBlock] = {}
@@ -631,22 +634,22 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             # swapping_out_blocks_set= set(swapping_out_blocks)
             # for block in block_tables:
             #     if block in swapping_out_blocks_set:
-            #         block_device_table[block.block_number] = Device.CPU 
+            #         block_device_table[block.block_number] = Device.CPU
             #     else:
             #         block_device_table[block.block_number] = Device.GPU
-            swapped_out_blocks = self._swap_block_table(swapping_out_blocks,
-                                                         self.gpu_allocator,
-                                                         self.cpu_allocator,
-                                                         mapping)
+            swapped_out_blocks = self._swap_block_table(
+                swapping_out_blocks, self.gpu_allocator, self.cpu_allocator,
+                mapping)
             if swap_out_blocks_num > 0:
-                self.block_tables[seq.seq_id][:swap_out_blocks_num] = swapped_out_blocks
+                self.block_tables[
+                    seq.seq_id][:swap_out_blocks_num] = swapped_out_blocks
             else:
                 self.block_tables[seq.seq_id] = swapped_out_blocks
             # self.block_tables[seq.seq_id] = \
-                # self._swap_block_table(swapping_out_blocks,
-                                    #    self.gpu_allocator,
-                                    #    self.cpu_allocator,
-                                    #    mapping)
+            # self._swap_block_table(swapping_out_blocks,
+            #    self.gpu_allocator,
+            #    self.cpu_allocator,
+            #    mapping)
 
             # self.block_device_tables[seq.seq_id] = block_device_table
         if seq_group.is_encoder_decoder():

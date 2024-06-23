@@ -257,6 +257,10 @@ class Sequence:
         # Input + output tokens
         self.tokens: Optional[List[str]] = None
 
+        self.eos_prob_estimation_window = 17
+        self.default_eos_token_prob = -1000.0
+        
+        
     @property
     def prompt(self) -> Optional[str]:
         return self.inputs.get("prompt")
@@ -274,8 +278,9 @@ class Sequence:
         return self.lora_request.lora_int_id if self.lora_request else 0
 
     def get_eos_token_prob(self) -> float:
-        if len(self.eos_token_prob) < 17 or -1000.0 in self.eos_token_prob:
-            return -1000.0
+        if len(self.eos_token_prob) < self.eos_prob_estimation_window \
+            or self.default_eos_token_prob in self.eos_token_prob:
+            return  self.default_eos_token_prob
         else:
             return np.mean(self.eos_token_prob)
 
@@ -336,13 +341,14 @@ class Sequence:
         self.data.append_token_id(token_id, logprobs[token_id].logprob)
         if self.eos_token_id in logprobs:
             eos_token_prob = logprobs.get(self.eos_token_id,
-                                          Logprob(-1000.0)).logprob
+                                          Logprob(self.default_eos_token_prob)).logprob
             self.eos_token_prob.append(eos_token_prob)
-            if len(self.eos_token_prob) > 17:
-                self.eos_token_prob = self.eos_token_prob[-17:]
+            if len(self.eos_token_prob) > self.eos_prob_estimation_window:
+                self.eos_token_prob = \
+                    self.eos_token_prob[-self.eos_prob_estimation_window:]
 
         else:
-            self.eos_token_prob.append(-1000.0)
+            self.eos_token_prob.append(self.default_eos_token_prob)
 
     @property
     def logical_token_block_size(self) -> int:

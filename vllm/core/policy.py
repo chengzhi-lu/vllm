@@ -1,41 +1,9 @@
 from collections import deque
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from typing import Deque, Dict
+from typing import Deque
 import numpy as np
-import time
 
 from vllm.sequence import SequenceGroup
 import random
-from torch.nn import functional as F
-import torch
-
-
-class AgentModel:
-
-    def __init__(self, model_name: str = "JackFram/llama-160m"):
-        self.model, self.tokenizer, self.eos_token_id = self._init_model(
-            model_name)
-
-    def _init_model(self, model_name):
-        model = AutoModelForCausalLM.from_pretrained(model_name)
-        model.to("cuda:0")
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        eos_token_id = tokenizer.eos_token_id
-        return model, tokenizer, eos_token_id
-
-    def generate(self, input_ids):
-        # Get the model output
-        input_ids = input_ids.to(self.model.device)
-        with torch.no_grad():
-            output = self.model(input_ids, return_dict=True)
-        logits = output["logits"]
-        probs = F.softmax(logits, dim=-1)
-        next_token_probs = list(probs[:, -1,
-                                      self.eos_token_id].to("cpu").numpy())
-        return next_token_probs
-
-    def __call__(self, input_ids):
-        return self.generate(input_ids)
 
 
 class Policy:
@@ -70,53 +38,6 @@ class FCFS(Policy):
         return now - seq_group.metrics.arrival_time
 
 
-class InferScheduleAgentModel(Policy):
-
-    def __init__(self):
-        self.agent_model = AgentModel()
-
-    # maximize the number of tokens in the queue while ensuring the sequences with higher probability to finish first.
-    def get_sorted_seq_group(
-            self, now: float,
-            seq_groups: Deque[SequenceGroup]) -> Deque[SequenceGroup]:
-        st = time.time()
-        new_seq_groups = [seq for seq in seq_groups]
-        input_tokens = []
-        for seq_group in new_seq_groups:
-            seqs = seq_group.get_seqs()
-            for seq in seqs:
-                input_tokens.append(seq.get_token_ids())
-        input_tokens = torch.tensor(input_tokens)
-        et = time.time()
-        print("Get input tokens time: ", et - st)
-        st = time.time()
-        if len(input_tokens) == 0:
-            return deque(new_seq_groups)
-        eos_probabilities = self.agent_model(input_tokens)
-        et = time.time()
-        print("Agent model time: ", et - st)
-        st = time.time()
-        seq_groups_dict = {
-            k: v
-            for k, v in zip(new_seq_groups, eos_probabilities)
-        }
-        # sort seq_groups by eos probability
-        sorted_seq_groups = sorted(seq_groups_dict.items(),
-                                   key=lambda x: x[1],
-                                   reverse=True)
-        seq_groups = deque([i[0] for i in sorted_seq_groups])
-        et = time.time()
-        print("parse result time: ", et - st)
-        return deque(new_seq_groups)
-
-    def sort_by_priority(
-        self,
-        now: float,
-        seq_groups: Deque[SequenceGroup],
-    ) -> Deque[SequenceGroup]:
-        return self.get_sorted_seq_group(now, seq_groups)
-
-
 class InferSchedule(Policy):
 
     def get_priority(
@@ -125,19 +46,20 @@ class InferSchedule(Policy):
         seq_group: SequenceGroup,
     ) -> float:
         eos_token_probs = []
-        decoding_length =0
+        decoding_length = 0
         # token_blocks = seq_group.total_token_block_size
-        for seq_id, seq in seq_group.seqs_dict.items():
+        for _, seq in seq_group.seqs_dict.items():
             eos_token_probs.append(seq.get_eos_token_prob())
             decoding_length += seq.get_output_len()
         eos_token_probs = np.mean(eos_token_probs)
         if eos_token_probs == -1000.0:
             priority = len(seq_group.prompt_token_ids)
         else:
-            probs=np.exp(eos_token_probs)
-            waiting_percent = seq_group.metrics.waiting_iter_nums / decoding_length
-            priority = probs+waiting_percent
-        # priority = max(eos_token_probs) + seq_group.metrics.waiting_iter_nums 
+            probs = np.exp(eos_token_probs)
+            waiting_percent = \
+                seq_group.metrics.waiting_iter_nums**2 / decoding_length
+            priority = probs + waiting_percent
+        # priority = max(eos_token_probs) + seq_group.metrics.waiting_iter_nums
         return priority
 
 

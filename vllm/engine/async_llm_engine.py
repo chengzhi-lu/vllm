@@ -223,39 +223,73 @@ class _AsyncLLMEngine(LLMEngine):
         st = time.time()
         if self.et != 0:
             print("interval time is", st - self.et)
-        seq_group_metadata_list, scheduler_outputs = self.scheduler.schedule()
+        seq_group_metadata_lists, scheduler_outputs = self.scheduler.schedule()
         et = time.time()
         print("schedule time is", et - st)
-        st = time.time()
-        if not scheduler_outputs.is_empty():
-            # Execute the model.
+        execte_time = 0
+        handle_output_time = 0
+        request_outputs = []
+        for seq_group_metadata_list,scheduler_output in zip(seq_group_metadata_lists,scheduler_outputs):
+            st = time.time()
             execute_model_req = ExecuteModelRequest(
-                seq_group_metadata_list=seq_group_metadata_list,
-                blocks_to_swap_in=scheduler_outputs.blocks_to_swap_in,
-                blocks_to_swap_out=scheduler_outputs.blocks_to_swap_out,
-                blocks_to_copy=scheduler_outputs.blocks_to_copy,
-                num_lookahead_slots=scheduler_outputs.num_lookahead_slots,
-                running_queue_size=scheduler_outputs.running_queue_size,
-            )
-            output = await self.model_executor.execute_model_async(
-                execute_model_req)
-        else:
-            output = []
-        et = time.time()
-        print("execute time is", et - st)
-        st = time.time()
-        request_outputs = self._process_model_outputs(
-            output,
-            scheduler_outputs.scheduled_seq_groups,
-            scheduler_outputs.ignored_seq_groups,
-            seq_group_metadata_list,
-            num_running_to_waiting=scheduler_outputs.num_running_to_waiting,
-            num_waiting_to_running=scheduler_outputs.num_waiting_to_running,
-            recomputed_token_nums=scheduler_outputs.recomputed_token_nums,
-            num_preemption_iter=scheduler_outputs.preempted)
+            seq_group_metadata_list=seq_group_metadata_list,
+            blocks_to_swap_in=scheduler_output.blocks_to_swap_in,
+            blocks_to_swap_out=scheduler_output.blocks_to_swap_out,
+            blocks_to_copy=scheduler_output.blocks_to_copy,
+            num_lookahead_slots=scheduler_output.num_lookahead_slots,
+            running_queue_size=scheduler_output.running_queue_size,
+        )
+        # if self.scheduler_config.policy=='infer':
+        #     print("-------------------") 
+                
+        #     execute_model_reqs = \
+        #         self.split_execution_seq_groups(execute_model_req=execute_model_req, 
+        #                                         scheduler_outputs=scheduler_outputs)
+        #     print(f"execute_model_reqs is {[scheduler_output_dict for _, scheduler_output_dict in execute_model_reqs]}")
+                
+        #     for i in range(len(execute_model_reqs)):
+        #         execute_model_req, scheduler_output_dict = execute_model_reqs[i]
+        #         output = await self.model_executor.execute_model_async(execute_model_req)
+        #         et = time.time()
+        #         print("execute time is", et - st)
+        #         st = time.time()
+        #         print(scheduler_output_dict)
+        #         request_output = self._process_model_outputs(
+        #             output,
+        #             scheduler_output_dict["scheduled_seq_groups"],
+        #             scheduler_output_dict["ignored_seq_groups"],
+        #             seq_group_metadata_list,
+        #             num_running_to_waiting=scheduler_output_dict["num_running_to_waiting"],
+        #             num_waiting_to_running=scheduler_output_dict["num_waiting_to_running"],
+        #             recomputed_token_nums=scheduler_output_dict["recomputed_token_nums"],
+        #             num_preemption_iter=scheduler_output_dict["preempted"])
 
-        # Log stats.
-        self.do_log_stats(scheduler_outputs, output)
+        #         request_outputs.extend(request_output)
+        #     self.et = time.time()
+        #     print("handle output time is", self.et - st)
+        # elif self.scheduler_config.policy=='fcfs':
+            if not scheduler_output.is_empty():
+                output = await self.model_executor.execute_model_async(
+                execute_model_req)
+            else:
+                output = []
+            et = time.time()
+            execte_time += et - st
+            st = time.time()
+            request_output = self._process_model_outputs(
+                    output,
+                    scheduler_output.scheduled_seq_groups,
+                    scheduler_output.ignored_seq_groups,
+                    seq_group_metadata_list,
+                    num_running_to_waiting=scheduler_output.num_running_to_waiting,
+                    num_waiting_to_running=scheduler_output.num_waiting_to_running,
+                    recomputed_token_nums=scheduler_output.recomputed_token_nums,
+                    num_preemption_iter=scheduler_output.preempted)
+            request_outputs.extend(request_output)
+            # Log stats.
+            self.do_log_stats(scheduler_output, output)
+            et = time.time()
+            handle_output_time += et - st
 
         if not request_outputs:
             # Stop the execute model loop in parallel workers until there are
@@ -264,10 +298,11 @@ class _AsyncLLMEngine(LLMEngine):
             # the RPC thread in the workers so that they can process any other
             # queued control plane messages, such as add/remove lora adapters.
             await self.model_executor.stop_remote_worker_execution_loop_async()
+        
         self.et = time.time()
-        print("handle output time is", self.et - st)
-        return request_outputs
-
+        print("handle output time is", handle_output_time, "execute time is", execte_time)
+        
+        return request_outputs 
     async def process_model_inputs_async(
         self,
         request_id: str,

@@ -13,7 +13,6 @@ from vllm.sampling_params import SamplingType
 from vllm.sequence import (CompletionSequenceGroupOutput, Logprob,
                            PromptLogprobs, SampleLogprobs, SamplerOutput,
                            SequenceOutput)
-import time
 
 # (num_token_ids, num_parent_ids) per sequence group.
 SampleResultType = List[Tuple[List[int], List[int]]]
@@ -60,7 +59,6 @@ class Sampler(nn.Module):
         """
         assert logits is not None
         _, vocab_size = logits.shape
-        st = time.time()
         logits = _apply_min_tokens_penalty(logits, sampling_metadata)
         # Prepare sampling tensors with pinned memory to avoid blocking.
         (sampling_tensors, do_penalties, do_top_p_top_k,
@@ -86,16 +84,10 @@ class Sampler(nn.Module):
             logits = _apply_min_p(logits, sampling_tensors.min_ps)
         # We use float32 for probabilities and log probabilities.
         # Compute the probabilities.
-        et = time.time()
-        print(f"**********Logits handling time: {et-st}")
-        st = time.time()
         probs = torch.softmax(logits, dim=-1, dtype=torch.float)
         # Compute the log probabilities.
         logprobs = torch.log_softmax(logits, dim=-1, dtype=torch.float)
         # Sample the next tokens.
-        et = time.time()
-        print(f"**********Probs calc time: {et-st}")
-        st = time.time()
         sample_results, maybe_sampled_tokens_tensor = _sample(
             probs,
             logprobs,
@@ -110,14 +102,9 @@ class Sampler(nn.Module):
             on_device_tensors = (probs, logprobs, maybe_sampled_tokens_tensor)
         else:
             on_device_tensors = None
-        et = time.time()
-        print(f"**********Sampling time: {et-st}")
         # Get the logprobs query results.
-        st = time.time()
         prompt_logprobs, sample_logprobs = _get_logprobs(
             logprobs, sampling_metadata, sample_results)
-        et = time.time()
-        print(f"**********sample logprobs calc time: {et-st}")
         return _build_sampler_output(sample_results,
                                      sampling_metadata,
                                      prompt_logprobs,
