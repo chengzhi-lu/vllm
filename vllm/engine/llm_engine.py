@@ -686,12 +686,8 @@ class LLMEngine:
                 scheduled_seq_groups, output_by_sequence_group,
                 seq_group_metadata_list):
             seq_group = scheduled_seq_group.seq_group
-            try:
-                seq_group.update_num_computed_tokens(
-                    scheduled_seq_group.token_chunk_size)
-            except Exception as e:
-                print(f"Error updating num_computed_tokens: {e}, seq_group: {seq_group},, scheduled_seq_group: {scheduled_seq_group}")
-                raise e
+            seq_group.update_num_computed_tokens(
+                scheduled_seq_group.token_chunk_size)
             if self.model_config.embedding_mode:
                 self._process_sequence_group_outputs(seq_group, outputs)
                 continue
@@ -822,63 +818,6 @@ class LLMEngine:
         self.et = time.time()
         print(f"process time: {self.et - st}")
         return request_outputs
-
-    def split_execution_seq_groups(self, 
-                                   execute_model_req: ExecuteModelRequest, 
-                                   scheduler_outputs: SchedulerOutputs):
-        requests = execute_model_req.seq_group_metadata_list
-        num_requests = len(requests)
-        if num_requests > 16:
-            # split the requests into multiple execution requests
-            # to accelerate the execution
-            half_num_requests = num_requests // 2
-            first_half_requests = requests[:half_num_requests]
-            second_half_requests = requests[half_num_requests:]
-            first_half_execute_model_req = ExecuteModelRequest(
-                seq_group_metadata_list=first_half_requests,
-                blocks_to_swap_in=execute_model_req.blocks_to_swap_in,
-                blocks_to_swap_out=execute_model_req.blocks_to_swap_out,
-                blocks_to_copy=execute_model_req.blocks_to_copy,
-                num_lookahead_slots=execute_model_req.num_lookahead_slots,
-                running_queue_size=execute_model_req.running_queue_size,
-            )
-            second_half_execute_model_req = ExecuteModelRequest(
-                seq_group_metadata_list=second_half_requests,
-                blocks_to_swap_in=[],
-                blocks_to_swap_out=[],
-                blocks_to_copy=[],
-            )
-            first_half_scheduler_outputs = {
-                "scheduled_seq_groups": scheduler_outputs.scheduled_seq_groups[:half_num_requests],
-                "ignored_seq_groups": scheduler_outputs.ignored_seq_groups,
-                "num_running_to_waiting": scheduler_outputs.num_running_to_waiting,
-                "num_waiting_to_running": scheduler_outputs.num_waiting_to_running,
-                "recomputed_token_nums": scheduler_outputs.recomputed_token_nums,
-                "preempted": scheduler_outputs.preempted,
-            }
-            second_half_scheduler_outputs = {
-                "scheduled_seq_groups": scheduler_outputs.scheduled_seq_groups[half_num_requests:],
-                "ignored_seq_groups": [],
-                "num_running_to_waiting": 0,
-                "num_waiting_to_running": 0,
-                "recomputed_token_nums": 0,
-                "preempted": 0,
-            }
-            return [(first_half_execute_model_req, first_half_scheduler_outputs), (second_half_execute_model_req, second_half_scheduler_outputs)]
-        else:
-            scheduler_output_dict = {
-                "scheduled_seq_groups": scheduler_outputs.scheduled_seq_groups,
-                "ignored_seq_groups": scheduler_outputs.ignored_seq_groups,
-                "num_running_to_waiting": scheduler_outputs.num_running_to_waiting,
-                "num_waiting_to_running": scheduler_outputs.num_waiting_to_running,
-                "recomputed_token_nums": scheduler_outputs.recomputed_token_nums,
-                "preempted": scheduler_outputs.preempted,
-            }
-            return [(execute_model_req,scheduler_output_dict)]
-
-        
-        
-        
 
     def do_log_stats(
         self,

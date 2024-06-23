@@ -436,7 +436,6 @@ class Scheduler:
     def get_num_unfinished_seq_groups(self) -> int:
         return len(self.waiting) + len(self.running) + len(self.swapped)
 
-
     def _schedule_running_preemption(
         self,
         running_queue: deque,
@@ -1105,76 +1104,31 @@ class Scheduler:
         self.swapped = remaining_swapped
         self.swapped.extend(running_scheduled.swapped_out)
         self.iter_nums += 1
-        running_seq_groups = prefills.seq_groups + running_scheduled.decode_seq_groups + \
-            swapped_in.decode_seq_groups + running_scheduled.prefill_seq_groups + \
-            swapped_in.prefill_seq_groups
-        if self.scheduler_config.policy == "infer" and len(running_seq_groups)==self.scheduler_config.max_num_seqs:
-            running_seq_groups_length = len(running_seq_groups)
-            first_half = running_seq_groups[:running_seq_groups_length // 2]
-            second_half = running_seq_groups[running_seq_groups_length // 2:]
-            first_half_scheduler_outputs = SchedulerOutputs(
-                scheduled_seq_groups=first_half,
-                num_prefill_groups=(len(prefills.seq_groups)+len(swapped_in.prefill_seq_groups)+len(running_scheduled.prefill_seq_groups)),
-                num_batched_tokens=budget.num_batched_tokens,
-                blocks_to_swap_in=swapped_in.blocks_to_swap_in,
-                blocks_to_swap_out=running_scheduled.blocks_to_swap_out,
-                blocks_to_copy=running_scheduled.blocks_to_copy +
-                swapped_in.blocks_to_copy,
-                ignored_seq_groups=prefills.ignored_seq_groups,
-                num_lookahead_slots=running_scheduled.num_lookahead_slots,
-                running_queue_size=len(self.running),
-                preempted=(len(running_scheduled.preempted) +
-                            len(running_scheduled.swapped_out)),
-                num_running_to_waiting=len(running_scheduled.preempted),
-                num_waiting_to_running=len(running_scheduled.prefill_seq_groups),
-                recomputed_token_nums=recomputed_token_nums,
-            )
-            second_half_scheduler_outputs = SchedulerOutputs(
-                scheduled_seq_groups=second_half,
-                num_prefill_groups=0,
-                num_batched_tokens=0,
-                blocks_to_swap_in=[],
-                blocks_to_swap_out=[],
-                blocks_to_copy=[],
-                ignored_seq_groups=[],
-                num_lookahead_slots=running_scheduled.num_lookahead_slots,
-                running_queue_size=0,
-                preempted=0,
-                num_running_to_waiting=0,
-                num_waiting_to_running=0,
-                recomputed_token_nums=0,
-            ) 
-            return [
-                first_half_scheduler_outputs,
-                second_half_scheduler_outputs
-            ]
-        else:
-            scheduler_output = SchedulerOutputs(
-                scheduled_seq_groups=(prefills.seq_groups +
-                                    running_scheduled.prefill_seq_groups +
-                                    swapped_in.prefill_seq_groups +
-                                    running_scheduled.decode_seq_groups +
-                                    swapped_in.decode_seq_groups),
-                num_prefill_groups=(len(prefills.seq_groups) +
-                                    len(swapped_in.prefill_seq_groups) +
-                                    len(running_scheduled.prefill_seq_groups)),
-                num_batched_tokens=budget.num_batched_tokens,
-                blocks_to_swap_in=swapped_in.blocks_to_swap_in,
-                blocks_to_swap_out=running_scheduled.blocks_to_swap_out,
-                blocks_to_copy=running_scheduled.blocks_to_copy +
-                swapped_in.blocks_to_copy,
-                ignored_seq_groups=prefills.ignored_seq_groups,
-                num_lookahead_slots=running_scheduled.num_lookahead_slots,
-                running_queue_size=len(self.running),
-                preempted=(len(running_scheduled.preempted) +
-                        len(running_scheduled.swapped_out)),
-                num_running_to_waiting=len(running_scheduled.preempted),
-                num_waiting_to_running=len(running_scheduled.prefill_seq_groups),
-                recomputed_token_nums=recomputed_token_nums,
-            )
-            return [scheduler_output]
+        return SchedulerOutputs(
+            scheduled_seq_groups=(prefills.seq_groups +
+                                  running_scheduled.prefill_seq_groups +
+                                  swapped_in.prefill_seq_groups +
+                                  running_scheduled.decode_seq_groups +
+                                  swapped_in.decode_seq_groups),
+            num_prefill_groups=(len(prefills.seq_groups) +
+                                len(swapped_in.prefill_seq_groups) +
+                                len(running_scheduled.prefill_seq_groups)),
+            num_batched_tokens=budget.num_batched_tokens,
+            blocks_to_swap_in=swapped_in.blocks_to_swap_in,
+            blocks_to_swap_out=running_scheduled.blocks_to_swap_out,
+            blocks_to_copy=running_scheduled.blocks_to_copy +
+            swapped_in.blocks_to_copy,
+            ignored_seq_groups=prefills.ignored_seq_groups,
+            num_lookahead_slots=running_scheduled.num_lookahead_slots,
+            running_queue_size=len(self.running),
+            preempted=(len(running_scheduled.preempted) +
+                       len(running_scheduled.swapped_out)),
+            num_running_to_waiting=len(running_scheduled.preempted),
+            num_waiting_to_running=len(running_scheduled.prefill_seq_groups),
+            recomputed_token_nums=recomputed_token_nums,
+        )
 
-    def _schedule(self) -> List[SchedulerOutputs]:
+    def _schedule(self) -> SchedulerOutputs:
         """Schedule queued requests."""
         if self.scheduler_config.chunked_prefill_enabled:
             return self._schedule_chunked_prefill()
@@ -1209,7 +1163,7 @@ class Scheduler:
     def _can_allocate_seq(self, block_size: int) -> bool:
         return self.block_manager.can_allocat_infer(block_size)
 
-    def schedule(self) -> Tuple[List[List[SequenceGroupMetadata]], List[SchedulerOutputs]]:
+    def schedule(self) -> Tuple[List[SequenceGroupMetadata], SchedulerOutputs]:
         # Schedule sequence groups.
         # This function call changes the internal states of the scheduler
         # such as self.running, self.swapped, and self.waiting.
@@ -1217,76 +1171,74 @@ class Scheduler:
         now = time.time()
 
         # Create input data structures.
-        seq_group_metadata_lists = []
-        for scheduler_output in scheduler_outputs:
-            seq_group_metadata_list: List[SequenceGroupMetadata] = []
-            for i, scheduled_seq_group in enumerate(scheduler_output.scheduled_seq_groups):
-                seq_group = scheduled_seq_group.seq_group
-                token_chunk_size = scheduled_seq_group.token_chunk_size
-                seq_group.maybe_set_first_scheduled_time(now)
+        seq_group_metadata_list: List[SequenceGroupMetadata] = []
 
-                # seq_id -> SequenceData
-                seq_data: Dict[int, SequenceData] = {}
-                # seq_id -> physical block numbers
-                block_tables: Dict[int, List[int]] = {}
-                for seq in seq_group.get_seqs(status=SequenceStatus.RUNNING):
-                    seq_id = seq.seq_id
-                    seq_data[seq_id] = seq.data
-                    block_tables[seq_id] = self.block_manager.get_block_table(seq)
-                    self.block_manager.access_all_blocks_in_seq(seq, now)
+        for i, scheduled_seq_group in enumerate(
+                scheduler_outputs.scheduled_seq_groups):
+            seq_group = scheduled_seq_group.seq_group
+            token_chunk_size = scheduled_seq_group.token_chunk_size
+            seq_group.maybe_set_first_scheduled_time(now)
 
-                common_computed_block_nums = (
-                    self.block_manager.get_common_computed_block_ids(
-                        seq_group.get_seqs(status=SequenceStatus.RUNNING)))
+            # seq_id -> SequenceData
+            seq_data: Dict[int, SequenceData] = {}
+            # seq_id -> physical block numbers
+            block_tables: Dict[int, List[int]] = {}
+            for seq in seq_group.get_seqs(status=SequenceStatus.RUNNING):
+                seq_id = seq.seq_id
+                seq_data[seq_id] = seq.data
+                block_tables[seq_id] = self.block_manager.get_block_table(seq)
+                self.block_manager.access_all_blocks_in_seq(seq, now)
 
-                do_sample = True
-                if seq_group.is_prefill():
-                    seqs = seq_group.get_seqs()
-                    # Prefill has only 1 sequence.
-                    assert len(seqs) == 1
-                    # In the next iteration, all prompt tokens are not computed.
-                    # It means the prefill is chunked, and we don't need sampling.
-                    # NOTE: We use get_len instead of get_prompt_len because when
-                    # a sequence is preempted, prefill includes previous generated
-                    # output tokens.
-                    if (token_chunk_size + seqs[0].data.get_num_computed_tokens() <
-                            seqs[0].data.get_len()):
-                        do_sample = False
+            common_computed_block_nums = (
+                self.block_manager.get_common_computed_block_ids(
+                    seq_group.get_seqs(status=SequenceStatus.RUNNING)))
 
-                # It assumes the scheduled_seq_groups is ordered by
-                # prefill < decoding.
-                is_prompt = seq_group.is_prefill()
-                seq_group_metadata = SequenceGroupMetadata(
-                    request_id=seq_group.request_id,
-                    is_prompt=is_prompt,
-                    seq_data=seq_data,
-                    sampling_params=seq_group.sampling_params,
-                    block_tables=block_tables,
-                    do_sample=do_sample,
-                    pooling_params=seq_group.pooling_params,
-                    token_chunk_size=token_chunk_size,
-                    lora_request=seq_group.lora_request,
-                    computed_block_nums=common_computed_block_nums,
-                    state=seq_group.state,
-                    # `multi_modal_data` will only be present for the 1st comm
-                    # between engine and worker.
-                    # the subsequent comms can still use delta, but
-                    # `multi_modal_data` will be None.
-                    multi_modal_data=seq_group.multi_modal_data
-                    if scheduler_output.num_prefill_groups > 0 else None,
-                    eos_token_id=seq_group.eos_token_id)
-                seq_group_metadata_list.append(seq_group_metadata)
+            do_sample = True
+            if seq_group.is_prefill():
+                seqs = seq_group.get_seqs()
+                # Prefill has only 1 sequence.
+                assert len(seqs) == 1
+                # In the next iteration, all prompt tokens are not computed.
+                # It means the prefill is chunked, and we don't need sampling.
+                # NOTE: We use get_len instead of get_prompt_len because when
+                # a sequence is preempted, prefill includes previous generated
+                # output tokens.
+                if (token_chunk_size + seqs[0].data.get_num_computed_tokens() <
+                        seqs[0].data.get_len()):
+                    do_sample = False
 
-            # Now that the batch has been created, we can assume all blocks in the
-            # batch will have been computed before the next scheduling invocation.
-            # This is because the engine assumes that a failure in model execution
-            # will crash the vLLM instance / will not retry.
-                for scheduled_seq_group in scheduler_output.scheduled_seq_groups:
-                    self.block_manager.mark_blocks_as_computed(
-                        scheduled_seq_group.seq_group)
-            seq_group_metadata_lists.append(seq_group_metadata_list)
+            # It assumes the scheduled_seq_groups is ordered by
+            # prefill < decoding.
+            is_prompt = seq_group.is_prefill()
+            seq_group_metadata = SequenceGroupMetadata(
+                request_id=seq_group.request_id,
+                is_prompt=is_prompt,
+                seq_data=seq_data,
+                sampling_params=seq_group.sampling_params,
+                block_tables=block_tables,
+                do_sample=do_sample,
+                pooling_params=seq_group.pooling_params,
+                token_chunk_size=token_chunk_size,
+                lora_request=seq_group.lora_request,
+                computed_block_nums=common_computed_block_nums,
+                state=seq_group.state,
+                # `multi_modal_data` will only be present for the 1st comm
+                # between engine and worker.
+                # the subsequent comms can still use delta, but
+                # `multi_modal_data` will be None.
+                multi_modal_data=seq_group.multi_modal_data
+                if scheduler_outputs.num_prefill_groups > 0 else None,
+                eos_token_id=seq_group.eos_token_id)
+            seq_group_metadata_list.append(seq_group_metadata)
 
-        return seq_group_metadata_lists, scheduler_outputs
+        # Now that the batch has been created, we can assume all blocks in the
+        # batch will have been computed before the next scheduling invocation.
+        # This is because the engine assumes that a failure in model execution
+        # will crash the vLLM instance / will not retry.
+        for scheduled_seq_group in scheduler_outputs.scheduled_seq_groups:
+            self.block_manager.mark_blocks_as_computed(
+                scheduled_seq_group.seq_group)
+        return seq_group_metadata_list, scheduler_outputs
 
     def fork_seq(self, parent_seq: Sequence, child_seq: Sequence) -> None:
         self.block_manager.fork(parent_seq, child_seq)
