@@ -76,6 +76,8 @@ class EngineArgs:
     num_lookahead_slots: int = 0
     model_loader_extra_config: Optional[dict] = None
     preemption_mode: Optional[str] = None
+    iter_threshold: int = 1
+    swap_out_partial_rate: float=0.5
 
     # Related to Vision-language models such as llava
     image_input_type: Optional[str] = None
@@ -89,6 +91,7 @@ class EngineArgs:
     scheduler_delay_factor: float = 0.0
     enable_chunked_prefill: bool = False
     scheduler_policy: str = "fcfs"
+    swap_out_half_tokens: bool = False
 
     guided_decoding_backend: str = 'outlines'
 
@@ -526,6 +529,32 @@ class EngineArgs:
         )
 
         parser.add_argument(
+            "--swap-out-half-tokens",
+            action='store_true',
+            help='If set, the engine will swap out half of the tokens '
+            'in the current batch to free up GPU memory for the '
+            'next batch.'
+        )
+        parser.add_argument(
+            "--swap-out-partial-rate",
+            type=float,
+            default=EngineArgs.swap_out_partial_rate,
+            help='The rate at which the engine will swap out partial '
+            'tokens in the current batch to free up GPU memory for '
+            'the next batch. The rate is the fraction of tokens to '
+           'swap out, which can range from 0 to 1. For example, a '
+            'value of 0.5 would imply swapping out 50%% of the tokens '
+            'in the current batch.'
+        )
+        
+        parser.add_argument(
+            "--iter-threshold",
+            type=int,
+            default=EngineArgs.iter_threshold,
+            help='The minimum number of iterations before the engine re-sort the queue.'
+        )
+                
+        parser.add_argument(
             '--speculative-model',
             type=nullable_str,
             default=EngineArgs.speculative_model,
@@ -699,6 +728,9 @@ class EngineArgs:
             delay_factor=self.scheduler_delay_factor,
             enable_chunked_prefill=self.enable_chunked_prefill,
             policy=self.scheduler_policy,
+            swap_out_partial_tokens=self.swap_out_half_tokens,
+            swap_out_partial_rate=self.swap_out_partial_rate,
+            iter_threshold=self.iter_threshold,
             preemption_mode=self.preemption_mode,
             embedding_mode=model_config.embedding_mode,
         )

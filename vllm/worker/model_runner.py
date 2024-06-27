@@ -886,12 +886,12 @@ class ModelRunner:
 
         # Prepare dummy inputs. These will be reused for all batch sizes.
         max_batch_size = max(_BATCH_SIZES_TO_CAPTURE)
-        input_tokens = torch.zeros(max_batch_size, dtype=torch.long).cuda()
-        input_positions = torch.zeros(max_batch_size, dtype=torch.long).cuda()
-        slot_mapping = torch.empty(max_batch_size, dtype=torch.long).cuda()
+        input_tokens = torch.zeros(max_batch_size, dtype=torch.long, pin_memory=True).cuda()
+        input_positions = torch.zeros(max_batch_size, dtype=torch.long, pin_memory=True).cuda()
+        slot_mapping = torch.empty(max_batch_size, dtype=torch.long,pin_memory=True).cuda()
         slot_mapping.fill_(_PAD_SLOT_ID)
-        seq_lens = torch.ones(max_batch_size, dtype=torch.int32).cuda()
-        block_tables = torch.from_numpy(self.graph_block_tables).cuda()
+        seq_lens = torch.ones(max_batch_size, dtype=torch.int32, pin_memory=True).cuda()
+        block_tables = torch.from_numpy(self.graph_block_tables).pin_memory().cuda()
 
         graph_batch_size = _get_graph_batch_size(
             self.scheduler_config.max_num_seqs)

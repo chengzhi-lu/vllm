@@ -683,7 +683,7 @@ class BitsAndBytesModelLoader(BaseModelLoader):
                        for target_module in self.target_modules):
                     weight_name = weight_name.replace(".weight", ".qweight")
                     #  bitsandbytes requires data in GPU
-                    loaded_weight = weight_tensor.cuda().data
+                    loaded_weight = weight_tensor.pin_memory().cuda().data
                     with set_default_torch_dtype(torch.float32):
                         processed_weight, quant_state = quantize_4bit(
                             loaded_weight,

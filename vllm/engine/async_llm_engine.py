@@ -222,10 +222,10 @@ class _AsyncLLMEngine(LLMEngine):
         """
         st = time.time()
         if self.et != 0:
-            print("interval time is", st - self.et)
+            print("interval time is:", st - self.et)
         seq_group_metadata_list, scheduler_outputs = self.scheduler.schedule()
         et = time.time()
-        print("schedule time is", et - st)
+        print("schedule time is:", et - st)
         st = time.time()
         if not scheduler_outputs.is_empty():
             # Execute the model.
@@ -242,7 +242,7 @@ class _AsyncLLMEngine(LLMEngine):
         else:
             output = []
         et = time.time()
-        print("execute time is", et - st)
+        print("execute time is:", et - st)
         st = time.time()
         request_outputs = self._process_model_outputs(
             output,
@@ -265,7 +265,7 @@ class _AsyncLLMEngine(LLMEngine):
             # queued control plane messages, such as add/remove lora adapters.
             await self.model_executor.stop_remote_worker_execution_loop_async()
         self.et = time.time()
-        print("handle output time is", self.et - st)
+        print("handle output time is:", self.et - st)
         return request_outputs
 
     async def process_model_inputs_async(

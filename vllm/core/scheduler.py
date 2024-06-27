@@ -457,7 +457,7 @@ class Scheduler:
         # to keep all the sequence groups in the RUNNING state.
         # In this case, the policy is responsible for deciding which sequence
         # groups to preempt.
-        if self.iter_nums % 10 == 0 or self.has_finished_seqs:
+        if self.iter_nums % self.scheduler_config.iter_threshold == 0 or self.has_finished_seqs:
             running_queue = policy.sort_by_priority(None, running_queue)
             self.has_finished_seqs = False
         while running_queue:
@@ -474,15 +474,19 @@ class Scheduler:
                 swap_out_block_num = -1
                 # If there's no other sequence groups in the waiting queue, only
                 # swap out half of the tokens belong to current seq_group.
-                if len(self.waiting) > 0:
-                    budget.subtract_num_batched_tokens(seq_group.request_id,
-                                                       num_running_tokens)
+                if self.scheduler_config.swap_out_partial_tokens:
+                    if len(self.waiting) > 0:
+                        budget.subtract_num_batched_tokens(seq_group.request_id,
+                                                        num_running_tokens)
+                    else:
+                        budget.subtract_num_batched_tokens(seq_group.request_id,
+                                                        num_running_tokens // 2)
+                        # if seq_group.total_token_block_size > 120:
+                        swap_out_block_num = max(
+                            seq_group.total_token_block_size // 2, 1)
                 else:
                     budget.subtract_num_batched_tokens(seq_group.request_id,
-                                                       num_running_tokens // 2)
-                    # if seq_group.total_token_block_size > 120:
-                    swap_out_block_num = max(
-                        seq_group.total_token_block_size // 2, 1)
+                                                        num_running_tokens) 
                 num_running_seqs = seq_group.get_max_num_running_seqs()
                 seq_group.update_waiting_iter_nums()
                 budget.subtract_num_seqs(seq_group.request_id,
@@ -590,8 +594,22 @@ class Scheduler:
             running_queue.popleft()
 
             while not self._can_append_slots(seq_group):
-                budget.subtract_num_batched_tokens(seq_group.request_id,
-                                                   num_running_tokens)
+                swap_out_block_num = -1
+                if self.scheduler_config.swap_out_partial_tokens:
+                    if len(self.waiting) > 0:
+                        budget.subtract_num_batched_tokens(seq_group.request_id,
+                                                        num_running_tokens)
+                    else:
+                        budget.subtract_num_batched_tokens(seq_group.request_id,
+                                                        int(num_running_tokens*self.scheduler_config.swap_out_partial_rate))
+                        # if seq_group.total_token_block_size > 120:
+                        swap_out_block_num = max(
+                            int(seq_group.total_token_block_size * self.scheduler_config.swap_out_partial_rate), 1)
+                else:
+                    budget.subtract_num_batched_tokens(seq_group.request_id,
+                                                        num_running_tokens) 
+                # budget.subtract_num_batched_tokens(seq_group.request_id,
+                #                                    num_running_tokens)
                 num_running_seqs = seq_group.get_max_num_running_seqs()
                 budget.subtract_num_seqs(seq_group.request_id,
                                          num_running_seqs)
@@ -608,10 +626,10 @@ class Scheduler:
                     if self.preemption_mode:
                         preempted_mode = self._preempt(victim_seq_group,
                                                        blocks_to_swap_out,
-                                                       self.preemption_mode)
+                                                       self.preemption_mode, swap_out_block_num)
                     else:
                         preempted_mode = self._preempt(victim_seq_group,
-                                                       blocks_to_swap_out)
+                                                       blocks_to_swap_out, None, swap_out_block_num)
 
                     if preempted_mode == PreemptionMode.RECOMPUTE:
                         preempted.append(victim_seq_group)
@@ -719,7 +737,7 @@ class Scheduler:
             alloc_status = self.block_manager.can_swap_in(
                 seq_group, self._get_num_lookahead_slots(is_prefill))
             if alloc_status == AllocStatus.LATER:
-                for seq in swapped_queue:
+                for seq_group in swapped_queue:
                     seq_group.update_waiting_iter_nums()
                 break
                 # swapped_queue.popleft()
@@ -758,6 +776,7 @@ class Scheduler:
             if (num_new_tokens == 0
                     or not budget.can_schedule(num_new_tokens=num_new_tokens,
                                                num_new_seqs=num_new_seqs)):
+                seq_group.update_waiting_iter_nums()
                 break
 
             if lora_int_id > 0 and curr_loras is not None:
@@ -1038,10 +1057,16 @@ class Scheduler:
         inter token latency because decodes requests don't need to blocked
         by prefill requests.
         """
+        # if self.scheduler_config.policy == "infer":
+        #     budget = SchedulingBudget(
+        #         token_budget=self.scheduler_config.max_num_batched_tokens,
+        #         max_num_seqs=self.current_num_seqs,
+        #     )
+        # else: 
         budget = SchedulingBudget(
-            token_budget=self.scheduler_config.max_num_batched_tokens,
-            max_num_seqs=self.scheduler_config.max_num_seqs,
-        )
+                token_budget=self.scheduler_config.max_num_batched_tokens,
+                max_num_seqs=self.scheduler_config.max_num_seqs,
+            )
         curr_loras: Set[int] = set()
         remaining_waiting, prefills = (self.waiting,
                                        SchedulerPrefillOutputs.create_empty())
@@ -1078,7 +1103,7 @@ class Scheduler:
 
         # Schedule new prefills.
         remaining_waiting, prefills = self._schedule_prefills(
-            self.waiting, budget, curr_loras, enable_chunking=True)
+                self.waiting, budget, curr_loras, enable_chunking=True)
         # et = time.time()
         # print(f"schedule chunked prefill time: {et - st}")
 
@@ -1167,9 +1192,12 @@ class Scheduler:
         # Schedule sequence groups.
         # This function call changes the internal states of the scheduler
         # such as self.running, self.swapped, and self.waiting.
+        # self.current_num_seqs = self.scheduler_config.max_num_seqs
+        # if len(self.running)+len(self.waiting) >= self.scheduler_config.max_num_seqs:
+        #     self.current_num_seqs = self.scheduler_config.max_num_seqs//2
         scheduler_outputs = self._schedule()
         now = time.time()
-
+        
         # Create input data structures.
         seq_group_metadata_list: List[SequenceGroupMetadata] = []
 

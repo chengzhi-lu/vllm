@@ -500,6 +500,8 @@ def main(args: argparse.Namespace):
 
         # Setup
         current_dt = datetime.now().strftime("%Y%m%d-%H%M%S")
+        days = datetime.now().strftime("%Y%m%d")
+        seconds = datetime.now().strftime("%H%M%S")
         result_json["date"] = current_dt
         result_json["backend"] = backend
         result_json["model_id"] = model_id
@@ -528,9 +530,12 @@ def main(args: argparse.Namespace):
 
         # Save to file
         base_model_id = model_id.split("/")[-1]
-        file_name = f"{backend}-{args.request_rate}qps-{base_model_id}-{current_dt}-{args.scheduler_policy}.json"  #noqa
+        dir_name = f"{days}/{args.execution_counter}"
+        file_name = f"{backend}-{args.request_rate}qps-{base_model_id}-{seconds}-{args.scheduler_policy}.json"  #noqa
         if args.result_dir:
-            file_name = os.path.join(args.result_dir, file_name)
+            if not os.path.exists(os.path.join(args.result_dir, dir_name)):
+                os.makedirs(os.path.join(args.result_dir, dir_name))
+            file_name = os.path.join(args.result_dir, dir_name, file_name)
         with open(file_name, "w") as outfile:
             json.dump(result_json, outfile)
 
@@ -674,6 +679,9 @@ if __name__ == "__main__":
                         default="fcfs",
                         choices=["fcfs", "infer"],
                         help="Specify the scheduler policy.")
-
+    parser.add_argument("--execution-counter",
+                        type=int,
+                        default=0,
+                        help="Specify the execution counter.")
     args = parser.parse_args()
     main(args)
