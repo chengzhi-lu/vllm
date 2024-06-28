@@ -11,7 +11,7 @@ COUNTER=$((COUNTER + 1))
 echo $COUNTER > $COUNTER_FILE
 
 scheduler_policy=(infer)
-swap_policies=(full)
+swap_policies=(half)
 # start vllm server
 model_name="meta-llama/Llama-2-13b-chat-hf"
 dataset_name="sharegpt"
@@ -29,7 +29,7 @@ for request_rate in "${request_rates[@]}"; do
     for swap_policy in "${swap_policies[@]}"; do
         for policy in "${scheduler_policy[@]}"; do
             if [ $swap_policy == "half" ]; then
-                taskset -c 10-11 CUDA_VISIBLE_DEVICES=1 python3 -m vllm.entrypoints.openai.api_server \
+                CUDA_VISIBLE_DEVICES=1 taskset -c 10-11 python3 -m vllm.entrypoints.openai.api_server \
                         --model $model_name --swap-space $swap_space\
                         --preemption-mode $preemption_mode --scheduler-policy $policy \
                         --enable-chunked-prefill --max-num-batched-tokens $max_tokens\
@@ -40,7 +40,7 @@ for request_rate in "${request_rates[@]}"; do
                         --disable-log-requests > api_server_${policy}_${swap_policy}.log 2>&1 &
                 pid=$!
             else
-                taskset -c 10-11 CUDA_VISIBLE_DEVICES=1 python3 -m vllm.entrypoints.openai.api_server \
+                CUDA_VISIBLE_DEVICES=1 taskset -c 10-11 python3 -m vllm.entrypoints.openai.api_server \
                         --model $model_name --swap-space $swap_space\
                         --preemption-mode $preemption_mode --scheduler-policy $policy \
                         --enable-chunked-prefill --max-num-batched-tokens $max_tokens\
