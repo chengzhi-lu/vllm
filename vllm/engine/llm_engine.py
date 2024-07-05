@@ -773,10 +773,10 @@ class LLMEngine:
         """
         st = time.time()
         if self.et != 0:
-            print("interval time:", self.et - st)
+            logger.debug("interval time:", self.et - st)
         seq_group_metadata_list, scheduler_outputs = self.scheduler.schedule()
         et = time.time()
-        print(f"schedule time: {et - st}")
+        logger.debug(f"schedule time: {et - st}")
         st = time.time()
         if not scheduler_outputs.is_empty():
             execute_model_req = ExecuteModelRequest(
@@ -792,7 +792,7 @@ class LLMEngine:
         else:
             output = []
         et = time.time()
-        print(f"execute time: {et - st}")
+        logger.debug(f"execute time: {et - st}")
         st = time.time()
         request_outputs = self._process_model_outputs(
             output,
@@ -816,7 +816,7 @@ class LLMEngine:
             self.model_executor.stop_remote_worker_execution_loop()
 
         self.et = time.time()
-        print(f"process time: {self.et - st}")
+        logger.debug(f"process time: {self.et - st}")
         return request_outputs
 
     def do_log_stats(

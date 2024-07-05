@@ -537,11 +537,11 @@ def _sample_with_torch(
             continue
         (seq_group_id, seq_groups) = sample_metadata[sampling_type]
         if sampling_type == SamplingType.GREEDY:
-            st = time.time()
+            # st = time.time()
             greedy_samples_cpu.copy_(greedy_samples)
             sample_results = _greedy_sample(seq_groups, greedy_samples_cpu)
-            et = time.time()
-            print(f"greedy sample time is: {et - st}")
+            # et = time.time()
+            # print(f"greedy sample time is: {et - st}")
         elif sampling_type in (SamplingType.RANDOM, SamplingType.RANDOM_SEED):
             sample_results = _random_sample(seq_groups,
                                             multinomial_samples[sampling_type])

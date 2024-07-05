@@ -8,6 +8,8 @@ from typing import Dict, List, Optional
 from typing import Sequence as GenericSequence
 from typing import Set, Tuple
 
+from sympy import Li
+
 from vllm.block import BlockTable, PhysicalTokenBlock
 from vllm.core.block.utils import check_no_caching_or_swa_for_blockmgr_encdec
 from vllm.core.evictor_v1 import EvictionPolicy, Evictor, make_evictor
@@ -571,10 +573,11 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         # dict is efficient in lookup `if cpu_block in mapping`
         mapping: Dict[PhysicalTokenBlock, PhysicalTokenBlock] = {}
         for seq in seq_group.get_seqs(status=SequenceStatus.SWAPPED):
+            seq.update_swapped_out_block_ratio(0.0)
             block_table = self.block_tables[seq.seq_id]
             # block_device_table = self.block_device_tables[seq.seq_id]
             swapped_in_block_indices = {}
-            swapping_in_blocks = []
+            swapping_in_blocks: List[PhysicalTokenBlock] = []
             cpu_device = Device.CPU
             # gpu_device = Device.GPU
             swapping_in_blocks_extend = swapping_in_blocks.extend
@@ -617,7 +620,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
 
     def swap_out(self,
                  seq_group: SequenceGroup,
-                 swap_out_blocks_num: int = -1) -> List[Tuple[int, int]]:
+                 swap_out_blocks_ratio: int = -1) -> List[Tuple[int, int]]:
         request_id = seq_group.request_id
 
         # GPU block -> CPU block.
@@ -626,8 +629,19 @@ class BlockSpaceManagerV1(BlockSpaceManager):
 
         for seq in seq_group.get_seqs(status=SequenceStatus.RUNNING):
             block_tables = self.block_tables[seq.seq_id]
-            if swap_out_blocks_num > 0:
-                swapping_out_blocks = block_tables[:swap_out_blocks_num]
+            swapped_out_blocks_idx = 0
+            swapping_out_blocks_idx = 0
+            if swap_out_blocks_ratio > 0:
+                block_table_length = len(block_tables)
+                swapped_out_blocks_ratio = seq.get_swapped_out_block_ratio()
+                swapping_out_blocks_idx = min(
+                    int((swap_out_blocks_ratio + swapped_out_blocks_ratio) *
+                        block_table_length), block_table_length)
+                swapped_out_blocks_idx = int(swapped_out_blocks_ratio *
+                                             block_table_length)
+                seq.update_swapped_out_block_ratio(swapped_out_blocks_ratio)
+                swapping_out_blocks = block_tables[
+                    swapped_out_blocks_idx:swapping_out_blocks_idx]
             else:
                 swapping_out_blocks = block_tables
             # block_device_table = self.block_device_tables[seq.seq_id]
@@ -640,9 +654,10 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             swapped_out_blocks = self._swap_block_table(
                 swapping_out_blocks, self.gpu_allocator, self.cpu_allocator,
                 mapping)
-            if swap_out_blocks_num > 0:
+            if swap_out_blocks_ratio > 0:
                 self.block_tables[
-                    seq.seq_id][:swap_out_blocks_num] = swapped_out_blocks
+                    seq.seq_id][swapped_out_blocks_idx:
+                                swapping_out_blocks_idx] = swapped_out_blocks
             else:
                 self.block_tables[seq.seq_id] = swapped_out_blocks
             # self.block_tables[seq.seq_id] = \

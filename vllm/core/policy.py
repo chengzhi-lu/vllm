@@ -51,15 +51,14 @@ class InferSchedule(Policy):
         for _, seq in seq_group.seqs_dict.items():
             eos_token_probs.append(seq.get_eos_token_prob())
             decoding_length += seq.get_output_len()
-        eos_token_probs = np.mean(eos_token_probs)
-        if eos_token_probs == -1000.0:
+        mean_eos_token_prob = np.mean(eos_token_probs)
+        if mean_eos_token_prob == -1000.0:
             priority = len(seq_group.prompt_token_ids)
         else:
-            probs = np.exp(eos_token_probs)
+            probs = np.exp(mean_eos_token_prob)
             waiting_percent = \
                 seq_group.metrics.waiting_iter_nums**2 / decoding_length
             priority = probs + waiting_percent
-        # priority = max(eos_token_probs) + seq_group.metrics.waiting_iter_nums
         return priority
 
 

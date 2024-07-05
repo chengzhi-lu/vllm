@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
+from sympy import Li
 import torch
 import numpy as np
 
@@ -253,14 +254,16 @@ class Sequence:
         # Used for incremental detokenization
         self.prefix_offset = 0
         self.read_offset = 0
-        self.eos_token_prob = [] 
+        self.eos_token_prob: List[float] = []
         # Input + output tokens
         self.tokens: Optional[List[str]] = None
 
+        # Swapped out block raio
+        self.swapped_out_block_ratio = 0.0
+
         self.eos_prob_estimation_window = 17
         self.default_eos_token_prob = -1000.0
-        
-        
+
     @property
     def prompt(self) -> Optional[str]:
         return self.inputs.get("prompt")
@@ -280,9 +283,15 @@ class Sequence:
     def get_eos_token_prob(self) -> float:
         if len(self.eos_token_prob) < self.eos_prob_estimation_window \
             or self.default_eos_token_prob in self.eos_token_prob:
-            return  self.default_eos_token_prob
+            return self.default_eos_token_prob
         else:
-            return np.mean(self.eos_token_prob)
+            return float(np.mean(self.eos_token_prob))
+
+    def update_swapped_out_block_ratio(self, swapped_out_block_ratio: float):
+        self.swapped_out_block_ratio += swapped_out_block_ratio
+
+    def get_swapped_out_block_ratio(self) -> float:
+        return self.swapped_out_block_ratio
 
     def get_output_text_to_return(self, buffer_length: int):
         # We return the full output text if the sequence is finished.
@@ -340,8 +349,9 @@ class Sequence:
         self.output_logprobs.append(logprobs)
         self.data.append_token_id(token_id, logprobs[token_id].logprob)
         if self.eos_token_id in logprobs:
-            eos_token_prob = logprobs.get(self.eos_token_id,
-                                          Logprob(self.default_eos_token_prob)).logprob
+            eos_token_prob = logprobs.get(
+                self.eos_token_id,
+                Logprob(self.default_eos_token_prob)).logprob
             self.eos_token_prob.append(eos_token_prob)
             if len(self.eos_token_prob) > self.eos_prob_estimation_window:
                 self.eos_token_prob = \

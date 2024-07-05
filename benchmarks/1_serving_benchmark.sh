@@ -10,8 +10,8 @@ COUNTER=$((COUNTER + 1))
 # 将新的计数器值写回文件
 echo $COUNTER > $COUNTER_FILE
 
-scheduler_policy=(infer)
-swap_policies=(half)
+scheduler_policy=(infer fcfs)
+swap_policies=(half full)
 # start vllm server
 model_name="meta-llama/Llama-2-13b-chat-hf"
 dataset_name="sharegpt"

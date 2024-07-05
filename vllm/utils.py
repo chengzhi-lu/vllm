@@ -17,7 +17,6 @@ import time
 from typing import (Any, AsyncIterator, Awaitable, Callable, Dict, Generic,
                     Hashable, List, Optional, OrderedDict, Tuple, TypeVar,
                     Union)
-
 import numpy as np
 import psutil
 import torch
@@ -676,12 +675,16 @@ def deprecate_kwargs(
 
     return wrapper
 
+
 def time_it(fn: Callable[..., Any], *args, **kwargs):
+
     @wraps(fn)
     def wrapper(*args, **kwargs):
         start_time = time.time()
         result = fn(*args, **kwargs)
         end_time = time.time()
-        logger.info(f"Time elapsed for {fn.__name__}: {end_time - start_time:.3f}s")
+        logger.info(
+            f"Time elapsed for {fn.__name__}: {end_time - start_time:.3f}s")
         return result
+
     return wrapper

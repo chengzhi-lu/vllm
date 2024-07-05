@@ -1,0 +1,482 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_AUTHOR	Darren Hiebert	/dhiebert@users.sourceforge.net/
+!_TAG_PROGRAM_NAME	Exuberant Ctags	//
+!_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
+!_TAG_PROGRAM_VERSION	5.9~svn20110310	//
+ALL_EXHAUSTED	scheduler.py	/^    ALL_EXHAUSTED = enum.auto()$/;"	v	class:PreemptionReason
+ARTIFICIAL_PREEMPTION_MAX_CNT	scheduler.py	/^ARTIFICIAL_PREEMPTION_MAX_CNT = 500$/;"	v
+ARTIFICIAL_PREEMPTION_PROB	scheduler.py	/^ARTIFICIAL_PREEMPTION_PROB = 0.5$/;"	v
+AllocStatus	interfaces.py	/^class AllocStatus(enum.Enum):$/;"	c
+BUDGET_EXHAUSTED	scheduler.py	/^    BUDGET_EXHAUSTED = enum.auto()$/;"	v	class:PreemptionReason
+Block	block/interfaces.py	/^class Block(ABC):$/;"	c
+BlockAllocator	block/interfaces.py	/^class BlockAllocator(ABC):$/;"	c
+BlockAllocatorBase	block_manager_v1.py	/^class BlockAllocatorBase(ABC):$/;"	c
+BlockFullPolicy	policy.py	/^class BlockFullPolicy(Policy):$/;"	c
+BlockId	block/common.py	/^BlockId = int$/;"	v
+BlockId	block/interfaces.py	/^BlockId = int$/;"	v
+BlockMetaData	evictor_v2.py	/^class BlockMetaData():$/;"	c
+BlockSpaceManager	interfaces.py	/^class BlockSpaceManager(ABC):$/;"	c
+BlockSpaceManagerV1	block_manager_v1.py	/^class BlockSpaceManagerV1(BlockSpaceManager):$/;"	c
+BlockSpaceManagerV2	block_manager_v2.py	/^class BlockSpaceManagerV2(BlockSpaceManager):$/;"	c
+BlockTable	block/block_table.py	/^class BlockTable:$/;"	c
+CachedBlockAllocator	block_manager_v1.py	/^class CachedBlockAllocator(BlockAllocatorBase):$/;"	c
+CopyOnWriteTracker	block/common.py	/^class CopyOnWriteTracker:$/;"	c
+CpuGpuBlockAllocator	block/cpu_gpu_block_allocator.py	/^class CpuGpuBlockAllocator(DeviceAwareBlockAllocator):$/;"	c
+DeviceAwareBlockAllocator	block/interfaces.py	/^class DeviceAwareBlockAllocator(ABC):$/;"	c
+ENABLE_ARTIFICIAL_PREEMPT	scheduler.py	/^ENABLE_ARTIFICIAL_PREEMPT = bool($/;"	v
+EmbeddingModelBlockSpaceManager	embedding_model_block_manager.py	/^class EmbeddingModelBlockSpaceManager(BlockSpaceManager):$/;"	c
+EncoderSeqId	block_manager_v2.py	/^EncoderSeqId = str$/;"	v
+EvictionPolicy	evictor_v1.py	/^class EvictionPolicy(enum.Enum):$/;"	c
+EvictionPolicy	evictor_v2.py	/^class EvictionPolicy(enum.Enum):$/;"	c
+Evictor	evictor_v1.py	/^class Evictor(ABC):$/;"	c
+Evictor	evictor_v2.py	/^class Evictor(ABC):$/;"	c
+FCFS	policy.py	/^class FCFS(Policy):$/;"	c
+FULL	scheduler.py	/^    FULL = enum.auto()$/;"	v	class:SwapMode
+Factory	block/interfaces.py	/^    class Factory(Protocol):$/;"	c	class:Block
+InferSchedule	infer_schedule.py	/^class InferSchedule:$/;"	c
+InferSchedule	policy.py	/^class InferSchedule(Policy):$/;"	c
+LATER	interfaces.py	/^    LATER = enum.auto()$/;"	v	class:AllocStatus
+LRU	evictor_v1.py	/^    LRU = enum.auto()$/;"	v	class:EvictionPolicy
+LRU	evictor_v2.py	/^    LRU = enum.auto()$/;"	v	class:EvictionPolicy
+LRUEvictor	evictor_v1.py	/^class LRUEvictor(Evictor):$/;"	c
+LRUEvictor	evictor_v2.py	/^class LRUEvictor(Evictor):$/;"	c
+LongestTokensFirst	policy.py	/^class LongestTokensFirst(Policy):$/;"	c
+NEVER	interfaces.py	/^    NEVER = enum.auto()$/;"	v	class:AllocStatus
+NONE	scheduler.py	/^    NONE = enum.auto()$/;"	v	class:PreemptionReason
+NaiveBlock	block/naive_block.py	/^class NaiveBlock(Block):$/;"	c
+NaiveBlockAllocator	block/naive_block.py	/^class NaiveBlockAllocator(BlockAllocator):$/;"	c
+NoFreeBlocksError	block/interfaces.py	/^    class NoFreeBlocksError(ValueError):$/;"	c	class:BlockAllocator
+NullBlock	block/cpu_gpu_block_allocator.py	/^class NullBlock(Block):$/;"	c
+OK	interfaces.py	/^    OK = enum.auto()$/;"	v	class:AllocStatus
+PARTIAL	scheduler.py	/^    PARTIAL = enum.auto()$/;"	v	class:SwapMode
+Policy	policy.py	/^class Policy:$/;"	c
+PolicyFactory	policy.py	/^class PolicyFactory:$/;"	c
+PreemptionMode	scheduler.py	/^class PreemptionMode(enum.Enum):$/;"	c
+PreemptionReason	scheduler.py	/^class PreemptionReason(enum.Enum):$/;"	c
+PrefixCachingBlock	block/prefix_caching_block.py	/^class PrefixCachingBlock(Block):$/;"	c
+PrefixCachingBlockAllocator	block/prefix_caching_block.py	/^class PrefixCachingBlockAllocator(BlockAllocator):$/;"	c
+PrefixHash	block/prefix_caching_block.py	/^PrefixHash = int$/;"	v
+RECOMPUTE	scheduler.py	/^    RECOMPUTE = enum.auto()$/;"	v	class:PreemptionMode
+Random	policy.py	/^class Random(Policy):$/;"	c
+ReadOnlyRefCounter	block/common.py	/^class ReadOnlyRefCounter(RefCounterProtocol):$/;"	c
+RefCount	block/common.py	/^RefCount = int$/;"	v
+RefCounter	block/common.py	/^class RefCounter(RefCounterProtocol):$/;"	c
+RefCounterProtocol	block/common.py	/^class RefCounterProtocol(Protocol):$/;"	c
+Refcount	block/naive_block.py	/^Refcount = int$/;"	v
+SEQ_NUM_EXHAUSTED	scheduler.py	/^    SEQ_NUM_EXHAUSTED = enum.auto()$/;"	v	class:PreemptionReason
+STR_NOT_IMPL_ENC_DEC_PREFIX_CACHE	block/utils.py	/^                    "is not currently supported."$/;"	v
+STR_NOT_IMPL_ENC_DEC_SWA	block/utils.py	/^                    "is not currently supported."$/;"	v
+SWAP	scheduler.py	/^    SWAP = enum.auto()$/;"	v	class:PreemptionMode
+ScheduledSequenceGroup	scheduler.py	/^class ScheduledSequenceGroup:$/;"	c
+Scheduler	scheduler.py	/^class Scheduler:$/;"	c
+SchedulerOutputs	scheduler.py	/^class SchedulerOutputs:$/;"	c
+SchedulerPreemption	scheduler.py	/^class SchedulerPreemption:$/;"	c
+SchedulerPrefillOutputs	scheduler.py	/^class SchedulerPrefillOutputs:$/;"	c
+SchedulerRunningOutputs	scheduler.py	/^class SchedulerRunningOutputs:$/;"	c
+SchedulerSwappedInOutputs	scheduler.py	/^class SchedulerSwappedInOutputs:$/;"	c
+SchedulingBudget	scheduler.py	/^class SchedulingBudget:$/;"	c
+SeqId	block_manager_v2.py	/^SeqId = int$/;"	v
+ShortestTokensFirst	policy.py	/^class ShortestTokensFirst(Policy):$/;"	c
+SwapMode	scheduler.py	/^class SwapMode(enum.Enum):$/;"	c
+UncachedBlockAllocator	block_manager_v1.py	/^class UncachedBlockAllocator(BlockAllocatorBase):$/;"	c
+UncomputedTokensFirst	policy.py	/^class UncomputedTokensFirst(Policy):$/;"	c
+WaitingTimeFirst	policy.py	/^class WaitingTimeFirst(Policy):$/;"	c
+_DEFAULT_LAST_ACCESSED_TIME	block/prefix_caching_block.py	/^_DEFAULT_LAST_ACCESSED_TIME = -1$/;"	v
+_POLICY_REGISTRY	policy.py	/^    _POLICY_REGISTRY = {$/;"	v	class:PolicyFactory
+__call__	block/interfaces.py	/^        def __call__($/;"	m	class:Block.Factory	file:
+__contains__	evictor_v1.py	/^    def __contains__(self, block_hash: int) -> bool:$/;"	m	class:Evictor	file:
+__contains__	evictor_v1.py	/^    def __contains__(self, block_hash: int) -> bool:$/;"	m	class:LRUEvictor	file:
+__contains__	evictor_v2.py	/^    def __contains__(self, block_id: int) -> bool:$/;"	m	class:Evictor	file:
+__contains__	evictor_v2.py	/^    def __contains__(self, block_id: int) -> bool:$/;"	m	class:LRUEvictor	file:
+__init__	block/block_table.py	/^    def __init__($/;"	m	class:BlockTable
+__init__	block/common.py	/^    def __init__($/;"	m	class:CopyOnWriteTracker
+__init__	block/common.py	/^    def __init__(self, all_block_indices: Iterable[BlockId]):$/;"	m	class:RefCounter
+__init__	block/common.py	/^    def __init__(self, refcounter: RefCounter):$/;"	m	class:ReadOnlyRefCounter
+__init__	block/cpu_gpu_block_allocator.py	/^    def __init__(self, cpu_block_allocator: BlockAllocator,$/;"	m	class:CpuGpuBlockAllocator
+__init__	block/cpu_gpu_block_allocator.py	/^    def __init__(self, proxy: Block):$/;"	m	class:NullBlock
+__init__	block/naive_block.py	/^    def __init__($/;"	m	class:NaiveBlockAllocator
+__init__	block/naive_block.py	/^    def __init__(self,$/;"	m	class:NaiveBlock
+__init__	block/prefix_caching_block.py	/^    def __init__($/;"	m	class:PrefixCachingBlock
+__init__	block/prefix_caching_block.py	/^    def __init__($/;"	m	class:PrefixCachingBlockAllocator
+__init__	block_manager_v1.py	/^    def __init__($/;"	m	class:BlockSpaceManagerV1
+__init__	block_manager_v1.py	/^    def __init__($/;"	m	class:UncachedBlockAllocator
+__init__	block_manager_v1.py	/^    def __init__(self,$/;"	m	class:BlockAllocatorBase
+__init__	block_manager_v1.py	/^    def __init__(self,$/;"	m	class:CachedBlockAllocator
+__init__	block_manager_v2.py	/^    def __init__($/;"	m	class:BlockSpaceManagerV2
+__init__	embedding_model_block_manager.py	/^    def __init__($/;"	m	class:EmbeddingModelBlockSpaceManager
+__init__	evictor_v1.py	/^    def __init__(self):$/;"	m	class:Evictor
+__init__	evictor_v1.py	/^    def __init__(self):$/;"	m	class:LRUEvictor
+__init__	evictor_v2.py	/^    def __init__(self):$/;"	m	class:Evictor
+__init__	evictor_v2.py	/^    def __init__(self):$/;"	m	class:LRUEvictor
+__init__	evictor_v2.py	/^    def __init__(self, content_hash: int, num_hashed_tokens: int,$/;"	m	class:BlockMetaData
+__init__	infer_schedule.py	/^    def __init__(self, max_seq_num:int, max_token_num:int):$/;"	m	class:InferSchedule
+__init__	scheduler.py	/^    def __init__($/;"	m	class:Scheduler
+__post_init__	scheduler.py	/^    def __post_init__(self):$/;"	m	class:SchedulerOutputs	file:
+_allocate_and_set_running	scheduler.py	/^    def _allocate_and_set_running(self, seq_group: SequenceGroup) -> None:$/;"	m	class:Scheduler
+_allocate_blocks_for_token_ids	block/block_table.py	/^    def _allocate_blocks_for_token_ids(self, prev_block: Optional[Block],$/;"	m	class:BlockTable
+_allocate_last_physical_block	block_manager_v1.py	/^    def _allocate_last_physical_block($/;"	m	class:BlockSpaceManagerV1
+_allocate_new_block_id	block/naive_block.py	/^    def _allocate_new_block_id(self) -> BlockId:$/;"	m	class:NaiveBlockAllocator
+_allocate_sequence	block_manager_v1.py	/^                           is_encoder_decoder: bool = True) -> BlockTable:$/;"	m	class:BlockSpaceManagerV1
+_allocate_sequence	block_manager_v2.py	/^    def _allocate_sequence(self, seq: Sequence) -> BlockTable:$/;"	m	class:BlockSpaceManagerV2
+_append_seq_group	scheduler.py	/^    def _append_seq_group(self, seq_group: SequenceGroup,blocks_to_copy: List[Tuple[int, int]], num_running_tokens: int,prefill_seq_groups: List[ScheduledSequenceGroup], decode_seq_groups: List[ScheduledSequenceGroup], budget: SchedulingBudget, curr_loras: Optional[Set[int]], enable_chunking: bool = False) -> None:$/;"	m	class:Scheduler
+_append_slots	scheduler.py	/^    def _append_slots($/;"	m	class:Scheduler
+_append_token_ids_no_cow	block/naive_block.py	/^    def _append_token_ids_no_cow(self, token_ids: List[int]) -> None:$/;"	m	class:NaiveBlock
+_can_allocate_seq	scheduler.py	/^    def _can_allocate_seq(self, block_size: int) -> bool:$/;"	m	class:Scheduler
+_can_append_slots	scheduler.py	/^    def _can_append_slots(self, seq_group: SequenceGroup) -> bool:$/;"	m	class:Scheduler
+_can_append_slots_prefill	scheduler.py	/^    def _can_append_slots_prefill(self, seq_group: SequenceGroup) -> bool:$/;"	m	class:Scheduler
+_can_swap	block_manager_v2.py	/^    def _can_swap(self,$/;"	m	class:BlockSpaceManagerV2
+_chunk_token_blocks_for_append	block/block_table.py	/^    def _chunk_token_blocks_for_append($/;"	m	class:BlockTable
+_create_block	block/prefix_caching_block.py	/^    def _create_block($/;"	m	class:PrefixCachingBlockAllocator
+_free_block_id	block/naive_block.py	/^    def _free_block_id(self, block_id: BlockId) -> None:$/;"	m	class:NaiveBlockAllocator
+_free_block_id_for_block	block/prefix_caching_block.py	/^    def _free_block_id_for_block(self, block_id: BlockId,$/;"	m	class:PrefixCachingBlockAllocator
+_free_block_table	block_manager_v1.py	/^    def _free_block_table(self, block_table: BlockTable) -> None:$/;"	m	class:BlockSpaceManagerV1
+_get_all_token_ids	block/block_table.py	/^    def _get_all_token_ids(self) -> List[int]:$/;"	m	class:BlockTable
+_get_block_mgr_sliding_window_attr	block/utils.py	/^def _get_block_mgr_sliding_window_attr(block_mgr):$/;"	f
+_get_blocks_for_swap	block_manager_v2.py	/^    def _get_blocks_for_swap(self, seq_group: SequenceGroup,$/;"	m	class:BlockSpaceManagerV2
+_get_num_lookahead_slots	scheduler.py	/^    def _get_num_lookahead_slots(self, is_prefill: bool) -> int:$/;"	m	class:Scheduler
+_get_num_new_tokens	scheduler.py	/^    def _get_num_new_tokens(self, seq_group: SequenceGroup,$/;"	m	class:Scheduler
+_get_physical_blocks	block_manager_v1.py	/^    def _get_physical_blocks($/;"	m	class:BlockSpaceManagerV1
+_get_prompt_limit	scheduler.py	/^    def _get_prompt_limit(self, seq_group: SequenceGroup) -> int:$/;"	m	class:Scheduler
+_get_seq_num_required_blocks	block_manager_v1.py	/^    def _get_seq_num_required_blocks(self, seq: Sequence) -> int:$/;"	m	class:BlockSpaceManagerV1
+_incr_refcount_cached_block	block/prefix_caching_block.py	/^    def _incr_refcount_cached_block(self, block: Block,$/;"	m	class:PrefixCachingBlockAllocator
+_is_allocated	block/block_table.py	/^    def _is_allocated(self) -> bool:$/;"	m	class:BlockTable
+_is_last_block_full	block_manager_v1.py	/^    def _is_last_block_full($/;"	m	class:BlockSpaceManagerV1
+_maybe_promote_last_block	block_manager_v1.py	/^    def _maybe_promote_last_block($/;"	m	class:BlockSpaceManagerV1
+_num_empty_slots	block/block_table.py	/^    def _num_empty_slots(self) -> int:$/;"	m	class:BlockTable
+_parse_seq_infos	infer_schedule.py	/^    def _parse_seq_infos(self, seq_groups: deque):$/;"	m	class:InferSchedule
+_passed_delay	scheduler.py	/^    def _passed_delay(self, now: float) -> bool:$/;"	m	class:Scheduler
+_preempt	scheduler.py	/^    def _preempt(self,$/;"	m	class:Scheduler
+_preempt_by_recompute	scheduler.py	/^    def _preempt_by_recompute($/;"	m	class:Scheduler
+_preempt_by_swap	scheduler.py	/^    def _preempt_by_swap(self,$/;"	m	class:Scheduler
+_promote_last_block	block_manager_v1.py	/^    def _promote_last_block($/;"	m	class:BlockSpaceManagerV1
+_schedule	scheduler.py	/^    def _schedule(self) -> SchedulerOutputs:$/;"	m	class:Scheduler
+_schedule_chunked_prefill	scheduler.py	/^    def _schedule_chunked_prefill(self):$/;"	m	class:Scheduler
+_schedule_default	scheduler.py	/^    def _schedule_default(self) -> SchedulerOutputs:$/;"	m	class:Scheduler
+_schedule_prefills	scheduler.py	/^    def _schedule_prefills($/;"	m	class:Scheduler
+_schedule_running	scheduler.py	/^    def _schedule_running($/;"	m	class:Scheduler
+_schedule_running_preemption	scheduler.py	/^    def _schedule_running_preemption($/;"	m	class:Scheduler
+_schedule_swapped	scheduler.py	/^    def _schedule_swapped($/;"	m	class:Scheduler
+_selects_running_seqs	infer_schedule.py	/^    def _selects_running_seqs(self, total_seq_queue: deque, policy: Policy, budget: SchedulingBudget) -> List[SequenceGroup]:$/;"	m	class:InferSchedule
+_sort_by_lora_ids	scheduler.py	/^    def _sort_by_lora_ids(self):$/;"	m	class:SchedulerOutputs
+_swap_block_table	block_manager_v1.py	/^    def _swap_block_table($/;"	m	class:BlockSpaceManagerV1
+_swap_in	scheduler.py	/^    def _swap_in($/;"	m	class:Scheduler
+_swap_out	scheduler.py	/^    def _swap_out(self,$/;"	m	class:Scheduler
+_swap_out_partial	scheduler.py	/^    def _swap_out_partial(self, seq_group: SequenceGroup, budget: SchedulingBudget, block_size: int, num_running_tokens: int) -> Tuple[bool,List[SequenceGroup], List[int]]:$/;"	m	class:Scheduler
+abort_seq_group	scheduler.py	/^    def abort_seq_group(self, request_id: Union[str, Iterable[str]]) -> None:$/;"	m	class:Scheduler
+access_all_blocks_in_seq	block_manager_v1.py	/^    def access_all_blocks_in_seq($/;"	m	class:BlockSpaceManagerV1
+access_all_blocks_in_seq	block_manager_v2.py	/^    def access_all_blocks_in_seq(self, seq: Sequence, now: float):$/;"	m	class:BlockSpaceManagerV2
+access_all_blocks_in_seq	embedding_model_block_manager.py	/^    def access_all_blocks_in_seq($/;"	m	class:EmbeddingModelBlockSpaceManager
+access_all_blocks_in_seq	interfaces.py	/^    def access_all_blocks_in_seq($/;"	m	class:BlockSpaceManager
+add	evictor_v1.py	/^    def add(self, block: PhysicalTokenBlock):$/;"	m	class:Evictor
+add	evictor_v1.py	/^    def add(self, block: PhysicalTokenBlock):$/;"	m	class:LRUEvictor
+add	evictor_v2.py	/^    def add(self, block_id: int, content_hash: int, num_hashed_tokens: int,$/;"	m	class:Evictor
+add	evictor_v2.py	/^    def add(self, block_id: int, content_hash: int, num_hashed_tokens: int,$/;"	m	class:LRUEvictor
+add_num_batched_tokens	scheduler.py	/^    def add_num_batched_tokens(self, req_id: str, num_batched_tokens: int):$/;"	m	class:SchedulingBudget
+add_num_seqs	scheduler.py	/^    def add_num_seqs(self, req_id: str, num_curr_seqs: int):$/;"	m	class:SchedulingBudget
+add_seq_group	scheduler.py	/^    def add_seq_group(self, seq_group: SequenceGroup) -> None:$/;"	m	class:Scheduler
+all_block_ids	block/cpu_gpu_block_allocator.py	/^    def all_block_ids(self) -> FrozenSet[int]:$/;"	m	class:CpuGpuBlockAllocator
+all_block_ids	block/interfaces.py	/^    def all_block_ids(self) -> FrozenSet[int]:$/;"	m	class:BlockAllocator
+all_block_ids	block/interfaces.py	/^    def all_block_ids(self) -> FrozenSet[int]:$/;"	m	class:DeviceAwareBlockAllocator
+all_block_ids	block/naive_block.py	/^    def all_block_ids(self) -> FrozenSet[int]:$/;"	m	class:NaiveBlockAllocator
+all_block_ids	block/prefix_caching_block.py	/^    def all_block_ids(self) -> FrozenSet[int]:$/;"	m	class:PrefixCachingBlockAllocator
+allocate	block/block_table.py	/^    def allocate(self,$/;"	m	class:BlockTable
+allocate	block_manager_v1.py	/^    def allocate(self, seq_group: SequenceGroup) -> None:$/;"	m	class:BlockSpaceManagerV1
+allocate	block_manager_v1.py	/^    def allocate(self,$/;"	m	class:BlockAllocatorBase
+allocate	block_manager_v1.py	/^    def allocate(self,$/;"	m	class:CachedBlockAllocator
+allocate	block_manager_v1.py	/^    def allocate(self,$/;"	m	class:UncachedBlockAllocator
+allocate	block_manager_v2.py	/^    def allocate(self, seq_group: SequenceGroup) -> None:$/;"	m	class:BlockSpaceManagerV2
+allocate	embedding_model_block_manager.py	/^    def allocate(self, seq_group: SequenceGroup) -> None:$/;"	m	class:EmbeddingModelBlockSpaceManager
+allocate	interfaces.py	/^    def allocate(self, seq_group: SequenceGroup) -> None:$/;"	m	class:BlockSpaceManager
+allocate_block	block_manager_v1.py	/^    def allocate_block(self, block_hash: int,$/;"	m	class:CachedBlockAllocator
+allocate_immutable	block/cpu_gpu_block_allocator.py	/^    def allocate_immutable(self, prev_block: Optional[Block],$/;"	m	class:CpuGpuBlockAllocator
+allocate_immutable	block/interfaces.py	/^    def allocate_immutable(self, prev_block: Optional[Block],$/;"	m	class:BlockAllocator
+allocate_immutable	block/interfaces.py	/^    def allocate_immutable(self, prev_block: Optional[Block],$/;"	m	class:DeviceAwareBlockAllocator
+allocate_immutable	block/naive_block.py	/^    def allocate_immutable(self,$/;"	m	class:NaiveBlockAllocator
+allocate_immutable	block/prefix_caching_block.py	/^    def allocate_immutable(self,$/;"	m	class:PrefixCachingBlockAllocator
+allocate_mutable	block/cpu_gpu_block_allocator.py	/^    def allocate_mutable(self, prev_block: Optional[Block],$/;"	m	class:CpuGpuBlockAllocator
+allocate_mutable	block/interfaces.py	/^    def allocate_mutable(self, prev_block: Optional[Block]) -> Block:$/;"	m	class:BlockAllocator
+allocate_mutable	block/interfaces.py	/^    def allocate_mutable(self, prev_block: Optional[Block],$/;"	m	class:DeviceAwareBlockAllocator
+allocate_mutable	block/naive_block.py	/^    def allocate_mutable(self,$/;"	m	class:NaiveBlockAllocator
+allocate_mutable	block/prefix_caching_block.py	/^    def allocate_mutable(self,$/;"	m	class:PrefixCachingBlockAllocator
+allocate_or_get_null_block	block/cpu_gpu_block_allocator.py	/^    def allocate_or_get_null_block(self) -> Block:$/;"	m	class:CpuGpuBlockAllocator
+allocate_or_get_null_block	block/interfaces.py	/^    def allocate_or_get_null_block(self) -> Block:$/;"	m	class:DeviceAwareBlockAllocator
+append_slots	block_manager_v1.py	/^    def append_slots($/;"	m	class:BlockSpaceManagerV1
+append_slots	block_manager_v2.py	/^    def append_slots($/;"	m	class:BlockSpaceManagerV2
+append_slots	embedding_model_block_manager.py	/^    def append_slots($/;"	m	class:EmbeddingModelBlockSpaceManager
+append_slots	interfaces.py	/^    def append_slots($/;"	m	class:BlockSpaceManager
+append_token_ids	block/block_table.py	/^    def append_token_ids(self,$/;"	m	class:BlockTable
+append_token_ids	block/cpu_gpu_block_allocator.py	/^    def append_token_ids(self, token_ids: List[BlockId]):$/;"	m	class:NullBlock
+append_token_ids	block/interfaces.py	/^    def append_token_ids(self, token_ids: List[int]) -> None:$/;"	m	class:Block
+append_token_ids	block/naive_block.py	/^    def append_token_ids(self, token_ids: List[int]) -> None:$/;"	m	class:NaiveBlock
+append_token_ids	block/prefix_caching_block.py	/^    def append_token_ids(self, token_ids: List[int]) -> None:$/;"	m	class:PrefixCachingBlock
+as_readonly	block/common.py	/^    def as_readonly(self) -> "ReadOnlyRefCounter":$/;"	m	class:RefCounter
+assert_prefix_caching_block_or_none	block/prefix_caching_block.py	/^def assert_prefix_caching_block_or_none(block: Optional[Block]):$/;"	f
+block_id	block/cpu_gpu_block_allocator.py	/^    def block_id(self):$/;"	m	class:NullBlock
+block_id	block/cpu_gpu_block_allocator.py	/^    def block_id(self, value: Optional[BlockId]):$/;"	m	class:NullBlock
+block_id	block/interfaces.py	/^    def block_id(self) -> Optional[int]:$/;"	m	class:Block
+block_id	block/interfaces.py	/^    def block_id(self, value: Optional[int]) -> None:$/;"	m	class:Block
+block_id	block/naive_block.py	/^    def block_id(self) -> Optional[int]:$/;"	m	class:NaiveBlock
+block_id	block/naive_block.py	/^    def block_id(self, value: Optional[int]) -> None:$/;"	m	class:NaiveBlock
+block_id	block/prefix_caching_block.py	/^    def block_id(self) -> Optional[int]:$/;"	m	class:PrefixCachingBlock
+block_id	block/prefix_caching_block.py	/^    def block_id(self, value) -> None:$/;"	m	class:PrefixCachingBlock
+block_is_computed	block/prefix_caching_block.py	/^    def block_is_computed(self, block_id: int) -> bool:$/;"	m	class:PrefixCachingBlockAllocator
+block_size	block/naive_block.py	/^    def block_size(self) -> int:$/;"	m	class:NaiveBlock
+block_size	block/prefix_caching_block.py	/^    def block_size(self) -> int:$/;"	m	class:PrefixCachingBlock
+blocks	block/block_table.py	/^    def blocks(self) -> Optional[List[Block]]:$/;"	m	class:BlockTable
+can_allocat_infer	block_manager_v1.py	/^    def can_allocat_infer(self, required_block_size: int) -> bool:$/;"	m	class:BlockSpaceManagerV1
+can_allocate	block_manager_v1.py	/^    def can_allocate(self, seq_group: SequenceGroup) -> AllocStatus:$/;"	m	class:BlockSpaceManagerV1
+can_allocate	block_manager_v2.py	/^    def can_allocate(self, seq_group: SequenceGroup) -> AllocStatus:$/;"	m	class:BlockSpaceManagerV2
+can_allocate	embedding_model_block_manager.py	/^    def can_allocate(self, seq_group: SequenceGroup) -> AllocStatus:$/;"	m	class:EmbeddingModelBlockSpaceManager
+can_allocate	interfaces.py	/^    def can_allocate(self, seq_group: SequenceGroup) -> AllocStatus:$/;"	m	class:BlockSpaceManager
+can_append_slots	block_manager_v1.py	/^    def can_append_slots(self,$/;"	m	class:BlockSpaceManagerV1
+can_append_slots	block_manager_v2.py	/^    def can_append_slots(self, seq_group: SequenceGroup,$/;"	m	class:BlockSpaceManagerV2
+can_append_slots	embedding_model_block_manager.py	/^    def can_append_slots(self, seq_group: SequenceGroup,$/;"	m	class:EmbeddingModelBlockSpaceManager
+can_append_slots	interfaces.py	/^    def can_append_slots(self, seq_group: SequenceGroup,$/;"	m	class:BlockSpaceManager
+can_schedule	scheduler.py	/^    def can_schedule(self, *, num_new_tokens: int, num_new_seqs: int):$/;"	m	class:SchedulingBudget
+can_schedule_infer	scheduler.py	/^    def can_schedule_infer(self, *, num_new_tokens: int,$/;"	m	class:SchedulingBudget
+can_swap_in	block_manager_v1.py	/^    def can_swap_in(self,$/;"	m	class:BlockSpaceManagerV1
+can_swap_in	block_manager_v2.py	/^    def can_swap_in(self, seq_group: SequenceGroup,$/;"	m	class:BlockSpaceManagerV2
+can_swap_in	embedding_model_block_manager.py	/^    def can_swap_in(self, seq_group: SequenceGroup,$/;"	m	class:EmbeddingModelBlockSpaceManager
+can_swap_in	interfaces.py	/^    def can_swap_in(self, seq_group: SequenceGroup,$/;"	m	class:BlockSpaceManager
+can_swap_out	block_manager_v1.py	/^    def can_swap_out(self, seq_group: SequenceGroup) -> bool:$/;"	m	class:BlockSpaceManagerV1
+can_swap_out	block_manager_v2.py	/^    def can_swap_out(self, seq_group: SequenceGroup) -> bool:$/;"	m	class:BlockSpaceManagerV2
+can_swap_out	embedding_model_block_manager.py	/^    def can_swap_out(self, seq_group: SequenceGroup) -> bool:$/;"	m	class:EmbeddingModelBlockSpaceManager
+can_swap_out	interfaces.py	/^    def can_swap_out(self, seq_group: SequenceGroup) -> bool:$/;"	m	class:BlockSpaceManager
+check_no_caching_or_swa_for_blockmgr_encdec	block/utils.py	/^def check_no_caching_or_swa_for_blockmgr_encdec($/;"	f
+clear_copy_on_writes	block/cpu_gpu_block_allocator.py	/^    def clear_copy_on_writes(self) -> List[Tuple[int, int]]:$/;"	m	class:CpuGpuBlockAllocator
+clear_copy_on_writes	block/interfaces.py	/^    def clear_copy_on_writes(self) -> List[Tuple[int, int]]:$/;"	m	class:BlockAllocator
+clear_copy_on_writes	block/interfaces.py	/^    def clear_copy_on_writes(self) -> List[Tuple[int, int]]:$/;"	m	class:DeviceAwareBlockAllocator
+clear_copy_on_writes	block/naive_block.py	/^    def clear_copy_on_writes(self) -> List[Tuple[BlockId, BlockId]]:$/;"	m	class:NaiveBlockAllocator
+clear_copy_on_writes	block/prefix_caching_block.py	/^    def clear_copy_on_writes(self) -> List[Tuple[BlockId, BlockId]]:$/;"	m	class:PrefixCachingBlockAllocator
+clear_cows	block/common.py	/^    def clear_cows(self) -> List[Tuple[BlockId, BlockId]]:$/;"	m	class:CopyOnWriteTracker
+compute_full_blocks_in_seq	block_manager_v1.py	/^    def compute_full_blocks_in_seq(self, seq: Sequence):$/;"	m	class:BlockSpaceManagerV1
+computed	block/cpu_gpu_block_allocator.py	/^    def computed(self):$/;"	m	class:NullBlock
+computed	block/cpu_gpu_block_allocator.py	/^    def computed(self, value):$/;"	m	class:NullBlock
+computed	block/interfaces.py	/^    def computed(self) -> bool:$/;"	m	class:Block
+computed	block/interfaces.py	/^    def computed(self, value) -> bool:$/;"	m	class:Block
+computed	block/naive_block.py	/^    def computed(self) -> bool:$/;"	m	class:NaiveBlock
+computed	block/naive_block.py	/^    def computed(self, value) -> None:$/;"	m	class:NaiveBlock
+computed	block/prefix_caching_block.py	/^    def computed(self) -> bool:$/;"	m	class:PrefixCachingBlock
+computed	block/prefix_caching_block.py	/^    def computed(self, value) -> None:$/;"	m	class:PrefixCachingBlock
+contains_block	block_manager_v1.py	/^    def contains_block(self, block_hash: int) -> bool:$/;"	m	class:BlockAllocatorBase
+contains_block	block_manager_v1.py	/^    def contains_block(self, block_hash: int) -> bool:$/;"	m	class:CachedBlockAllocator
+contains_block	block_manager_v1.py	/^    def contains_block(self, block_hash: int) -> bool:$/;"	m	class:UncachedBlockAllocator
+content_hash	block/cpu_gpu_block_allocator.py	/^    def content_hash(self):$/;"	m	class:NullBlock
+content_hash	block/interfaces.py	/^    def content_hash(self) -> Optional[int]:$/;"	m	class:Block
+content_hash	block/naive_block.py	/^    def content_hash(self) -> Optional[int]:$/;"	m	class:NaiveBlock
+content_hash	block/prefix_caching_block.py	/^    def content_hash(self) -> Optional[int]:$/;"	m	class:PrefixCachingBlock
+cow_block_if_not_appendable	block/common.py	/^    def cow_block_if_not_appendable(self, block: Block) -> Optional[BlockId]:$/;"	m	class:CopyOnWriteTracker
+cow_block_if_not_appendable	block/cpu_gpu_block_allocator.py	/^    def cow_block_if_not_appendable(self, block: Block) -> Optional[BlockId]:$/;"	m	class:CpuGpuBlockAllocator
+cow_block_if_not_appendable	block/interfaces.py	/^    def cow_block_if_not_appendable(self, block: Block) -> Optional["BlockId"]:$/;"	m	class:BlockAllocator
+cow_block_if_not_appendable	block/naive_block.py	/^    def cow_block_if_not_appendable(self, block: Block) -> Optional[BlockId]:$/;"	m	class:NaiveBlockAllocator
+cow_block_if_not_appendable	block/prefix_caching_block.py	/^    def cow_block_if_not_appendable(self, block: Block) -> Optional[BlockId]:$/;"	m	class:PrefixCachingBlockAllocator
+create	block/cpu_gpu_block_allocator.py	/^    def create($/;"	m	class:CpuGpuBlockAllocator
+create_empty	scheduler.py	/^    def create_empty(cls) -> "SchedulerPrefillOutputs":$/;"	m	class:SchedulerPrefillOutputs
+create_empty	scheduler.py	/^    def create_empty(cls) -> "SchedulerRunningOutputs":$/;"	m	class:SchedulerRunningOutputs
+create_empty	scheduler.py	/^    def create_empty(cls) -> "SchedulerSwappedInOutputs":$/;"	m	class:SchedulerSwappedInOutputs
+decr	block/common.py	/^    def decr(self, block_id: BlockId) -> RefCount:$/;"	m	class:ReadOnlyRefCounter
+decr	block/common.py	/^    def decr(self, block_id: BlockId) -> RefCount:$/;"	m	class:RefCounter
+decr	block/common.py	/^    def decr(self, block_id: BlockId) -> RefCount:$/;"	m	class:RefCounterProtocol
+ensure_num_empty_slots	block/block_table.py	/^    def ensure_num_empty_slots(self, num_empty_slots: int) -> None:$/;"	m	class:BlockTable
+evict	evictor_v1.py	/^    def evict(self) -> PhysicalTokenBlock:$/;"	m	class:Evictor
+evict	evictor_v1.py	/^    def evict(self) -> PhysicalTokenBlock:$/;"	m	class:LRUEvictor
+evict	evictor_v2.py	/^    def evict(self) -> Tuple[int, int]:$/;"	m	class:Evictor
+evict	evictor_v2.py	/^    def evict(self) -> Tuple[int, int]:$/;"	m	class:LRUEvictor
+fork	block/block_table.py	/^    def fork(self) -> "BlockTable":$/;"	m	class:BlockTable
+fork	block/cpu_gpu_block_allocator.py	/^    def fork(self, last_block: Block) -> List[Block]:$/;"	m	class:CpuGpuBlockAllocator
+fork	block/interfaces.py	/^    def fork(self, last_block: Block) -> List[Block]:$/;"	m	class:BlockAllocator
+fork	block/interfaces.py	/^    def fork(self, last_block: Block) -> List[Block]:$/;"	m	class:DeviceAwareBlockAllocator
+fork	block/naive_block.py	/^    def fork(self, last_block: Block) -> List[Block]:$/;"	m	class:NaiveBlockAllocator
+fork	block/prefix_caching_block.py	/^    def fork(self, last_block: Block) -> List[Block]:$/;"	m	class:PrefixCachingBlockAllocator
+fork	block_manager_v1.py	/^    def fork(self, parent_seq: Sequence, child_seq: Sequence) -> None:$/;"	m	class:BlockSpaceManagerV1
+fork	block_manager_v2.py	/^    def fork(self, parent_seq: Sequence, child_seq: Sequence) -> None:$/;"	m	class:BlockSpaceManagerV2
+fork	embedding_model_block_manager.py	/^    def fork(self, parent_seq: Sequence, child_seq: Sequence) -> None:$/;"	m	class:EmbeddingModelBlockSpaceManager
+fork	interfaces.py	/^    def fork(self, parent_seq: Sequence, child_seq: Sequence) -> None:$/;"	m	class:BlockSpaceManager
+fork_seq	scheduler.py	/^    def fork_seq(self, parent_seq: Sequence, child_seq: Sequence) -> None:$/;"	m	class:Scheduler
+free	block/block_table.py	/^    def free(self) -> None:$/;"	m	class:BlockTable
+free	block/cpu_gpu_block_allocator.py	/^    def free(self, block: Block) -> None:$/;"	m	class:CpuGpuBlockAllocator
+free	block/interfaces.py	/^    def free(self, block: Block) -> None:$/;"	m	class:BlockAllocator
+free	block/interfaces.py	/^    def free(self, block: Block) -> None:$/;"	m	class:DeviceAwareBlockAllocator
+free	block/naive_block.py	/^    def free(self, block: Block) -> None:$/;"	m	class:NaiveBlockAllocator
+free	block/prefix_caching_block.py	/^    def free(self, block: Block) -> None:$/;"	m	class:PrefixCachingBlockAllocator
+free	block_manager_v1.py	/^    def free(self, block: PhysicalTokenBlock) -> None:$/;"	m	class:BlockAllocatorBase
+free	block_manager_v1.py	/^    def free(self, block: PhysicalTokenBlock) -> None:$/;"	m	class:CachedBlockAllocator
+free	block_manager_v1.py	/^    def free(self, block: PhysicalTokenBlock) -> None:$/;"	m	class:UncachedBlockAllocator
+free	block_manager_v1.py	/^    def free(self, seq: Sequence) -> None:$/;"	m	class:BlockSpaceManagerV1
+free	block_manager_v2.py	/^    def free(self, seq: Sequence) -> None:$/;"	m	class:BlockSpaceManagerV2
+free	embedding_model_block_manager.py	/^    def free(self, seq: Sequence) -> None:$/;"	m	class:EmbeddingModelBlockSpaceManager
+free	interfaces.py	/^    def free(self, seq: Sequence) -> None:$/;"	m	class:BlockSpaceManager
+free_cross	block_manager_v1.py	/^    def free_cross(self, seq_group: SequenceGroup) -> None:$/;"	m	class:BlockSpaceManagerV1
+free_cross	block_manager_v2.py	/^    def free_cross(self, seq_group: SequenceGroup) -> None:$/;"	m	class:BlockSpaceManagerV2
+free_finished_seq_groups	scheduler.py	/^    def free_finished_seq_groups(self) -> None:$/;"	m	class:Scheduler
+free_seq	scheduler.py	/^    def free_seq(self, seq: Sequence) -> None:$/;"	m	class:Scheduler
+get	block/common.py	/^    def get(self, block_id: BlockId) -> RefCount:$/;"	m	class:ReadOnlyRefCounter
+get	block/common.py	/^    def get(self, block_id: BlockId) -> RefCount:$/;"	m	class:RefCounter
+get	block/common.py	/^    def get(self, block_id: BlockId) -> RefCount:$/;"	m	class:RefCounterProtocol
+get_all_blocks_recursively	block/common.py	/^def get_all_blocks_recursively(last_block: Block) -> List[Block]:$/;"	f
+get_all_computed_blocks	block_manager_v1.py	/^    def get_all_computed_blocks(self, seq: Sequence) -> List[int]:$/;"	m	class:BlockSpaceManagerV1
+get_and_reset_swaps	block/cpu_gpu_block_allocator.py	/^    def get_and_reset_swaps(self) -> List[Tuple[int, int]]:$/;"	m	class:CpuGpuBlockAllocator
+get_block_space_manager_class	interfaces.py	/^    def get_block_space_manager_class(version: str):$/;"	m	class:BlockSpaceManager
+get_block_table	block_manager_v1.py	/^    def get_block_table(self, seq: Sequence) -> List[int]:$/;"	m	class:BlockSpaceManagerV1
+get_block_table	block_manager_v2.py	/^    def get_block_table(self, seq: Sequence) -> List[int]:$/;"	m	class:BlockSpaceManagerV2
+get_block_table	embedding_model_block_manager.py	/^    def get_block_table(self, seq: Sequence) -> List[int]:$/;"	m	class:EmbeddingModelBlockSpaceManager
+get_block_table	interfaces.py	/^    def get_block_table(self, seq: Sequence) -> List[int]:$/;"	m	class:BlockSpaceManager
+get_common_computed_block_ids	block/cpu_gpu_block_allocator.py	/^    def get_common_computed_block_ids($/;"	m	class:CpuGpuBlockAllocator
+get_common_computed_block_ids	block/interfaces.py	/^    def get_common_computed_block_ids($/;"	m	class:BlockAllocator
+get_common_computed_block_ids	block/interfaces.py	/^    def get_common_computed_block_ids($/;"	m	class:DeviceAwareBlockAllocator
+get_common_computed_block_ids	block/naive_block.py	/^    def get_common_computed_block_ids($/;"	m	class:NaiveBlockAllocator
+get_common_computed_block_ids	block/prefix_caching_block.py	/^    def get_common_computed_block_ids($/;"	m	class:PrefixCachingBlockAllocator
+get_common_computed_block_ids	block_manager_v1.py	/^    def get_common_computed_block_ids($/;"	m	class:BlockSpaceManagerV1
+get_common_computed_block_ids	block_manager_v2.py	/^    def get_common_computed_block_ids($/;"	m	class:BlockSpaceManagerV2
+get_common_computed_block_ids	embedding_model_block_manager.py	/^    def get_common_computed_block_ids(self,$/;"	m	class:EmbeddingModelBlockSpaceManager
+get_common_computed_block_ids	interfaces.py	/^    def get_common_computed_block_ids($/;"	m	class:BlockSpaceManager
+get_cross_block_table	block_manager_v1.py	/^    def get_cross_block_table(self, seq_group: SequenceGroup) -> List[int]:$/;"	m	class:BlockSpaceManagerV1
+get_cross_block_table	block_manager_v2.py	/^    def get_cross_block_table(self, seq_group: SequenceGroup) -> List[int]:$/;"	m	class:BlockSpaceManagerV2
+get_num_blocks_touched	block/cpu_gpu_block_allocator.py	/^    def get_num_blocks_touched(self,$/;"	m	class:CpuGpuBlockAllocator
+get_num_blocks_touched	block/interfaces.py	/^    def get_num_blocks_touched(self,$/;"	m	class:BlockAllocator
+get_num_blocks_touched	block/interfaces.py	/^    def get_num_blocks_touched(self,$/;"	m	class:DeviceAwareBlockAllocator
+get_num_blocks_touched	block/naive_block.py	/^    def get_num_blocks_touched(self,$/;"	m	class:NaiveBlockAllocator
+get_num_blocks_touched	block/prefix_caching_block.py	/^    def get_num_blocks_touched(self,$/;"	m	class:PrefixCachingBlockAllocator
+get_num_blocks_touched_by_append_slots	block/block_table.py	/^    def get_num_blocks_touched_by_append_slots($/;"	m	class:BlockTable
+get_num_free_blocks	block/cpu_gpu_block_allocator.py	/^    def get_num_free_blocks(self, device: Device) -> int:$/;"	m	class:CpuGpuBlockAllocator
+get_num_free_blocks	block/interfaces.py	/^    def get_num_free_blocks(self) -> int:$/;"	m	class:BlockAllocator
+get_num_free_blocks	block/interfaces.py	/^    def get_num_free_blocks(self, device: Device) -> int:$/;"	m	class:DeviceAwareBlockAllocator
+get_num_free_blocks	block/naive_block.py	/^    def get_num_free_blocks(self) -> int:$/;"	m	class:NaiveBlockAllocator
+get_num_free_blocks	block/prefix_caching_block.py	/^    def get_num_free_blocks(self, device: Optional[Device] = None) -> int:$/;"	m	class:PrefixCachingBlockAllocator
+get_num_free_blocks	block_manager_v1.py	/^    def get_num_free_blocks(self) -> int:$/;"	m	class:BlockAllocatorBase
+get_num_free_blocks	block_manager_v1.py	/^    def get_num_free_blocks(self) -> int:$/;"	m	class:CachedBlockAllocator
+get_num_free_blocks	block_manager_v1.py	/^    def get_num_free_blocks(self) -> int:$/;"	m	class:UncachedBlockAllocator
+get_num_free_cpu_blocks	block_manager_v1.py	/^    def get_num_free_cpu_blocks(self) -> int:$/;"	m	class:BlockSpaceManagerV1
+get_num_free_cpu_blocks	block_manager_v2.py	/^    def get_num_free_cpu_blocks(self) -> int:$/;"	m	class:BlockSpaceManagerV2
+get_num_free_cpu_blocks	embedding_model_block_manager.py	/^    def get_num_free_cpu_blocks(self) -> int:$/;"	m	class:EmbeddingModelBlockSpaceManager
+get_num_free_cpu_blocks	interfaces.py	/^    def get_num_free_cpu_blocks(self) -> int:$/;"	m	class:BlockSpaceManager
+get_num_free_gpu_blocks	block_manager_v1.py	/^    def get_num_free_gpu_blocks(self) -> int:$/;"	m	class:BlockSpaceManagerV1
+get_num_free_gpu_blocks	block_manager_v2.py	/^    def get_num_free_gpu_blocks(self) -> int:$/;"	m	class:BlockSpaceManagerV2
+get_num_free_gpu_blocks	embedding_model_block_manager.py	/^    def get_num_free_gpu_blocks(self) -> int:$/;"	m	class:EmbeddingModelBlockSpaceManager
+get_num_free_gpu_blocks	interfaces.py	/^    def get_num_free_gpu_blocks(self) -> int:$/;"	m	class:BlockSpaceManager
+get_num_required_blocks	block/block_table.py	/^    def get_num_required_blocks(token_ids: List[int], block_size: int) -> int:$/;"	m	class:BlockTable
+get_num_total_blocks	block/cpu_gpu_block_allocator.py	/^    def get_num_total_blocks(self, device: Device) -> int:$/;"	m	class:CpuGpuBlockAllocator
+get_num_total_blocks	block/interfaces.py	/^    def get_num_total_blocks(self) -> int:$/;"	m	class:BlockAllocator
+get_num_total_blocks	block/interfaces.py	/^    def get_num_total_blocks(self, device: Device) -> int:$/;"	m	class:DeviceAwareBlockAllocator
+get_num_total_blocks	block/naive_block.py	/^    def get_num_total_blocks(self) -> int:$/;"	m	class:NaiveBlockAllocator
+get_num_total_blocks	block/prefix_caching_block.py	/^    def get_num_total_blocks(self) -> int:$/;"	m	class:PrefixCachingBlockAllocator
+get_num_total_blocks	block_manager_v1.py	/^    def get_num_total_blocks(self) -> int:$/;"	m	class:BlockAllocatorBase
+get_num_total_blocks	block_manager_v1.py	/^    def get_num_total_blocks(self) -> int:$/;"	m	class:CachedBlockAllocator
+get_num_total_blocks	block_manager_v1.py	/^    def get_num_total_blocks(self) -> int:$/;"	m	class:UncachedBlockAllocator
+get_num_unfinished_seq_groups	scheduler.py	/^    def get_num_unfinished_seq_groups(self) -> int:$/;"	m	class:Scheduler
+get_physical_block_id	block/cpu_gpu_block_allocator.py	/^    def get_physical_block_id(self, device: Device, absolute_id: int) -> int:$/;"	m	class:CpuGpuBlockAllocator
+get_physical_block_id	block/interfaces.py	/^    def get_physical_block_id(self, absolute_id: int) -> int:$/;"	m	class:BlockAllocator
+get_physical_block_id	block/interfaces.py	/^    def get_physical_block_id(self, device: Device, absolute_id: int) -> int:$/;"	m	class:DeviceAwareBlockAllocator
+get_physical_block_id	block/naive_block.py	/^    def get_physical_block_id(self, absolute_id: int) -> int:$/;"	m	class:NaiveBlockAllocator
+get_physical_block_id	block/prefix_caching_block.py	/^    def get_physical_block_id(self, absolute_id: int) -> int:$/;"	m	class:PrefixCachingBlockAllocator
+get_policy	policy.py	/^    def get_policy(cls, policy_name: str, **kwargs) -> Policy:$/;"	m	class:PolicyFactory
+get_priority	policy.py	/^    def get_priority($/;"	m	class:BlockFullPolicy
+get_priority	policy.py	/^    def get_priority($/;"	m	class:FCFS
+get_priority	policy.py	/^    def get_priority($/;"	m	class:InferSchedule
+get_priority	policy.py	/^    def get_priority($/;"	m	class:LongestTokensFirst
+get_priority	policy.py	/^    def get_priority($/;"	m	class:Policy
+get_priority	policy.py	/^    def get_priority($/;"	m	class:Random
+get_priority	policy.py	/^    def get_priority($/;"	m	class:ShortestTokensFirst
+get_priority	policy.py	/^    def get_priority($/;"	m	class:UncomputedTokensFirst
+get_priority	policy.py	/^    def get_priority($/;"	m	class:WaitingTimeFirst
+get_unseen_token_ids	block/block_table.py	/^    def get_unseen_token_ids(self, sequence_token_ids: List[int]) -> List[int]:$/;"	m	class:BlockTable
+has_unfinished_seqs	scheduler.py	/^    def has_unfinished_seqs(self) -> bool:$/;"	m	class:Scheduler
+hash_block_tokens	block/prefix_caching_block.py	/^    def hash_block_tokens(is_first_block: bool, prev_block_hash: Optional[int],$/;"	m	class:PrefixCachingBlock
+incr	block/common.py	/^    def incr(self, block_id: BlockId) -> RefCount:$/;"	m	class:ReadOnlyRefCounter
+incr	block/common.py	/^    def incr(self, block_id: BlockId) -> RefCount:$/;"	m	class:RefCounter
+incr	block/common.py	/^    def incr(self, block_id: BlockId) -> RefCount:$/;"	m	class:RefCounterProtocol
+is_block_cached	block/prefix_caching_block.py	/^    def is_block_cached(self, block: Block) -> bool:$/;"	m	class:PrefixCachingBlockAllocator
+is_empty	scheduler.py	/^    def is_empty(self) -> bool:$/;"	m	class:SchedulerOutputs
+is_full	block/cpu_gpu_block_allocator.py	/^    def is_full(self):$/;"	m	class:NullBlock
+is_full	block/interfaces.py	/^    def is_full(self) -> bool:$/;"	m	class:Block
+is_full	block/naive_block.py	/^    def is_full(self) -> bool:$/;"	m	class:NaiveBlock
+is_full	block/prefix_caching_block.py	/^    def is_full(self) -> bool:$/;"	m	class:PrefixCachingBlock
+last_accessed	block/cpu_gpu_block_allocator.py	/^    def last_accessed(self) -> float:$/;"	m	class:NullBlock
+last_accessed	block/cpu_gpu_block_allocator.py	/^    def last_accessed(self, last_accessed_ts: float):$/;"	m	class:NullBlock
+last_accessed	block/interfaces.py	/^    def last_accessed(self) -> float:$/;"	m	class:Block
+last_accessed	block/interfaces.py	/^    def last_accessed(self, last_accessed_ts: float):$/;"	m	class:Block
+last_accessed	block/naive_block.py	/^    def last_accessed(self) -> float:$/;"	m	class:NaiveBlock
+last_accessed	block/naive_block.py	/^    def last_accessed(self, last_accessed_ts: float):$/;"	m	class:NaiveBlock
+last_accessed	block/prefix_caching_block.py	/^    def last_accessed(self) -> float:$/;"	m	class:PrefixCachingBlock
+last_accessed	block/prefix_caching_block.py	/^    def last_accessed(self, last_accessed_ts: float):$/;"	m	class:PrefixCachingBlock
+logger	block_manager_v1.py	/^logger = init_logger(__name__)$/;"	v
+logger	scheduler.py	/^logger = init_logger(__name__)$/;"	v
+lora_enabled	scheduler.py	/^    def lora_enabled(self) -> bool:$/;"	m	class:Scheduler
+lora_requests	scheduler.py	/^    def lora_requests(self) -> Set[LoRARequest]:$/;"	m	class:SchedulerOutputs
+make_evictor	evictor_v1.py	/^def make_evictor(eviction_policy: EvictionPolicy) -> Evictor:$/;"	f
+make_evictor	evictor_v2.py	/^def make_evictor(eviction_policy: EvictionPolicy) -> Evictor:$/;"	f
+mark_blocks_as_accessed	block/cpu_gpu_block_allocator.py	/^    def mark_blocks_as_accessed(self, block_ids: List[int],$/;"	m	class:CpuGpuBlockAllocator
+mark_blocks_as_accessed	block/interfaces.py	/^    def mark_blocks_as_accessed(self, block_ids: List[int],$/;"	m	class:BlockAllocator
+mark_blocks_as_accessed	block/interfaces.py	/^    def mark_blocks_as_accessed(self, block_ids: List[int],$/;"	m	class:DeviceAwareBlockAllocator
+mark_blocks_as_accessed	block/naive_block.py	/^    def mark_blocks_as_accessed(self, block_ids: List[int],$/;"	m	class:NaiveBlockAllocator
+mark_blocks_as_accessed	block/prefix_caching_block.py	/^    def mark_blocks_as_accessed(self, block_ids: List[int],$/;"	m	class:PrefixCachingBlockAllocator
+mark_blocks_as_computed	block/cpu_gpu_block_allocator.py	/^    def mark_blocks_as_computed(self, block_ids: List[int]) -> None:$/;"	m	class:CpuGpuBlockAllocator
+mark_blocks_as_computed	block/interfaces.py	/^    def mark_blocks_as_computed(self, block_ids: List[int]) -> None:$/;"	m	class:BlockAllocator
+mark_blocks_as_computed	block/interfaces.py	/^    def mark_blocks_as_computed(self, block_ids: List[int]) -> None:$/;"	m	class:DeviceAwareBlockAllocator
+mark_blocks_as_computed	block/naive_block.py	/^    def mark_blocks_as_computed(self, block_ids: List[int]) -> None:$/;"	m	class:NaiveBlockAllocator
+mark_blocks_as_computed	block/prefix_caching_block.py	/^    def mark_blocks_as_computed(self, block_ids: List[int]) -> None:$/;"	m	class:PrefixCachingBlockAllocator
+mark_blocks_as_computed	block_manager_v1.py	/^    def mark_blocks_as_computed(self, seq_group: SequenceGroup):$/;"	m	class:BlockSpaceManagerV1
+mark_blocks_as_computed	block_manager_v2.py	/^    def mark_blocks_as_computed(self, seq_group: SequenceGroup):$/;"	m	class:BlockSpaceManagerV2
+mark_blocks_as_computed	embedding_model_block_manager.py	/^    def mark_blocks_as_computed(self, seq_group: SequenceGroup):$/;"	m	class:EmbeddingModelBlockSpaceManager
+mark_blocks_as_computed	interfaces.py	/^    def mark_blocks_as_computed(self, seq_group: SequenceGroup):$/;"	m	class:BlockSpaceManager
+num_batched_tokens	scheduler.py	/^    def num_batched_tokens(self):$/;"	m	class:SchedulingBudget
+num_blocks	evictor_v1.py	/^    def num_blocks(self) -> int:$/;"	m	class:Evictor
+num_blocks	evictor_v1.py	/^    def num_blocks(self) -> int:$/;"	m	class:LRUEvictor
+num_blocks	evictor_v2.py	/^    def num_blocks(self) -> int:$/;"	m	class:Evictor
+num_blocks	evictor_v2.py	/^    def num_blocks(self) -> int:$/;"	m	class:LRUEvictor
+num_curr_seqs	scheduler.py	/^    def num_curr_seqs(self):$/;"	m	class:SchedulingBudget
+num_decoding_tokens_per_seq	scheduler.py	/^    def num_decoding_tokens_per_seq(self) -> int:$/;"	m	class:Scheduler
+num_empty_slots	block/cpu_gpu_block_allocator.py	/^    def num_empty_slots(self) -> BlockId:$/;"	m	class:NullBlock
+num_empty_slots	block/interfaces.py	/^    def num_empty_slots(self) -> int:$/;"	m	class:Block
+num_empty_slots	block/naive_block.py	/^    def num_empty_slots(self) -> int:$/;"	m	class:NaiveBlock
+num_empty_slots	block/prefix_caching_block.py	/^    def num_empty_slots(self) -> int:$/;"	m	class:PrefixCachingBlock
+num_full_slots	block/block_table.py	/^    def num_full_slots(self) -> int:$/;"	m	class:BlockTable
+num_tokens_total	block/prefix_caching_block.py	/^    def num_tokens_total(self) -> int:$/;"	m	class:PrefixCachingBlock
+physical_block_ids	block/block_table.py	/^    def physical_block_ids(self) -> List[Optional[int]]:$/;"	m	class:BlockTable
+prev_block	block/cpu_gpu_block_allocator.py	/^    def prev_block(self):$/;"	m	class:NullBlock
+prev_block	block/interfaces.py	/^    def prev_block(self) -> Optional["Block"]:$/;"	m	class:Block
+prev_block	block/naive_block.py	/^    def prev_block(self) -> Optional["Block"]:$/;"	m	class:NaiveBlock
+prev_block	block/prefix_caching_block.py	/^    def prev_block(self) -> Optional[Block]:$/;"	m	class:PrefixCachingBlock
+promote_to_immutable_block	block/cpu_gpu_block_allocator.py	/^    def promote_to_immutable_block(self, block: Block) -> BlockId:$/;"	m	class:CpuGpuBlockAllocator
+promote_to_immutable_block	block/interfaces.py	/^    def promote_to_immutable_block(self, block: Block) -> BlockId:$/;"	m	class:BlockAllocator
+promote_to_immutable_block	block/naive_block.py	/^    def promote_to_immutable_block(self, block: Block) -> BlockId:$/;"	m	class:NaiveBlockAllocator
+promote_to_immutable_block	block/prefix_caching_block.py	/^    def promote_to_immutable_block(self, block: Block) -> BlockId:$/;"	m	class:PrefixCachingBlockAllocator
+recurse	block/common.py	/^    def recurse(block: Block, lst: List[Block]) -> None:$/;"	f	function:get_all_blocks_recursively
+refcounter	block/naive_block.py	/^    def refcounter(self):$/;"	m	class:NaiveBlockAllocator
+remaining_token_budget	scheduler.py	/^    def remaining_token_budget(self):$/;"	m	class:SchedulingBudget
+remove	evictor_v1.py	/^    def remove(self, block_hash: int) -> PhysicalTokenBlock:$/;"	m	class:Evictor
+remove	evictor_v1.py	/^    def remove(self, block_hash: int) -> PhysicalTokenBlock:$/;"	m	class:LRUEvictor
+remove	evictor_v2.py	/^    def remove(self, block_id: int):$/;"	m	class:Evictor
+remove	evictor_v2.py	/^    def remove(self, block_id: int):$/;"	m	class:LRUEvictor
+reset	block_manager_v1.py	/^    def reset(self) -> None:$/;"	m	class:BlockSpaceManagerV1
+schedule	scheduler.py	/^    def schedule(self) -> Tuple[List[SequenceGroupMetadata], SchedulerOutputs]:$/;"	m	class:Scheduler
+sort_by_priority	policy.py	/^    def sort_by_priority($/;"	m	class:Policy
+subtract_num_batched_tokens	scheduler.py	/^    def subtract_num_batched_tokens(self, req_id: str,$/;"	m	class:SchedulingBudget
+subtract_num_batched_tokens_partial	scheduler.py	/^    def subtract_num_batched_tokens_partial(self, num_batched_tokens: int):$/;"	m	class:SchedulingBudget
+subtract_num_seqs	scheduler.py	/^    def subtract_num_seqs(self, req_id: str, num_curr_seqs: int):$/;"	m	class:SchedulingBudget
+swap	block/cpu_gpu_block_allocator.py	/^    def swap(self, blocks: List[Block], source_device: Device,$/;"	m	class:CpuGpuBlockAllocator
+swap	block/interfaces.py	/^    def swap(self, blocks: List[Block], source_device: Device,$/;"	m	class:DeviceAwareBlockAllocator
+swap_in	block/interfaces.py	/^    def swap_in(self, blocks: List[Block]) -> None:$/;"	m	class:BlockAllocator
+swap_in	block/naive_block.py	/^    def swap_in(self, blocks: List[Block]) -> None:$/;"	m	class:NaiveBlockAllocator
+swap_in	block/prefix_caching_block.py	/^    def swap_in(self, blocks: List[Block]) -> None:$/;"	m	class:PrefixCachingBlockAllocator
+swap_in	block_manager_v1.py	/^    def swap_in(self, seq_group: SequenceGroup) -> List[Tuple[int, int]]:$/;"	m	class:BlockSpaceManagerV1
+swap_in	block_manager_v2.py	/^    def swap_in(self, seq_group: SequenceGroup) -> List[Tuple[int, int]]:$/;"	m	class:BlockSpaceManagerV2
+swap_in	embedding_model_block_manager.py	/^    def swap_in(self, seq_group: SequenceGroup) -> List[Tuple[int, int]]:$/;"	m	class:EmbeddingModelBlockSpaceManager
+swap_in	interfaces.py	/^    def swap_in(self, seq_group: SequenceGroup) -> List[Tuple[int, int]]:$/;"	m	class:BlockSpaceManager
+swap_out	block/interfaces.py	/^    def swap_out(self, blocks: List[Block]) -> None:$/;"	m	class:BlockAllocator
+swap_out	block/naive_block.py	/^    def swap_out(self, blocks: List[Block]) -> None:$/;"	m	class:NaiveBlockAllocator
+swap_out	block/prefix_caching_block.py	/^    def swap_out(self, blocks: List[Block]) -> None:$/;"	m	class:PrefixCachingBlockAllocator
+swap_out	block_manager_v1.py	/^    def swap_out(self,$/;"	m	class:BlockSpaceManagerV1
+swap_out	block_manager_v2.py	/^    def swap_out(self, sequence_group: SequenceGroup) -> List[Tuple[int, int]]:$/;"	m	class:BlockSpaceManagerV2
+swap_out	embedding_model_block_manager.py	/^    def swap_out(self, seq_group: SequenceGroup) -> List[Tuple[int, int]]:$/;"	m	class:EmbeddingModelBlockSpaceManager
+swap_out	interfaces.py	/^    def swap_out(self, seq_group: SequenceGroup) -> List[Tuple[int, int]]:$/;"	m	class:BlockSpaceManager
+token_ids	block/cpu_gpu_block_allocator.py	/^    def token_ids(self) -> List[BlockId]:$/;"	m	class:NullBlock
+token_ids	block/interfaces.py	/^    def token_ids(self) -> List[int]:$/;"	m	class:Block
+token_ids	block/naive_block.py	/^    def token_ids(self) -> List[int]:$/;"	m	class:NaiveBlock
+token_ids	block/prefix_caching_block.py	/^    def token_ids(self) -> List[int]:$/;"	m	class:PrefixCachingBlock
+update	evictor_v2.py	/^    def update(self, block_id: int, last_accessed: float):$/;"	m	class:Evictor
+update	evictor_v2.py	/^    def update(self, block_id: int, last_accessed: float):$/;"	m	class:LRUEvictor
+update_hash	block_manager_v1.py	/^    def update_hash(self, block_hash: int, block: PhysicalTokenBlock):$/;"	m	class:BlockAllocatorBase
+update_hash	block_manager_v1.py	/^    def update_hash(self, block_hash: int, block: PhysicalTokenBlock):$/;"	m	class:CachedBlockAllocator
+update_hash	block_manager_v1.py	/^    def update_hash(self, block_hash: int, block: PhysicalTokenBlock):$/;"	m	class:UncachedBlockAllocator
