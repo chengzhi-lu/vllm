@@ -1700,7 +1700,7 @@ class Scheduler:
         prefix_sum = list(accumulate(numbers))
 
         # Use bisect_left for binary search
-        index = bisect.bisect_left(prefix_sum, target)
+        index = bisect.bisect_left(prefix_sum, target+1)
 
         if index >= len(prefix_sum):
             return -1

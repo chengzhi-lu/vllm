@@ -265,10 +265,10 @@ class Worker(WorkerBase):
         }
         broadcast_tensor_dict(data, src=0)
         
-        st = time.time()
+        # st = time.time()
         self.cache_swap(blocks_to_swap_in, blocks_to_swap_out, blocks_to_copy)
-        et = time.time()
-        print(f"swap in blocks {blocks_to_swap_in.shape}, swap out blocks {blocks_to_swap_out.shape}, copy blocks {blocks_to_copy.shape}, swap time is : {et - st}")
+        # et = time.time()
+        # print(f"swap in blocks {blocks_to_swap_in.shape}, swap out blocks {blocks_to_swap_out.shape}, copy blocks {blocks_to_copy.shape}, swap time is : {et - st}")
 
         # If there is no input, we don't need to execute the model.
         if num_seq_groups == 0:
