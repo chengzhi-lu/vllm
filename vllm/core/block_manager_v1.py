@@ -369,11 +369,8 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         # Simple heuristic: If there is at least one free block
         # for each sequence, we can append.
         num_free_gpu_blocks = self.gpu_allocator.get_num_free_blocks()
-        # num_leave_in_gpu_blocks = 0
         num_seqs = seq_group.num_seqs(status=SequenceStatus.RUNNING)
-        # for seq in seq_group.get_seqs(status=SequenceStatus.RUNNING):
-        #     block_table = self.block_tables[seq.seq_id]
-        #     num_leave_in_gpu_blocks += len([block for block in block_table if block.device==Device.CPU])
+
         return num_seqs <= num_free_gpu_blocks
 
     def _promote_last_block(
@@ -639,6 +636,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
                         block_table_length), block_table_length)
                 swapped_out_blocks_idx = int(swapped_out_blocks_ratio *
                                              block_table_length)
+                swapping_out_blocks_idx = max(swapped_out_blocks_idx+1, swapping_out_blocks_idx)
                 seq.update_swapped_out_block_ratio(swapped_out_blocks_ratio)
                 swapping_out_blocks = block_tables[
                     swapped_out_blocks_idx:swapping_out_blocks_idx]

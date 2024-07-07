@@ -1,4 +1,5 @@
 import enum
+from math import ceil
 import os
 import random
 from itertools import accumulate
@@ -6,9 +7,10 @@ import bisect
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from turtle import left
 from typing import Deque, Dict, Iterable, List, Optional, Set, Tuple, Union
 
-from numpy import half
+from torch import le
 
 from vllm.config import CacheConfig, LoRAConfig, SchedulerConfig
 from vllm.core.interfaces import AllocStatus, BlockSpaceManager
@@ -17,7 +19,7 @@ from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
 from vllm.sequence import (Sequence, SequenceData, SequenceGroup,
                            SequenceGroupMetadata, SequenceStatus)
-from sortedcontainers import SortedKeyList
+from sortedcontainers import SortedDict, SortedKeyList
 
 logger = init_logger(__name__)
 
@@ -386,6 +388,10 @@ class Scheduler:
         elif self.scheduler_config.preemption_mode == "recompute":
             self.preemption_mode = PreemptionMode.RECOMPUTE
         self.iter_nums = 0
+        self.half_swapped: SortedKeyList[Tuple[int, int, SequenceGroup]] = SortedKeyList(
+            key=lambda x: x[0])
+        self.half_swapped_seq_groups: Dict[SequenceGroup, int] = {}
+
         self.has_finished_seqs = False
 
     @property
@@ -444,10 +450,33 @@ class Scheduler:
     def get_num_unfinished_seq_groups(self) -> int:
         return len(self.waiting) + len(self.running) + len(self.swapped)
 
+    def _insert_seq_group_into_half_swapped(self,left_token_num:int, left_block_size:int, seq_group: SequenceGroup) -> None:
+        """Insert a sequence group into the half_swapped queue.
+        """
+        if seq_group not in self.half_swapped_seq_groups:
+            self.half_swapped.add((left_token_num, left_block_size, seq_group))
+            seq_group_index = self.half_swapped.index((left_token_num, left_block_size, seq_group))
+            self.half_swapped_seq_groups[seq_group] = seq_group_index
+        else:
+            seq_group_index = self.half_swapped_seq_groups[seq_group]
+            self.half_swapped.pop(seq_group_index)
+            self.half_swapped.add((left_token_num, left_block_size, seq_group))
+            self.half_swapped_seq_groups[seq_group] = seq_group_index
+
+    def _get_seq_group_from_half_swapped(self, index: int) -> Optional[Tuple[int, int, SequenceGroup]]:
+        """Get a sequence group from the half_swapped queue.
+        """
+        (left_token_num, left_block_size, seq_group) = self.half_swapped.pop(index)
+        if seq_group in self.half_swapped_seq_groups:
+            del self.half_swapped_seq_groups[seq_group]
+        return (left_token_num, left_block_size, seq_group)
+
+
+        
+
     def _swap_out_partial(
         self, seq_group: SequenceGroup, budget: SchedulingBudget,
-        block_size: int, num_running_tokens: int,
-        half_swapped: SortedKeyList[Tuple[int, int, SequenceGroup]]
+        block_size: int, num_running_tokens: int
     ) -> Tuple[bool, List[SequenceGroup], List[int]]:
         """Swap out a sequence group partially.
 
@@ -464,12 +493,12 @@ class Scheduler:
         """
         swap_out_rate = self.scheduler_config.swap_out_partial_rate
         # Swap out a partial block.
-        if not half_swapped:
+        if not self.half_swapped:
             if self.waiting:
                 # swap out all running tokens for the prefill request
                 budget.subtract_num_batched_tokens(seq_group.request_id,
                                                    num_running_tokens)
-                return True, [seq_group], [block_size]
+                return True, [seq_group], [1]
             else:
                 # swap out part of the current seq_group for decode request
                 swap_out_tokens = int(num_running_tokens * swap_out_rate)
@@ -479,37 +508,82 @@ class Scheduler:
                 left_tokens = num_running_tokens - swap_out_tokens
                 left_block_num = block_size - swap_out_block_num
                 if left_block_num > 0:
-                    half_swapped.add((left_tokens, left_block_num, seq_group))
-                # return seq_group as the swap out seq group
+                    self._insert_seq_group_into_half_swapped(left_tokens, left_block_num, seq_group)
                 return True, [seq_group], [swap_out_rate]
         else:
             # swap out left part of the sequence group in the
             # half_swapped queue prior to the current seq_group
-            half_swapped_token_nums = [x[0] for x in half_swapped]
+            half_swapped_token_nums = [x[0] for x in self.half_swapped]
             selected_swapped_out_tokens = self.min_numbers_sum_at_least(
                 half_swapped_token_nums, num_running_tokens)
+            print(selected_swapped_out_tokens, num_running_tokens)
             if selected_swapped_out_tokens == -1:
-                # swap out part of the current seq_groupfor decode request
+                # swap out part of the current seq_group for decode request
                 swap_out_tokens = int(num_running_tokens * swap_out_rate)
                 budget.subtract_num_batched_tokens(seq_group.request_id,
                                                    max(swap_out_tokens, 1))
                 swap_out_block_num = max(int(block_size * swap_out_rate), 1)
                 left_tokens = num_running_tokens - swap_out_tokens
                 left_block_num = block_size - swap_out_block_num
-                half_swapped.add((left_tokens, left_block_num, seq_group))
+                self._insert_seq_group_into_half_swapped(left_tokens, left_block_num, seq_group)
                 # return seq_group as the swap out seq group
                 return True, [seq_group], [swap_out_rate]
             else:
-                swapped_out_seq_groups, swap_out_block_nums = [], []
+                swapped_out_seq_groups, swap_out_block_ratios = [], []
                 count = 0
+                total_swap_out_tokens = 0
+                total_swap_out_block_num = 0
                 while count < selected_swapped_out_tokens:
-                    selected_swapped_out_seq = half_swapped.pop(0)
-                    budget.subtract_num_batched_tokens_partial(
-                        selected_swapped_out_seq[0])
-                    swap_out_block_nums.append(swap_out_rate)
-                    swapped_out_seq_groups.append(selected_swapped_out_seq[2])
-                    count+=1
-                return False, swapped_out_seq_groups, swap_out_block_nums
+                    selected_swapped_out_seq = self._get_seq_group_from_half_swapped(0)
+                    total_swap_out_tokens += selected_swapped_out_seq[0]
+                    total_swap_out_block_num += selected_swapped_out_seq[1]
+                    if total_swap_out_tokens > num_running_tokens \
+                        and total_swap_out_block_num > block_size:
+                        left_tokens = total_swap_out_tokens - num_running_tokens
+                        left_block_num = total_swap_out_block_num - block_size
+                        swap_out_tokens_selected_seq = \
+                            selected_swapped_out_seq[0] - left_tokens
+                        swap_out_block_num_selected_seq = \
+                            selected_swapped_out_seq[1] - left_block_num
+                        budget.subtract_num_batched_tokens_partial(
+                            swap_out_tokens_selected_seq)
+                        swap_out_block_ratio = min(
+                            ceil(swap_out_block_num_selected_seq /
+                                 (selected_swapped_out_seq[2].
+                                  total_token_block_size * swap_out_rate)) *
+                            swap_out_rate,
+                            ceil(selected_swapped_out_seq[1] /
+                                 selected_swapped_out_seq[2].
+                                 total_token_block_size * swap_out_rate) *
+                            swap_out_rate)
+                        print(
+                            f"swap out partial seq_group {selected_swapped_out_seq[2].request_id} \
+                            swapped out {swap_out_block_ratio}, half_swapped_queue {[x[2].request_id for x in half_swapped]}"
+                        )
+                        swap_out_block_ratios.append(swap_out_block_ratio)
+                        swapped_out_seq_groups.append(
+                            selected_swapped_out_seq[2])
+                        self._insert_seq_group_into_half_swapped(left_tokens, left_block_num, selected_swapped_out_seq[2])
+                        break
+                    else:
+                        left_tokens = selected_swapped_out_seq[0]
+                        left_block_num = selected_swapped_out_seq[1]
+                        selected_seq_total_block_size = \
+                            selected_swapped_out_seq[2].total_token_block_size
+                        print(
+                            f"swap out all left tokens for seq_group {selected_swapped_out_seq[2].request_id} \
+                            swapped out {swap_out_rate}, half_swapped_queue {[x[2].request_id for x in half_swapped]}"
+                        )
+                        swap_out_block_ratio = min(
+                            ceil(left_block_num /
+                                 (selected_seq_total_block_size *
+                                  swap_out_rate)) * swap_out_rate, 1.0)
+                        budget.subtract_num_batched_tokens_partial(left_tokens)
+                        swap_out_block_ratios.append(swap_out_block_ratio)
+                        swapped_out_seq_groups.append(
+                            selected_swapped_out_seq[2])
+                    count += 1
+                return False, swapped_out_seq_groups, swap_out_block_ratios
 
     def _append_seq_group(self,
                           seq_group: SequenceGroup,
@@ -550,8 +624,8 @@ class Scheduler:
         policy: Policy,
         enable_chunking: bool = False,
     ) -> Tuple[deque, SchedulerRunningOutputs, int]:
-        half_swapped: SortedKeyList[Tuple[int, int,SequenceGroup]] = \
-            SortedKeyList(key=lambda x: x[0])
+        # half_swapped: SortedKeyList[Tuple[int, int,SequenceGroup]] = \
+            # SortedKeyList(key=lambda x: x[0])
         blocks_to_swap_out: List[Tuple[int, int]] = []
         blocks_to_copy: List[Tuple[int, int]] = []
 
@@ -586,9 +660,15 @@ class Scheduler:
                     (seq_group_swapped_out_flag, swap_out_seq_groups, \
                         swap_out_rates) = self._swap_out_partial(
                         seq_group, budget, total_block_size,
-                        num_running_tokens, half_swapped=half_swapped)
+                        num_running_tokens)
+                    print(
+                        f"seq_group {seq_group.request_id} swapped out {seq_group_swapped_out_flag}"
+                    )
                     for swap_out_seq_group, swap_out_rate in zip(
                             swap_out_seq_groups, swap_out_rates):
+                        print(
+                            f"half swapped seq_group {swap_out_seq_group.request_id} swapped out {swap_out_rate}, half_swapped_queue {[x[2].request_id for x in half_swapped]}"
+                        )
                         preempted_mode = self._preempt(
                             swap_out_seq_group,
                             blocks_to_swap_out,
@@ -656,8 +736,8 @@ class Scheduler:
         decode_seq_groups: List[ScheduledSequenceGroup] = []
         prefill_seq_groups: List[ScheduledSequenceGroup] = []
         recomputed_token_nums: int = 0
-        preempted: Set[SequenceGroup] = set() 
-        swapped_out: Set[SequenceGroup] = set() 
+        preempted: Set[SequenceGroup] = set()
+        swapped_out: Set[SequenceGroup] = set()
         half_swapped: SortedKeyList[Tuple[int, int, int,SequenceGroup]] = \
             SortedKeyList(key=lambda x: x[0])
 
@@ -737,12 +817,13 @@ class Scheduler:
                         else:
                             left_tokens, left_block_num, num_running_tokens_victim, victim_seq_group = half_swapped.pop(
                             )
-                            swap_out_tokens = max(int(num_running_tokens_victim *
-                                                  swap_out_block_ratio),1)
+                            swap_out_tokens = max(
+                                int(num_running_tokens_victim *
+                                    swap_out_block_ratio), 1)
                             left_tokens = left_tokens - swap_out_tokens
-                            left_block_num = left_block_num - max(int(
-                                victim_seq_group.total_token_block_size *
-                                swap_out_block_ratio),1)
+                            left_block_num = left_block_num - max(
+                                int(victim_seq_group.total_token_block_size *
+                                    swap_out_block_ratio), 1)
                             if self.preemption_mode:
                                 preempted_mode = self._preempt(
                                     victim_seq_group, blocks_to_swap_out,
@@ -1700,9 +1781,9 @@ class Scheduler:
         prefix_sum = list(accumulate(numbers))
 
         # Use bisect_left for binary search
-        index = bisect.bisect_left(prefix_sum, target+1)
+        index = bisect.bisect_left(prefix_sum, target + 1)
 
         if index >= len(prefix_sum):
             return -1
 
-        return index + 1 # return the number of elements needed
+        return index + 1  # return the number of elements needed
