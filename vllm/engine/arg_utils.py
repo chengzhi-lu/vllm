@@ -525,7 +525,9 @@ class EngineArgs:
             type=str,
             default="fcfs",
             help=
-            "Scheduling policy. Can be 'fcfs', 'UncomputedTokensFirst (utf)','WaitingTimeFirst (wtf)','ShortestTokensFirst (stf)', 'LongestTokensFirst (ltf)', 'BlockFullFirst (bff)','infer', or 'random', default is 'fcfs'",
+            "Scheduling policy. Can be 'fcfs', 'UncomputedTokensFirst (utf)',"
+            "'WaitingTimeFirst (wtf)','ShortestTokensFirst (stf)', 'LongestTokensFirst (ltf)', "
+            "'infer', or 'random', default is 'fcfs'",
         )
 
         parser.add_argument(

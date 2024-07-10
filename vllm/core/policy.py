@@ -122,21 +122,6 @@ class LongestTokensFirst(Policy):
         return priority
 
 
-class BlockFullPolicy(Policy):
-
-    def get_priority(
-        self,
-        now: float,
-        seq_group: SequenceGroup,
-    ) -> float:
-        empty_slots = 0
-        for _, seq in seq_group.seqs_dict.items():
-            for block in seq.logical_token_blocks:
-                empty_slots += block.get_num_empty_slots()
-        priority = (empty_slots + seq.block_size - 1) % seq.block_size
-        return priority
-
-
 class PolicyFactory:
     _POLICY_REGISTRY = {
         "fcfs": FCFS,
@@ -145,7 +130,6 @@ class PolicyFactory:
         "wtf": WaitingTimeFirst,
         "stf": ShortestTokensFirst,
         "ltf": LongestTokensFirst,
-        "bff": BlockFullPolicy,
         "infer": InferSchedule,
     }
 
