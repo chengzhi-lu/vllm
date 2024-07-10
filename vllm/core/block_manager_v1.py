@@ -131,7 +131,6 @@ class CachedBlockAllocator(BlockAllocatorBase):
         if block.ref_count == 0:
             assert block.block_hash not in self.evictor
             self.evictor.add(block)
-
             # Remove the block from the cached_blocks
             del self.cached_blocks[block.block_hash]
 
@@ -221,7 +220,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         block_size: int,
         num_gpu_blocks: int,
         num_cpu_blocks: int,
-        watermark: float = 0.01,
+        watermark: float = 0.03,
         sliding_window: Optional[int] = None,
         enable_caching: bool = False,
     ) -> None:
@@ -526,7 +525,8 @@ class BlockSpaceManagerV1(BlockSpaceManager):
                 ), "BlockSpaceManagerV1 does not support lookahead allocation"
 
         blocks = self._get_physical_blocks(seq_group)
-        num_swapped_seqs = seq_group.num_seqs(status=SequenceStatus.SWAPPED)
+        num_swapped_seqs = seq_group.num_seqs(status=SequenceStatus.SWAPPED) + \
+                           seq_group.num_seqs(status=SequenceStatus.PARTIAL_SWAPPED)
         if seq_group.is_encoder_decoder():
             num_swapped_seqs += 1
         num_free_blocks = self.gpu_allocator.get_num_free_blocks()
@@ -569,8 +569,10 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         # CPU block -> GPU block.
         # dict is efficient in lookup `if cpu_block in mapping`
         mapping: Dict[PhysicalTokenBlock, PhysicalTokenBlock] = {}
-        for seq in seq_group.get_seqs(status=SequenceStatus.SWAPPED):
-            seq.update_swapped_out_block_ratio(0.0)
+        seqs = seq_group.get_seqs(status=SequenceStatus.SWAPPED) + \
+               seq_group.get_seqs(status=SequenceStatus.PARTIAL_SWAPPED)
+        for seq in seqs:
+            seq.reset_swapped_out_block_ratio()
             block_table = self.block_tables[seq.seq_id]
             # block_device_table = self.block_device_tables[seq.seq_id]
             swapped_in_block_indices = {}
@@ -578,14 +580,12 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             cpu_device = Device.CPU
             # gpu_device = Device.GPU
             swapping_in_blocks_extend = swapping_in_blocks.extend
-            current_length = len(swapping_in_blocks)
+            current_length = 0
             for block_indx, block in enumerate(block_table):
                 if block.device == cpu_device:
+                    swapped_in_block_indices[block_indx] = current_length
                     swapping_in_blocks_extend([block])
-                    swapped_in_block_indices[block_indx] = current_length - 1
                     current_length += 1
-                # elif block.device == gpu_device:
-                #     break
             if len(swapped_in_block_indices) == 0:
                 swapping_in_blocks = block_table
 
@@ -607,7 +607,6 @@ class BlockSpaceManagerV1(BlockSpaceManager):
                                        self.cpu_allocator,
                                        self.gpu_allocator,
                                        mapping)
-
         return [(cpu_block.block_number, gpu_block.block_number)
                 for cpu_block, gpu_block in mapping.items()]
 
@@ -617,31 +616,31 @@ class BlockSpaceManagerV1(BlockSpaceManager):
 
     def swap_out(self,
                  seq_group: SequenceGroup,
-                 swap_out_blocks_ratio: int = -1) -> List[Tuple[int, int]]:
+                 swap_out_block_nums: int = -1) -> List[Tuple[int, int]]:
         request_id = seq_group.request_id
 
         # GPU block -> CPU block.
         # dict is efficient in lookup `if gpu_block in mapping`
         mapping: Dict[PhysicalTokenBlock, PhysicalTokenBlock] = {}
-
-        for seq in seq_group.get_seqs(status=SequenceStatus.RUNNING):
+        seqs= seq_group.get_seqs(status=SequenceStatus.RUNNING) + \
+              seq_group.get_seqs(status=SequenceStatus.PARTIAL_SWAPPED)
+        for seq in seqs:
             block_tables = self.block_tables[seq.seq_id]
             swapped_out_blocks_idx = 0
             swapping_out_blocks_idx = 0
-            if swap_out_blocks_ratio > 0:
-                block_table_length = len(block_tables)
-                swapped_out_blocks_ratio = seq.get_swapped_out_block_ratio()
+            block_table_length = len(block_tables)
+            if swap_out_block_nums > 0:
+                swapped_out_block_nums = seq.get_swapped_out_block_nums()
+                swapped_out_blocks_idx = swapped_out_block_nums
                 swapping_out_blocks_idx = min(
-                    int((swap_out_blocks_ratio + swapped_out_blocks_ratio) *
-                        block_table_length), block_table_length)
-                swapped_out_blocks_idx = int(swapped_out_blocks_ratio *
-                                             block_table_length)
-                swapping_out_blocks_idx = max(swapped_out_blocks_idx+1, swapping_out_blocks_idx)
-                seq.update_swapped_out_block_ratio(swapped_out_blocks_ratio)
+                    swapped_out_block_nums + swap_out_block_nums,
+                    block_table_length)
+                seq.update_swapped_out_block_nums(swap_out_block_nums)
                 swapping_out_blocks = block_tables[
                     swapped_out_blocks_idx:swapping_out_blocks_idx]
             else:
                 swapping_out_blocks = block_tables
+                seq.update_swapped_out_block_nums(block_table_length)
             # block_device_table = self.block_device_tables[seq.seq_id]
             # swapping_out_blocks_set= set(swapping_out_blocks)
             # for block in block_tables:
@@ -652,7 +651,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             swapped_out_blocks = self._swap_block_table(
                 swapping_out_blocks, self.gpu_allocator, self.cpu_allocator,
                 mapping)
-            if swap_out_blocks_ratio > 0:
+            if swap_out_block_nums > 0:
                 self.block_tables[
                     seq.seq_id][swapped_out_blocks_idx:
                                 swapping_out_blocks_idx] = swapped_out_blocks

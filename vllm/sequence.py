@@ -46,6 +46,7 @@ class SequenceStatus(enum.Enum):
     WAITING = enum.auto()
     RUNNING = enum.auto()
     SWAPPED = enum.auto()
+    PARTIAL_SWAPPED = enum.auto()
     All = enum.auto()
     FINISHED_STOPPED = enum.auto()
     FINISHED_LENGTH_CAPPED = enum.auto()
@@ -259,7 +260,7 @@ class Sequence:
         self.tokens: Optional[List[str]] = None
 
         # Swapped out block raio
-        self.swapped_out_block_ratio = 0.0
+        self.swapped_out_block_nums: int = 0
 
         self.eos_prob_estimation_window = 17
         self.default_eos_token_prob = -1000.0
@@ -287,11 +288,16 @@ class Sequence:
         else:
             return float(np.mean(self.eos_token_prob))
 
-    def update_swapped_out_block_ratio(self, swapped_out_block_ratio: float):
-        self.swapped_out_block_ratio += swapped_out_block_ratio
+    def update_swapped_out_block_nums(self, swap_out_block_nums: int):
+        self.swapped_out_block_nums += swap_out_block_nums
+        self.swapped_out_block_nums = min(self.logical_token_block_size,
+                                          self.swapped_out_block_nums)
 
-    def get_swapped_out_block_ratio(self) -> float:
-        return self.swapped_out_block_ratio
+    def reset_swapped_out_block_ratio(self):
+        self.swapped_out_block_nums = 0
+
+    def get_swapped_out_block_nums(self) -> int:
+        return self.swapped_out_block_nums
 
     def get_output_text_to_return(self, buffer_length: int):
         # We return the full output text if the sequence is finished.
@@ -488,8 +494,6 @@ class SequenceGroup:
         self.encoder_seq = encoder_seq
         self.eos_token_id = self.seqs_dict[next(iter(
             self.seqs_dict))].eos_token_id
-        self._total_token_block_size = sum(
-            [seq.logical_token_block_size for seq in seqs])
 
     @property
     def prompt(self) -> Optional[str]:
@@ -515,10 +519,12 @@ class SequenceGroup:
 
     @property
     def total_token_block_size(self) -> int:
+        _total_token_block_size = sum(
+            [seq.logical_token_block_size for seq in self.seqs_dict.values()])
         if self.is_prefill():
-            return self._total_token_block_size
+            return _total_token_block_size
         else:
-            return self._total_token_block_size + len(self.get_seqs())
+            return _total_token_block_size + len(self.get_seqs())
 
     def get_last_latency(self, now: float) -> Optional[float]:
         """Sets the last token time for Request level timings."""

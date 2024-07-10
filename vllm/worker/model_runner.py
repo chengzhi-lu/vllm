@@ -524,7 +524,6 @@ class ModelRunner:
                 device=self.device,
             )
         assert max_query_len > 0, ("query_lens: {}".format(query_lens))
-
         context_lens_tensor = torch.tensor(context_lens,
                                            dtype=torch.int,
                                            device=self.device)
@@ -534,7 +533,6 @@ class ModelRunner:
         query_start_loc = torch.zeros(query_lens_tensor.shape[0] + 1,
                                       dtype=torch.int32,
                                       device=self.device)
-
         seq_lens_tensor = torch.tensor(seq_lens,
                                        dtype=torch.int,
                                        device=self.device)
@@ -873,25 +871,35 @@ class ModelRunner:
         per sequence in the batch.
         """
         assert not self.model_config.enforce_eager
-        logger.debug("Capturing the model for CUDA graphs. This may lead to "
-                    "unexpected consequences if the model is not static. To "
-                    "run the model in eager mode, set 'enforce_eager=True' or "
-                    "use '--enforce-eager' in the CLI.")
+        logger.debug(
+            "Capturing the model for CUDA graphs. This may lead to "
+            "unexpected consequences if the model is not static. To "
+            "run the model in eager mode, set 'enforce_eager=True' or "
+            "use '--enforce-eager' in the CLI.")
         logger.debug("CUDA graphs can take additional 1~3 GiB memory per GPU. "
-                    "If you are running out of memory, consider decreasing "
-                    "`gpu_memory_utilization` or enforcing eager mode. "
-                    "You can also reduce the `max_num_seqs` as needed "
-                    "to decrease memory usage.")
+                     "If you are running out of memory, consider decreasing "
+                     "`gpu_memory_utilization` or enforcing eager mode. "
+                     "You can also reduce the `max_num_seqs` as needed "
+                     "to decrease memory usage.")
         start_time = time.perf_counter()
 
         # Prepare dummy inputs. These will be reused for all batch sizes.
         max_batch_size = max(_BATCH_SIZES_TO_CAPTURE)
-        input_tokens = torch.zeros(max_batch_size, dtype=torch.long, pin_memory=True).cuda()
-        input_positions = torch.zeros(max_batch_size, dtype=torch.long, pin_memory=True).cuda()
-        slot_mapping = torch.empty(max_batch_size, dtype=torch.long,pin_memory=True).cuda()
+        input_tokens = torch.zeros(max_batch_size,
+                                   dtype=torch.long,
+                                   pin_memory=True).cuda()
+        input_positions = torch.zeros(max_batch_size,
+                                      dtype=torch.long,
+                                      pin_memory=True).cuda()
+        slot_mapping = torch.empty(max_batch_size,
+                                   dtype=torch.long,
+                                   pin_memory=True).cuda()
         slot_mapping.fill_(_PAD_SLOT_ID)
-        seq_lens = torch.ones(max_batch_size, dtype=torch.int32, pin_memory=True).cuda()
-        block_tables = torch.from_numpy(self.graph_block_tables).pin_memory().cuda()
+        seq_lens = torch.ones(max_batch_size,
+                              dtype=torch.int32,
+                              pin_memory=True).cuda()
+        block_tables = torch.from_numpy(
+            self.graph_block_tables).pin_memory().cuda()
 
         graph_batch_size = _get_graph_batch_size(
             self.scheduler_config.max_num_seqs)

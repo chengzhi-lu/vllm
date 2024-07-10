@@ -1,5 +1,6 @@
 """A GPU worker class."""
 import gc
+from nis import cat
 import os
 import time
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
@@ -89,6 +90,7 @@ class Worker(WorkerBase):
         self.cache_engine: CacheEngine
         # Initialize gpu_cache as embedding models don't initialize kv_caches
         self.gpu_cache: Optional[List[torch.tensor]] = None
+        self.all_swapped_blocks: Dict[int, int] = {}
 
     def init_device(self) -> None:
         if self.device_config.device.type == "cuda":
@@ -222,6 +224,20 @@ class Worker(WorkerBase):
         if blocks_to_copy.numel() > 0:
             self.cache_engine.copy(blocks_to_copy)
 
+    def update_swapped_blocks(
+            self, swapped_in_blocks: List[Tuple[int, int]],
+            swapped_out_blocks: List[Tuple[int, int]]) -> None:
+        for gpu_block_number, cpu_block_number in swapped_out_blocks:
+            if gpu_block_number not in self.all_swapped_blocks:
+                self.all_swapped_blocks[gpu_block_number] = 1
+            else:
+                self.all_swapped_blocks[gpu_block_number] += 1
+        for cpu_block_number, gpu_block_number in swapped_in_blocks:
+            if gpu_block_number in self.all_swapped_blocks:
+                self.all_swapped_blocks[gpu_block_number] -= 1
+                if self.all_swapped_blocks[gpu_block_number] == 0:
+                    del self.all_swapped_blocks[gpu_block_number]
+
     @torch.inference_mode()
     def execute_model(
         self,
@@ -240,6 +256,8 @@ class Worker(WorkerBase):
             broadcast_tensor_dict({}, src=0)
             return []
 
+        self.update_swapped_blocks(execute_model_req.blocks_to_swap_in,
+                                   execute_model_req.blocks_to_swap_out)
         seq_group_metadata_list = execute_model_req.seq_group_metadata_list
         num_seq_groups = len(seq_group_metadata_list)
         # `blocks_to_swap_in` and `blocks_to_swap_out` are cpu tensors.
@@ -264,9 +282,10 @@ class Worker(WorkerBase):
             "blocks_to_copy": blocks_to_copy,
         }
         broadcast_tensor_dict(data, src=0)
-        
+
         # st = time.time()
         self.cache_swap(blocks_to_swap_in, blocks_to_swap_out, blocks_to_copy)
+        torch.zeros(10, dtype=torch.int32, device=self.device)
         # et = time.time()
         # print(f"swap in blocks {blocks_to_swap_in.shape}, swap out blocks {blocks_to_swap_out.shape}, copy blocks {blocks_to_copy.shape}, swap time is : {et - st}")
 
