@@ -4,6 +4,7 @@ import os
 import random
 from itertools import accumulate
 import bisect
+from re import X
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -683,7 +684,7 @@ class Scheduler:
             num_lookahead_slots=self._get_num_lookahead_slots(
                 is_prefill=False)), recomputed_token_nums
 
-    def _schedule_running_without_lora(
+    def _schedule_running_partial(
         self,
         running_queue: deque,
         budget: SchedulingBudget,
@@ -750,7 +751,8 @@ class Scheduler:
                             victim_seq_group = running_queue.pop()
                             victim_seq_group_block_size = victim_seq_group.total_token_block_size
                             if victim_seq_group_block_size <= required_block_size:
-                                swap_out_block_nums = victim_seq_group_block_size
+                                swap_out_block_nums = -1 
+                                required_block_size-=victim_seq_group_block_size
                                 seq_group_status = SequenceStatus.SWAPPED
                             else:
                                 swap_out_block_unit = ceil(
@@ -762,8 +764,10 @@ class Scheduler:
                                     swap_out_block_unit, 1)
                                 left_victim_block_size = victim_seq_group_block_size - swap_out_block_nums
                                 seq_group_status = SequenceStatus.PARTIAL_SWAPPED
-                                self.partial_swapped[victim_seq_group] = (
-                                    left_victim_block_size, victim_seq_group)
+                                if left_victim_block_size > 0:
+                                    self.partial_swapped[victim_seq_group] = (
+                                        left_victim_block_size, victim_seq_group)
+                                required_block_size = 0
                         else:
                             victim_seq_group = list(
                                 self.partial_swapped.keys())[0]
@@ -773,15 +777,18 @@ class Scheduler:
                                 victim_seq_group.total_token_block_size *
                                 partial_swapped_rate)
                             if left_victim_block_size <= required_block_size:
-                                swap_out_block_nums = left_victim_block_size
+                                swap_out_block_nums = left_victim_block_size 
+                                required_block_size -= left_victim_block_size 
                             else:
                                 swap_out_block_nums = max(
                                     ceil(required_block_size /
                                          swap_out_block_unit) *
                                     swap_out_block_unit, 1)
                                 left_victim_block_size = left_victim_block_size - swap_out_block_nums
-                                self.partial_swapped[victim_seq_group] = (
-                                    left_victim_block_size, victim_seq_group)
+                                if left_victim_block_size > 0:
+                                    self.partial_swapped[victim_seq_group] = (
+                                        left_victim_block_size, victim_seq_group)
+                                required_block_size = 0
                             seq_group_status = SequenceStatus.PARTIAL_SWAPPED
                         preempted_mode = self._preempt(
                             victim_seq_group,
@@ -793,7 +800,6 @@ class Scheduler:
                             preempted.add(victim_seq_group)
                         else:
                             swapped_out.add(victim_seq_group)
-                        required_block_size -= swap_out_block_nums
                 else:
                     # No other sequence groups can be preempted.
                     # Preempt the current sequence group.
@@ -835,6 +841,8 @@ class Scheduler:
                                        enable_chunking)
 
         swapped_out = swapped_out.difference(total_swapped_out)
+        # print(f"swapped_out {[x.request_id for x in swapped_out]}")
+        # print(f"half_swapped_out {[(x.request_id, x.get_seqs()) for x in self.partial_swapped]}")
         return running_queue, SchedulerRunningOutputs(
             decode_seq_groups=decode_seq_groups,
             prefill_seq_groups=prefill_seq_groups,
@@ -1383,7 +1391,7 @@ class Scheduler:
                 self.swapped, budget, curr_loras, policy)
         else:
             remaining_running, running_scheduled, recomputed_token_nums = \
-                self._schedule_running_without_lora(self.running,
+                self._schedule_running_partial(self.running,
                                        budget,
                                        curr_loras,
                                        policy,

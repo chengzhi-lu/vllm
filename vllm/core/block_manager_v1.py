@@ -636,6 +636,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
                     swapped_out_block_nums + swap_out_block_nums,
                     block_table_length)
                 seq.update_swapped_out_block_nums(swap_out_block_nums)
+                # print(f"seq_group {seq_group.request_id} swapping out blocks {swapped_out_blocks_idx} to {swapping_out_blocks_idx}")
                 swapping_out_blocks = block_tables[
                     swapped_out_blocks_idx:swapping_out_blocks_idx]
             else:
