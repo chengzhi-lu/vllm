@@ -40,7 +40,7 @@ from vllm.usage.usage_lib import (UsageContext, is_usage_stats_enabled,
 from vllm.utils import Counter
 
 logger = init_logger(__name__)
-_LOCAL_LOGGING_INTERVAL_SEC = 5
+_LOCAL_LOGGING_INTERVAL_SEC = 1
 
 
 def _load_generation_config_dict(model_config: ModelConfig):
@@ -284,7 +284,7 @@ class LLMEngine:
         if self.log_stats:
             self.stat_logger = StatLogger(
                 local_interval=_LOCAL_LOGGING_INTERVAL_SEC,
-                labels=dict(model_name=model_config.served_model_name),
+                labels=dict(model_name=model_config.served_model_name, policy=self.scheduler_config.policy, swap_out_partial=self.scheduler_config.swap_out_partial_rate, swap_out_policy=self.scheduler_config.swap_out_tokens_policy),
                 max_model_len=self.model_config.max_model_len)
             self.stat_logger.info("cache_config", self.cache_config)
 

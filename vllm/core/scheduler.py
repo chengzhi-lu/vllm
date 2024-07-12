@@ -1,16 +1,15 @@
 import enum
+from functools import partial
 from math import ceil
 import os
 import random
 from itertools import accumulate
 import bisect
-from re import X
 import time
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Deque, Dict, Iterable, List, Optional, Set, Tuple, Union
 
-from numpy import require
 
 from vllm.config import CacheConfig, LoRAConfig, SchedulerConfig
 from vllm.core.interfaces import AllocStatus, BlockSpaceManager
@@ -389,8 +388,11 @@ class Scheduler:
             self.preemption_mode = PreemptionMode.RECOMPUTE
         self.iter_nums = 0
         # partial swapped dict: key is sequence group, value is a tuple of (remaining block sizes, preempted_seq_group)
-        self.partial_swapped: Dict[SequenceGroup, Tuple[int,
+        self.partial_swapped: Dict[str, Tuple[int,
                                                         SequenceGroup]] = {}
+        
+        # self.partial_swapped_values:SortedKeyList[(int, SequenceGroup)]=SortedKeyList(key=lambda x: x[0])
+        self.partial_swapped_values: List[Tuple[int, str]] = []
 
         self.has_finished_seqs = False
 
@@ -451,22 +453,23 @@ class Scheduler:
         return len(self.waiting) + len(self.running) + len(self.swapped)
 
     def _insert_seq_group_into_partial_swapped(
-            self, remaining_block_sizes: int,
+            self, remaining_block_sizes: int, seq_group_request_id: str,
             seq_group: SequenceGroup) -> None:
         """Insert a sequence group into the partial_swapped queue.
         """
-        self.partial_swapped[seq_group] = (remaining_block_sizes, seq_group)
+        self.partial_swapped[seq_group_request_id] = (remaining_block_sizes, seq_group)
+        self.partial_swapped_values.append((remaining_block_sizes, seq_group_request_id))
 
     def _get_seq_group_from_partial_swapped(
-            self, seq_group: SequenceGroup) -> Tuple[int, SequenceGroup]:
+            self, seq_group_reqeust_id: str) -> Tuple[int, SequenceGroup]:
         """Get a sequence group from the partial_swapped queue.
         """
-        (left_block_size, seq_group) = self.partial_swapped.pop(seq_group)
+        (left_block_size, seq_group) = self.partial_swapped.pop(seq_group_reqeust_id)
+        self.partial_swapped_values.remove((left_block_size, seq_group_reqeust_id))
         return (left_block_size, seq_group)
 
     def _swap_out_partial(
-            self, seq_group: SequenceGroup, budget: SchedulingBudget,
-            block_size: int,
+            self, seq_group_request_id:str, seq_group: SequenceGroup, budget: SchedulingBudget,
             num_running_tokens: int) -> Tuple[bool, Dict[SequenceGroup, int]]:
         """Swap out a sequence group partially.
 
@@ -482,67 +485,67 @@ class Scheduler:
                         False otherwise.
         """
         swapped_out_seq_groups: Dict[SequenceGroup, int] = {}
-        swap_out_rate = self.scheduler_config.swap_out_partial_rate
-        seq_group_block_size = seq_group.total_token_block_size
         seq_group_token_num = num_running_tokens
-        # Swap out a partial block.
         if len(self.waiting) > 0:
             # swap out all blocks for the prefill request
-            budget.subtract_num_batched_tokens(seq_group.request_id,
+            budget.subtract_num_batched_tokens(seq_group_request_id,
                                                seq_group_token_num)
             swapped_out_seq_groups[seq_group] = -1
             return True, swapped_out_seq_groups
+        swap_out_rate = self.scheduler_config.swap_out_partial_rate
+        # Swap out a partial block.
+        seq_group_block_size = seq_group.total_token_block_size
+        block_unit = max(int(seq_group_block_size * swap_out_rate), 1)
         if len(self.partial_swapped) == 0:
             # swap out part of the current seq_group for decode request
-            block_unit = max(int(seq_group_block_size * swap_out_rate), 1)
-            swap_out_block_num = block_unit * 1
-            budget.subtract_num_batched_tokens(seq_group.request_id,
+            swap_out_block_num = block_unit
+            budget.subtract_num_batched_tokens(seq_group_request_id,
                                                seq_group_token_num)
             r_bs = seq_group_block_size - swap_out_block_num
             if r_bs > 0:
-                self._insert_seq_group_into_partial_swapped(r_bs, seq_group)
+                self._insert_seq_group_into_partial_swapped(r_bs, seq_group_request_id, seq_group)
             swapped_out_seq_groups[seq_group] = swap_out_block_num
             return True, swapped_out_seq_groups
         else:
             # swap out left part of the sequence group in the
             # partial_swapped queue prior to the current seq_group
-            sorted_partial_swapped = sorted(list(
-                self.partial_swapped.values()),
-                                            key=lambda x: x[0])
-            partial_swapped_bn = [x[0] for x in sorted_partial_swapped]
-            partial_swapped_sgs = [x[1] for x in sorted_partial_swapped]
+            partial_swapped_values = self.partial_swapped_values
+            partial_swapped_values.sort(key=lambda x: x[0])
+            partial_swapped_bn,partial_swapped_sgs = map(list, zip(*partial_swapped_values))
             selected_swapped_sg_index = self.min_numbers_sum_at_least(
                 partial_swapped_bn, seq_group_block_size)
             if selected_swapped_sg_index == -1:
                 # swap out part of the current seq_group for decode request due to the lack of free blocks from partial_swapped queue
                 block_unit = max(int(seq_group_block_size * swap_out_rate), 1)
-                swap_out_block_num = block_unit * 1
-                budget.subtract_num_batched_tokens(seq_group.request_id,
+                swap_out_block_num = block_unit
+                budget.subtract_num_batched_tokens(seq_group_request_id,
                                                    seq_group_token_num)
-                r_bs = block_size - swap_out_block_num
-                self._insert_seq_group_into_partial_swapped(r_bs, seq_group)
+                r_bs = seq_group_block_size - swap_out_block_num
+                self._insert_seq_group_into_partial_swapped(r_bs,seq_group_request_id, seq_group)
                 # return seq_group as the swap out seq group
                 swapped_out_seq_groups[seq_group] = swap_out_block_num
                 return True, swapped_out_seq_groups
             else:
                 total_swap_block = 0
+                last_swap_block = 0
                 selected_partial_swapped_sg = partial_swapped_sgs[:
                                                                   selected_swapped_sg_index]
                 for selected_seq_group in selected_partial_swapped_sg:
                     r_bs,  partial_swapped_sg = \
-                          self._get_seq_group_from_partial_swapped(selected_seq_group)
+                        self._get_seq_group_from_partial_swapped(selected_seq_group)
+                    last_swap_block = total_swap_block
                     total_swap_block += r_bs
                     if total_swap_block > seq_group_block_size:
                         block_unit = max(
                             ceil(partial_swapped_sg.total_token_block_size *
                                  swap_out_rate), 1)
                         swap_out_block_size = ceil(
-                            (r_bs - total_swap_block + seq_group_block_size) /
+                            (seq_group_block_size - last_swap_block) /
                             block_unit) * block_unit
                         left_block_size = r_bs - swap_out_block_size
                         if left_block_size > 0:
                             self._insert_seq_group_into_partial_swapped(
-                                left_block_size, partial_swapped_sg)
+                                left_block_size,selected_seq_group, partial_swapped_sg)
                         if swap_out_block_size > 0:
                             swapped_out_seq_groups[
                                 partial_swapped_sg] = swap_out_block_size
@@ -596,10 +599,9 @@ class Scheduler:
         prefill_seq_groups: List[ScheduledSequenceGroup] = []
         recomputed_token_nums: int = 0
         preempted: Set[SequenceGroup] = set()
-        total_swapped_out: Set[SequenceGroup] = set(self.swapped)
         swapped_out: Set[SequenceGroup] = set()
 
-        partial_swap_out_flag = self.scheduler_config.swap_out_partial_tokens
+        partial_swap_out_flag = self.scheduler_config.swap_out_tokens_policy=="partial"
 
         # NOTE(woosuk): Preemption happens only when there is no available slot
         # to keep all the sequence groups in the RUNNING state.
@@ -618,18 +620,17 @@ class Scheduler:
                 break
 
             running_queue.popleft()
+            seq_group_request_id = seq_group.request_id
             if not self._can_append_slots(seq_group):
                 # If there's no other sequence groups in the waiting queue, only
                 # swap out part of the tokens belong to current seq_group.
                 if partial_swap_out_flag:
-                    total_block_size = seq_group.total_token_block_size
                     (seq_group_swapped_out_flag,
                      swapped_out_seq_groups) = self._swap_out_partial(
-                         seq_group, budget, total_block_size,
+                         seq_group_request_id,seq_group, budget, 
                          num_running_tokens)
-                    for swap_out_seq_group in swapped_out_seq_groups:
-                        swap_out_block_nums = swapped_out_seq_groups[
-                            swap_out_seq_group]
+                    swapped_out_seq_groups_items = swapped_out_seq_groups.items()
+                    for swap_out_seq_group, swap_out_block_nums in swapped_out_seq_groups_items:
                         if swap_out_block_nums == -1:
                             seq_group_status = SequenceStatus.SWAPPED
                         else:
@@ -652,12 +653,12 @@ class Scheduler:
                                                curr_loras, enable_chunking)
 
                 else:
-                    budget.subtract_num_batched_tokens(seq_group.request_id,
+                    budget.subtract_num_batched_tokens(seq_group_request_id,
                                                        num_running_tokens)
                     swap_out_seq_group = seq_group
                     num_running_seqs = seq_group.get_max_num_running_seqs()
                     seq_group.update_waiting_iter_nums()
-                    budget.subtract_num_seqs(seq_group.request_id,
+                    budget.subtract_num_seqs(seq_group_request_id,
                                              num_running_seqs)
                     preempted_mode = self._preempt(swap_out_seq_group,
                                                    blocks_to_swap_out,
@@ -667,13 +668,15 @@ class Scheduler:
                         preempted.add(swap_out_seq_group)
                     else:
                         swapped_out.add(swap_out_seq_group)
-
+           
             else:
                 self._append_seq_group(seq_group, blocks_to_copy,
                                        num_running_tokens, prefill_seq_groups,
                                        decode_seq_groups, budget, curr_loras,
                                        enable_chunking)
-        swapped_out = swapped_out.difference(total_swapped_out)
+        if len(swapped_out)>0:
+            total_swapped_out: Set[SequenceGroup] = set(self.swapped)
+            swapped_out = swapped_out.difference(total_swapped_out)
         return running_queue, SchedulerRunningOutputs(
             decode_seq_groups=decode_seq_groups,
             prefill_seq_groups=prefill_seq_groups,
@@ -703,9 +706,8 @@ class Scheduler:
         prefill_seq_groups: List[ScheduledSequenceGroup] = []
         recomputed_token_nums: int = 0
         preempted: Set[SequenceGroup] = set()
-        total_swapped_out: Set[SequenceGroup] = set(self.swapped)
         swapped_out: Set[SequenceGroup] = set()
-        partial_swapped_flag = self.scheduler_config.swap_out_partial_tokens
+        partial_swapped_flag = self.scheduler_config.swap_out_tokens_policy=="partial"
         partial_swapped_rate = self.scheduler_config.swap_out_partial_rate
 
         # NOTE(woosuk): Preemption happens only when there is no available slot
@@ -765,14 +767,15 @@ class Scheduler:
                                 left_victim_block_size = victim_seq_group_block_size - swap_out_block_nums
                                 seq_group_status = SequenceStatus.PARTIAL_SWAPPED
                                 if left_victim_block_size > 0:
-                                    self.partial_swapped[victim_seq_group] = (
+                                    victim_seq_group_request_id = victim_seq_group.request_id
+                                    self.partial_swapped[victim_seq_group_request_id] = (
                                         left_victim_block_size, victim_seq_group)
                                 required_block_size = 0
                         else:
-                            victim_seq_group = list(
+                            victim_seq_group_request_id = list(
                                 self.partial_swapped.keys())[0]
-                            left_victim_block_size, _ = self.partial_swapped.pop(
-                                victim_seq_group)
+                            left_victim_block_size,victim_seq_group = self.partial_swapped.pop(
+                                victim_seq_group_request_id)
                             swap_out_block_unit = ceil(
                                 victim_seq_group.total_token_block_size *
                                 partial_swapped_rate)
@@ -786,7 +789,7 @@ class Scheduler:
                                     swap_out_block_unit, 1)
                                 left_victim_block_size = left_victim_block_size - swap_out_block_nums
                                 if left_victim_block_size > 0:
-                                    self.partial_swapped[victim_seq_group] = (
+                                    self.partial_swapped[victim_seq_group_request_id] = (
                                         left_victim_block_size, victim_seq_group)
                                 required_block_size = 0
                             seq_group_status = SequenceStatus.PARTIAL_SWAPPED
@@ -817,9 +820,10 @@ class Scheduler:
                         victim_seq_group_block_size = victim_seq_group.total_token_block_size
                         swap_out_block_unit = ceil(
                             victim_seq_group_block_size * partial_swapped_rate)
-                        swap_out_block_nums = max(swap_out_block_unit * 1, 1)
+                        swap_out_block_nums = max(swap_out_block_unit, 1)
                         left_victim_block_size = victim_seq_group_block_size - swap_out_block_nums
-                        self.partial_swapped[victim_seq_group] = (
+                        victim_seq_group_request_id = victim_seq_group.request_id
+                        self.partial_swapped[victim_seq_group_request_id] = (
                             left_victim_block_size, victim_seq_group)
                         seq_group_status = SequenceStatus.PARTIAL_SWAPPED
                         preempted_mode = self._preempt(
@@ -840,7 +844,9 @@ class Scheduler:
                                        decode_seq_groups, budget, curr_loras,
                                        enable_chunking)
 
-        swapped_out = swapped_out.difference(total_swapped_out)
+        if len(swapped_out) >0:
+            total_swapped_out = set(self.swapped)
+            swapped_out = swapped_out.difference(total_swapped_out)
         # print(f"swapped_out {[x.request_id for x in swapped_out]}")
         # print(f"half_swapped_out {[(x.request_id, x.get_seqs()) for x in self.partial_swapped]}")
         return running_queue, SchedulerRunningOutputs(
@@ -1084,8 +1090,9 @@ class Scheduler:
                 curr_loras.add(lora_int_id)
             swapped_queue.popleft()
             self._swap_in(seq_group, blocks_to_swap_in)
-            if seq_group in self.partial_swapped:
-                del self.partial_swapped[seq_group]
+            seq_group_request_id = seq_group.request_id
+            if seq_group_request_id in self.partial_swapped:
+                del self.partial_swapped[seq_group_request_id]
             self._append_slots(seq_group, blocks_to_copy)
             is_prefill = seq_group.is_prefill()
             if is_prefill:
