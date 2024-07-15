@@ -207,6 +207,7 @@ class LLMEngine:
         self.load_config = load_config
         self.decoding_config = decoding_config or DecodingConfig()
         self.log_stats = log_stats
+        self.num_total_generation_tokens = 0
         self.stats = None
         self.et = 0.0
         if not self.model_config.skip_tokenizer_init:
@@ -284,7 +285,11 @@ class LLMEngine:
         if self.log_stats:
             self.stat_logger = StatLogger(
                 local_interval=_LOCAL_LOGGING_INTERVAL_SEC,
-                labels=dict(model_name=model_config.served_model_name, policy=self.scheduler_config.policy, swap_out_partial=self.scheduler_config.swap_out_partial_rate, swap_out_policy=self.scheduler_config.swap_out_tokens_policy),
+                labels=dict(model_name=model_config.served_model_name, 
+                            scheduling_policy=self.scheduler_config.policy,
+                            swap_out_rate=self.scheduler_config.swap_out_partial_rate, 
+                            swap_policy=self.scheduler_config.swap_out_tokens_policy
+                            ),
                 max_model_len=self.model_config.max_model_len)
             self.stat_logger.info("cache_config", self.cache_config)
 
@@ -980,7 +985,7 @@ class LLMEngine:
             spec_decode_metrics = model_output[0].spec_decode_worker_metrics
         else:
             spec_decode_metrics = None
-
+        self.num_total_generation_tokens += num_generation_tokens_iter
         self.stats = Stats(
             now=now,
             # System stats
@@ -1009,6 +1014,7 @@ class LLMEngine:
             #   Metadata
             num_prompt_tokens_requests=num_prompt_tokens_requests,
             num_generation_tokens_requests=num_generation_tokens_requests,
+            num_total_generation_tokens=self.num_total_generation_tokens,
             best_of_requests=best_of_requests,
             n_requests=n_requests,
             finished_reason_requests=finished_reason_requests,

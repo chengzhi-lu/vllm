@@ -1,5 +1,4 @@
 import enum
-from functools import partial
 from math import ceil
 import os
 import random
@@ -18,7 +17,6 @@ from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
 from vllm.sequence import (Sequence, SequenceData, SequenceGroup,
                            SequenceGroupMetadata, SequenceStatus)
-from sortedcontainers import SortedKeyList
 
 logger = init_logger(__name__)
 
@@ -610,11 +608,14 @@ class Scheduler:
         iter_threshold = self.scheduler_config.iter_threshold
         if (self.iter_nums % iter_threshold == 0 or self.has_finished_seqs):
             running_queue = policy.sort_by_priority(-1, running_queue)
+            self.iter_nums = 0
             self.has_finished_seqs = False
         while running_queue:
             seq_group: SequenceGroup = running_queue[0]
             num_running_tokens = self._get_num_new_tokens(
                 seq_group, SequenceStatus.RUNNING, enable_chunking, budget)
+            
+            num_running_tokens = num_running_tokens + iter_threshold
 
             if num_running_tokens == 0:
                 break
@@ -1079,7 +1080,8 @@ class Scheduler:
             num_new_tokens = self._get_num_new_tokens(seq_group,
                                                       SequenceStatus.SWAPPED,
                                                       enable_chunking, budget)
-
+            if self.scheduler_config.policy=='infer':
+                num_new_tokens = num_new_tokens + self.scheduler_config.iter_threshold
             if (num_new_tokens == 0
                     or not budget.can_schedule(num_new_tokens=num_new_tokens,
                                                num_new_seqs=num_new_seqs)):

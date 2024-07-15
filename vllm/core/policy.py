@@ -53,9 +53,10 @@ class InferSchedule(Policy):
             decoding_length += seq.get_output_len()
         mean_eos_token_prob = np.mean(eos_token_probs)
         if mean_eos_token_prob == -1000.0:
-            priority = len(seq_group.prompt_token_ids)
+            # priority = len(seq_group.prompt_token_ids)
+            priority = -decoding_length
         else:
-            probs = np.exp(mean_eos_token_prob)
+            probs = np.exp(mean_eos_token_prob) # short job may have high eos prob
             waiting_percent = \
                 seq_group.metrics.waiting_iter_nums**2 / decoding_length
             priority = probs + waiting_percent

@@ -4,14 +4,11 @@ import time
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
-    AutoConfig,
-    LlamaTokenizer,
 )
 from typing import List
 import json
 import random
 from dataclasses import dataclass
-from tqdm import tqdm
 from rich.progress import track
 
 
@@ -248,10 +245,10 @@ def get_prompt():
 if __name__ == "__main__":
     test_prompts = get_prompt()
     # large_model_name = "JackFram/llama-160m"
-    large_model_name = "meta-llama/Llama-2-7b-chat-hf"
+    large_model_name = "meta-llama/Llama-2-13b-chat-hf"
     large_model = load_model(large_model_name)
     # eos_probability(large_model, small_model, test_prompts)
-    eos_poss, eos_probability = test_max_model_output_length(
+    eos_poss, eos_probability = test_max_model_output_length_batch(
         large_model, test_prompts)
     result = {
         "eos_poss": eos_poss,

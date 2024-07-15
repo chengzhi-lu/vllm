@@ -281,7 +281,7 @@ def _greedy_sample(
         seq_group has do_sample=False, tuple contains ([], [])
     """
     samples = samples.tolist()
-    torch.cuda.synchronize()
+    # torch.cuda.synchronize()
     sample_idx = 0
     results: SampleResultType = []
     for seq_group in selected_seq_groups:

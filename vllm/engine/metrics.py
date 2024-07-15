@@ -73,6 +73,10 @@ class Metrics:
             name="vllm:generation_tokens_total",
             documentation="Number of generation tokens processed.",
             labelnames=labelnames)
+        self.counter_total_generation_tokens = Counter(
+            name="vllm:total_generation_tokens_total",
+            documentation="Total number of generation tokens processed.",
+            labelnames=labelnames)
         self.histogram_time_to_first_token = Histogram(
             name="vllm:time_to_first_token_seconds",
             documentation="Histogram of time to first token in seconds.",
@@ -200,6 +204,7 @@ class Stats:
     best_of_requests: List[int]
     n_requests: List[int]
     finished_reason_requests: List[str]
+    num_total_generation_tokens: int
 
     spec_decode_metrics: Optional["SpecDecodeWorkerMetrics"] = None
 
@@ -260,6 +265,7 @@ class StatLogger:
                           stats.num_prompt_tokens_iter)
         self._log_counter(self.metrics.counter_generation_tokens,
                           stats.num_generation_tokens_iter)
+        
         self._log_histogram(self.metrics.histogram_time_to_first_token,
                             stats.time_to_first_tokens_iter)
         self._log_histogram(self.metrics.histogram_time_per_output_token,
@@ -275,6 +281,8 @@ class StatLogger:
         self._log_counter_labels(self.metrics.counter_request_success,
                                  finished_reason_counter,
                                  Metrics.labelname_finish_reason)
+        self._log_counter(self.metrics.counter_total_generation_tokens,
+                          stats.num_total_generation_tokens)
         self._log_histogram(self.metrics.histogram_num_prompt_tokens_request,
                             stats.num_prompt_tokens_requests)
         self._log_histogram(
