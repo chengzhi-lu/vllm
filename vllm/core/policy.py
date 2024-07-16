@@ -49,16 +49,20 @@ class InferSchedule(Policy):
         decoding_length = 0
         # token_blocks = seq_group.total_token_block_size
         for _, seq in seq_group.seqs_dict.items():
-            eos_token_probs.append(seq.get_eos_token_prob())
+            eos_token_probs.extend(seq.get_eos_token_prob())
             decoding_length += seq.get_output_len()
         mean_eos_token_prob = np.mean(eos_token_probs)
         if mean_eos_token_prob == -1000.0:
             # priority = len(seq_group.prompt_token_ids)
-            priority = -decoding_length
+            if decoding_length == 0:
+                priority = - len(seq_group.prompt_token_ids)
+            else:
+                priority = - decoding_length
         else:
-            probs = np.exp(mean_eos_token_prob) # short job may have high eos prob
+            probs = np.exp(mean_eos_token_prob) # short job may have high eos prob. however, this value is too small to be considered.
+            # probs = mean_eos_token_prob
             waiting_percent = \
-                seq_group.metrics.waiting_iter_nums**2 / decoding_length
+                seq_group.metrics.waiting_iter_nums**1.5 / decoding_length
             priority = probs + waiting_percent
         return priority
 

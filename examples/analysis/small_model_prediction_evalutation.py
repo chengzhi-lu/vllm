@@ -10,6 +10,7 @@ import json
 import random
 from dataclasses import dataclass
 from rich.progress import track
+from tqdm import tqdm
 
 
 @dataclass
@@ -27,10 +28,7 @@ def load_model(model_name):
     return model
 
 
-def predict(model: Model,
-            inputs: torch.Tensor,
-            input_idx: int,
-            eos_token_id: int = 2):
+def predict(model: Model, inputs: torch.Tensor, input_idx: int, eos_token_id: int = 2):
     eos_poss = []
     eos_probabilities = []
     next_token = inputs[0][-1]
@@ -40,11 +38,13 @@ def predict(model: Model,
     device = inputs.device
     batch_size, initial_length = inputs.size()
     total_length = 3000
+    input_length = inputs.shape[0]
+    output_length = 0
     if inputs.shape[1] > total_length:
-        return [], []
-    generated_tokens_tensor = torch.zeros((batch_size, total_length),
-                                          device=device,
-                                          dtype=torch.long)
+        return [], [], -1, -1
+    generated_tokens_tensor = torch.zeros(
+        (batch_size, total_length), device=device, dtype=torch.long
+    )
     generated_tokens_tensor[:, :initial_length] = inputs
     with torch.no_grad():
         while next_token != eos_token_id:
@@ -65,21 +65,21 @@ def predict(model: Model,
                 count = 0
                 start_time = time.time()
             if total_count + initial_length > 2000:
-                return [], []
-            generated_tokens_tensor[:,
-                                    initial_length + total_count] = next_token
-            inputs = generated_tokens_tensor[:, :initial_length + total_count +
-                                             1]
+                return [], [], -1, -1
+            generated_tokens_tensor[:, initial_length + total_count] = next_token
+            inputs = generated_tokens_tensor[:, : initial_length + total_count + 1]
+            output_length += 1
             # eos_rank, eos_probability = get_eos_position(
             #     next_token_probs, eos_token_id
             # )
             eos_rank, eos_probability = get_eos_position_opt(
-                next_token_probs, eos_token_id)
+                next_token_probs, eos_token_id
+            )
             eos_poss.append(float(eos_rank))
             eos_probabilities.append(float(eos_probability))
 
     torch.cuda.empty_cache()
-    return eos_poss, eos_probabilities
+    return eos_poss, eos_probabilities, input_length, output_length
 
 
 def predict_batch(
@@ -88,14 +88,15 @@ def predict_batch(
     task_list: List[torch.Tensor],
     eos_token_id: int = 2,
 ):
-    inputs = torch.stack(task_list[:batch_size])
+    inputs = torch.stack(task_list[:batch_size]).to("cuda:1")
     task_list = task_list[batch_size:]
     eos_poss = [[] for _ in range(batch_size)]
     eos_probabilities = [[] for _ in range(batch_size)]
+    input_length = [[] for _ in range(batch_size)]
+    output_length = [[] for _ in range(batch_size)]
     finished = [False] * batch_size
     current_inputs = inputs
-    input_indices = list(
-        range(batch_size))  # Track the original indices of inputs
+    input_indices = list(range(batch_size))  # Track the original indices of inputs
 
     with torch.no_grad():
         while current_inputs.size(0) > 0:
@@ -114,17 +115,22 @@ def predict_batch(
                 if finished[i]:
                     continue  # Skip finished inputs
                 next_token = next_tokens[idx].item()
-                new_input = torch.cat((
-                    current_inputs[idx],
-                    torch.tensor([next_token], device=inputs.device),
-                ))
+                new_input = torch.cat(
+                    (
+                        current_inputs[idx],
+                        torch.tensor([next_token], device=inputs.device),
+                    )
+                )
                 new_inputs.append(new_input)
                 if next_token == eos_token_id:
                     finished[i] = True
                     eos_position, eos_probability = get_eos_position(
-                        next_token_probs[idx], eos_token_id)
+                        next_token_probs[idx], eos_token_id
+                    )
                     eos_poss[i].append(float(eos_position))
                     eos_probabilities[i].append(float(eos_probability))
+                    input_length[i].append(float(len(inputs[idx])))
+                    output_length[i].append(float(len(new_input)))
                     new_inputs.remove(new_input)
                     new_input.to("cpu")
                 else:
@@ -138,10 +144,12 @@ def predict_batch(
                 for _ in range(num_new_tasks):
                     if task_list:
                         new_task = task_list.pop(0)
-                        new_inputs.append(new_task)
+                        new_inputs.append(new_task.to("cuda:1"))
                         new_indices.append(len(finished))
                         eos_poss.append([])
                         eos_probabilities.append([])
+                        input_length.append([])
+                        output_length.append([])
                         finished.append(False)
 
             if not new_inputs:
@@ -151,7 +159,7 @@ def predict_batch(
             input_indices = new_indices
 
             torch.cuda.empty_cache()
-    return eos_poss, eos_probabilities
+    return eos_poss, eos_probabilities, input_length, output_length
 
 
 def get_eos_position(mode_result: torch.Tensor, eos_token_id: int = 2):
@@ -170,21 +178,26 @@ def get_eos_position_opt(mode_result: torch.Tensor, eos_token_id: int = 2):
 def test_max_model_output_length_batch(large_model: Model, prompt: List[str]):
     eos_poss = []
     eos_probabilities = []
+    input_lengths = []
+    output_lengths = []
     inputs = list(
-        large_model.tokenizer(prompt, padding=True,
-                              return_tensors="pt")["input_ids"].to("cuda:0"))
-    eos_poss, eos_probabilities = predict_batch(
-        large_model.model, 4, inputs, large_model.tokenizer.eos_token_id)
+        large_model.tokenizer(prompt, padding=True, return_tensors="pt")["input_ids"]
+    )
+    eos_poss, eos_probabilities, input_length, output_length = predict_batch(
+        large_model.model, 4, inputs, large_model.tokenizer.eos_token_id
+    )
     # for seq in tqdm(prompt):
     #     inputs = large_model.tokenizer(seq, return_tensors="pt")
     #     inputs.to("cuda:1")
     #     model_eos = 2
-    #     eos_pos, eos_probability = predict(
+    #     eos_pos, eos_probability, input_length, output_length = predict(
     #         large_model, inputs.input_ids, model_eos
     #     )
     #     eos_poss.append(eos_pos)
     #     eos_probabilities.append(eos_probability)
-    return eos_poss, eos_probabilities
+    #     input_lengths.append(input_length)
+    #     output_lengths.append(output_length)
+    return eos_poss, eos_probabilities, input_lengths, output_lengths
 
 
 def save_tmp_result(tmp_result):
@@ -196,27 +209,31 @@ def save_tmp_result(tmp_result):
 def test_max_model_output_length(large_model: Model, prompt: List[str]):
     eos_poss = []
     eos_probabilities = []
-    tmp_result = {"eos_poss": [], "eos_probabilities": []}
+    input_lengths = []
+    output_lengths = []
+    # tmp_result = {"eos_poss": [], "eos_probabilities": [],"output_lengths": [], "input_lengths": []}
     for seq in track(prompt, description="Predicting eos position..."):
         inputs = large_model.tokenizer(seq, return_tensors="pt")
         inputs.to("cuda:1")
         model_eos = 2
-        eos_pos, eos_probability = predict(large_model, inputs.input_ids,
-                                           prompt.index(seq), model_eos)
+        eos_pos, eos_probability, input_length, output_length = predict(
+            large_model, inputs.input_ids, prompt.index(seq), model_eos
+        )
         if len(eos_pos) == 0 and len(eos_probability) == 0:
             continue
         eos_poss.append(eos_pos)
         eos_probabilities.append(eos_probability)
-        tmp_result["eos_poss"].append(eos_pos)
-        tmp_result["eos_probabilities"].append(eos_probability)
-        print("save_tmp_result")
-        save_tmp_result(tmp_result)
-    return eos_poss, eos_probabilities
+        input_lengths.append(input_length)
+        output_lengths.append(output_length)
+        # tmp_result["eos_poss"].append(eos_pos)
+        # tmp_result["eos_probabilities"].append(eos_probability)
+        # print("save_tmp_result")
+        # save_tmp_result(tmp_result)
+    return eos_poss, eos_probabilities, input_lengths, output_lengths
 
 
 def get_prompt():
-    dataset_path = (
-        "/root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json")
+    dataset_path = "/root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
     selected_seqs = []
 
     with open(dataset_path) as f:
@@ -224,10 +241,13 @@ def get_prompt():
         # Filter out the conversations with less than 2 turns.
         dataset = [data for data in dataset if len(data["conversations"]) >= 2]
         # Only keep the first two turns of each conversation.
-        dataset = [(
-            data["conversations"][0]["value"],
-            data["conversations"][1]["value"],
-        ) for data in dataset]
+        dataset = [
+            (
+                data["conversations"][0]["value"],
+                data["conversations"][1]["value"],
+            )
+            for data in dataset
+        ]
 
         # Shuffle the dataset.
         random.seed(10)
@@ -248,12 +268,15 @@ if __name__ == "__main__":
     large_model_name = "meta-llama/Llama-2-13b-chat-hf"
     large_model = load_model(large_model_name)
     # eos_probability(large_model, small_model, test_prompts)
-    eos_poss, eos_probability = test_max_model_output_length_batch(
-        large_model, test_prompts)
+    eos_poss, eos_probability, input_lengths, output_lengths = (
+        test_max_model_output_length(large_model, test_prompts)
+    )
     result = {
         "eos_poss": eos_poss,
         "eos_probabilities": eos_probability,
+        "input_lengths": input_lengths,
+        "output_lengths": output_lengths,
     }
     # save eos poss to json
-    with open("eos_result_batch.json", "w") as f:
+    with open("eos_input_output_length.json", "w") as f:
         json.dump(result, f)

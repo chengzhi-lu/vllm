@@ -606,7 +606,7 @@ class Scheduler:
         # In this case, the policy is responsible for deciding which sequence
         # groups to preempt.
         iter_threshold = self.scheduler_config.iter_threshold
-        if (self.iter_nums % iter_threshold == 0 or self.has_finished_seqs):
+        if (self.iter_nums == iter_threshold or self.has_finished_seqs):
             running_queue = policy.sort_by_priority(-1, running_queue)
             self.iter_nums = 0
             self.has_finished_seqs = False
@@ -615,8 +615,6 @@ class Scheduler:
             num_running_tokens = self._get_num_new_tokens(
                 seq_group, SequenceStatus.RUNNING, enable_chunking, budget)
             
-            num_running_tokens = num_running_tokens + iter_threshold
-
             if num_running_tokens == 0:
                 break
 
@@ -669,7 +667,6 @@ class Scheduler:
                         preempted.add(swap_out_seq_group)
                     else:
                         swapped_out.add(swap_out_seq_group)
-           
             else:
                 self._append_seq_group(seq_group, blocks_to_copy,
                                        num_running_tokens, prefill_seq_groups,
@@ -1080,8 +1077,6 @@ class Scheduler:
             num_new_tokens = self._get_num_new_tokens(seq_group,
                                                       SequenceStatus.SWAPPED,
                                                       enable_chunking, budget)
-            if self.scheduler_config.policy=='infer':
-                num_new_tokens = num_new_tokens + self.scheduler_config.iter_threshold
             if (num_new_tokens == 0
                     or not budget.can_schedule(num_new_tokens=num_new_tokens,
                                                num_new_seqs=num_new_seqs)):
@@ -1472,7 +1467,7 @@ class Scheduler:
         else:
             return self._schedule_default()
 
-    def _can_append_slots(self, seq_group: SequenceGroup) -> bool:
+    def _can_append_slots(self, seq_group: SequenceGroup, pre_allocated_slots_num: int = 0 ) -> bool:
         """Determine whether or not we have enough space in the KV cache to
         continue generation of the sequence group.
         """
@@ -1488,6 +1483,7 @@ class Scheduler:
 
         return self.block_manager.can_append_slots(
             seq_group=seq_group,
+            pre_allocated_slots_num=pre_allocated_slots_num,
             num_lookahead_slots=self._get_num_lookahead_slots(is_prefill),
         )
 

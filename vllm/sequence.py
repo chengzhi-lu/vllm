@@ -281,12 +281,13 @@ class Sequence:
     def lora_int_id(self) -> int:
         return self.lora_request.lora_int_id if self.lora_request else 0
 
-    def get_eos_token_prob(self) -> float:
+    def get_eos_token_prob(self) -> List[float]:
         if len(self.eos_token_prob) < self.eos_prob_estimation_window \
             or self.default_eos_token_prob in self.eos_token_prob:
-            return self.default_eos_token_prob
+            return [self.default_eos_token_prob]
         else:
-            return float(np.mean(self.eos_token_prob))
+            # return float(np.mean(self.eos_token_prob))
+            return self.eos_token_prob
 
     def update_swapped_out_block_nums(self, swap_out_block_nums: int):
         self.swapped_out_block_nums += swap_out_block_nums

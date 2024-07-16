@@ -361,6 +361,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
 
     def can_append_slots(self,
                          seq_group: SequenceGroup,
+                         pre_allocated_slots_num: int = 0,
                          num_lookahead_slots: int = 0) -> bool:
         assert (num_lookahead_slots == 0
                 ), "lookahead allocation not supported in BlockSpaceManagerV1"
@@ -368,7 +369,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         # Simple heuristic: If there is at least one free block
         # for each sequence, we can append.
         num_free_gpu_blocks = self.gpu_allocator.get_num_free_blocks()
-        num_seqs = seq_group.num_seqs(status=SequenceStatus.RUNNING)
+        num_seqs = seq_group.num_seqs(status=SequenceStatus.RUNNING) + pre_allocated_slots_num
 
         return num_seqs <= num_free_gpu_blocks
 
