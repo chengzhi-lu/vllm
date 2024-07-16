@@ -91,7 +91,7 @@ class EngineArgs:
     scheduler_delay_factor: float = 0.0
     enable_chunked_prefill: bool = False
     scheduler_policy: str = "fcfs"
-    swap_out_partial_tokens: bool = False
+    swap_out_tokens_policy: str= 'full' 
 
     guided_decoding_backend: str = 'outlines'
 
@@ -531,11 +531,11 @@ class EngineArgs:
         )
 
         parser.add_argument(
-            "--swap-out-partial-tokens",
-            action='store_true',
-            help='If set, the engine will swap out part of the tokens '
-            'in the current batch to free up GPU memory for the '
-            'next batch.')
+            "--swap-out-tokens-policy",
+            type=str,
+            default='full',
+            choices=['full', 'partial'],
+            help='The strategy to swap out tokens in the current batch to free up GPU memory for the next batch. ')
         parser.add_argument(
             "--swap-out-partial-rate",
             type=float,
@@ -545,7 +545,7 @@ class EngineArgs:
             'the next batch. The rate is the fraction of tokens to '
             'swap out, which can range from 0 to 1. For example, a '
             'value of 0.5 would imply swapping out 50%% of the tokens '
-            'in the current batch.')
+            'in the current batch. Only effective when swap-out-tokens is set to "partial".')
 
         parser.add_argument(
             "--iter-threshold",
@@ -729,7 +729,7 @@ class EngineArgs:
             delay_factor=self.scheduler_delay_factor,
             enable_chunked_prefill=self.enable_chunked_prefill,
             policy=self.scheduler_policy,
-            swap_out_partial_tokens=self.swap_out_partial_tokens,
+            swap_out_tokens_policy=self.swap_out_tokens_policy,
             swap_out_partial_rate=self.swap_out_partial_rate,
             iter_threshold=self.iter_threshold,
             preemption_mode=self.preemption_mode,

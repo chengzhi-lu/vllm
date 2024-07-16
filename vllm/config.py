@@ -669,7 +669,7 @@ class SchedulerConfig:
         delay_factor: float = 0.0,
         enable_chunked_prefill: bool = False,
         policy: str = "fcfs",
-        swap_out_partial_tokens: bool = False,
+        swap_out_tokens_policy: str = "full",
         swap_out_partial_rate: float = 0.5,
         iter_threshold: int = 1,
         embedding_mode: Optional[bool] = False,
@@ -699,7 +699,7 @@ class SchedulerConfig:
         self.num_lookahead_slots = num_lookahead_slots
         self.delay_factor = delay_factor
         self.chunked_prefill_enabled = enable_chunked_prefill
-        self.swap_out_partial_tokens = swap_out_partial_tokens
+        self.swap_out_tokens_policy = swap_out_tokens_policy 
         self.swap_out_partial_rate = swap_out_partial_rate
         self.iter_threshold = iter_threshold
         self.policy = policy
