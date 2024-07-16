@@ -38,6 +38,52 @@ class FCFS(Policy):
         return now - seq_group.metrics.arrival_time
 
 
+
+class MLFQ(Policy):
+
+    def get_priority(
+        self,
+        now: float,
+        seq_group: SequenceGroup,
+    ) -> float:
+        raise NotImplementedError
+
+
+
+class SkipJoinMLFQ(Policy):
+    def __init__(self, quantum_ratio=2, starve_limit=1000):
+        self.quantum_ratio = quantum_ratio # Q_i/Q_{i-1}
+        self.starve_limit = starve_limit
+        self.min_quantum = 1000 # quantum of Q_1
+
+    def get_highest_priority(self, first_iteration_time):
+        priority_level = 1 # the highest priority
+        quantum = self.min_quantum # the minimum quantum
+
+        while quantum <= first_iteration_time:
+            priority_level += 1
+            quantum *= self.quantum_ratio
+
+        return priority_level
+
+    def get_priority(self, now: float, seq_group: SequenceGroup) -> float:
+        input_length = len(seq_group.seqs_dict)
+
+        # first_token_time = seq_group.metrics.first_token_time # Obtain the first_iteration_time for each job
+        arrival_time = seq_group.metrics.arrival_time
+
+        # Assign priority based on first iteration time
+        if not seq_group.current_priority: # Have been assigned with a priority?
+            seq_group.current_priority = self.get_highest_priority(input_length)
+        else:
+            if now-seq_group.metrics.first_scheduled_time > (2**(priority-1))*self.min_quantum and not seq_group.promoted:
+                seq_group.current_priority += 1
+            elif seq_group.metrics.time_in_queue >= self.starve_limit:
+                seq_group.current_priority = 1  # Promote to highest priority (Q1)
+                seq_group.promoted = 1 # has been promoted to the Q1
+
+        return -seq_group.current_priority # higher value means higher priority
+
 class InferSchedule(Policy):
 
     def get_priority(

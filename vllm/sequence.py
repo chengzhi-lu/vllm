@@ -494,6 +494,8 @@ class SequenceGroup:
         self.encoder_seq = encoder_seq
         self.eos_token_id = self.seqs_dict[next(iter(
             self.seqs_dict))].eos_token_id
+        self.current_priority = None
+        self.promoted = 0
 
     @property
     def prompt(self) -> Optional[str]:
