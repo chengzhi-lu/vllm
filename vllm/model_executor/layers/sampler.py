@@ -1,4 +1,5 @@
 """A layer that samples the next tokens from the model's outputs."""
+from ast import In
 import itertools
 from typing import Dict, List, Optional, Tuple
 
@@ -801,7 +802,6 @@ def _get_logprobs(
     sample_logprobs_per_seq_group: List[SampleLogprobs] = []
     top_logprob_idx = 0
     selected_logprobs_idx = 0
-    seq_group_idx=0
     for seq_group, sample_result in zip(sampling_metadata.seq_groups,
                                         sample_results):
         (prompt_logprobs, top_logprob_idx,
@@ -813,9 +813,8 @@ def _get_logprobs(
          selected_logprobs_idx) = _get_sampled_logprob_if_needed(
              seq_group, sample_result, selected_logprobs, logprobs, ranks,
              top_token_ids, top_logprobs, selected_logprobs_idx,
-             top_logprob_idx, seq_group_idx)
+             top_logprob_idx)
         sample_logprobs_per_seq_group.append(sampled_logprobs)
-        seq_group_idx += 1
 
     return prompt_logprobs_per_seq_group, sample_logprobs_per_seq_group
 
@@ -890,7 +889,6 @@ def _get_sampled_logprob_if_needed(
     top_logprobs: torch.Tensor,
     selected_logprobs_idx: int,
     top_logprob_idx: int,
-    seq_group_idx: int,
 ):
     """Compute the sample logprob if needed."""
     seq_ids = seq_group.seq_ids
@@ -915,7 +913,7 @@ def _get_sampled_logprob_if_needed(
             sampled_logprobs_dict = {
                 next_token_id: (selected_logprob_items[idx], rank_items[idx]),
                 seq_group.eos_token_id:
-                (eos_token_items[seq_group_idx], rank_items[idx]),
+                (eos_token_items[selected_logprobs_idx], rank_items[idx]),
             }
             # Get top K logprobs.
             if num_logprobs > 0:

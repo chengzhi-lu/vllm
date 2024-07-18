@@ -391,6 +391,7 @@ class Scheduler:
         
         # self.partial_swapped_values:SortedKeyList[(int, SequenceGroup)]=SortedKeyList(key=lambda x: x[0])
         self.partial_swapped_values: List[Tuple[int, str]] = []
+        self.seq_group_with_max_length:Tuple[SequenceGroup,int] =None
 
         self.has_finished_seqs = False
 
@@ -560,6 +561,7 @@ class Scheduler:
                           budget: SchedulingBudget,
                           curr_loras: Optional[Set[int]],
                           enable_chunking: bool = False) -> None:
+        total_block_size = seq_group.total_token_block_size
         self._append_slots(seq_group, blocks_to_copy)
         is_prefill = seq_group.is_prefill()
         if is_prefill:
@@ -570,8 +572,11 @@ class Scheduler:
             decode_seq_groups.append(
                 ScheduledSequenceGroup(seq_group=seq_group,
                                        token_chunk_size=1))
+        if self.seq_group_with_max_length is None or total_block_size > self.seq_group_with_max_length[1]: 
+            self.seq_group_with_max_length=(seq_group, total_block_size)
         budget.add_num_batched_tokens(seq_group.request_id, num_running_tokens)
         seq_group.reset_waiting_iter_nums()
+        seq_group.update_execution_iter_nums()
         # OPTIMIZATION:  Note that get_max_num_running_seqs is
         # expensive. For the default scheduling chase where
         # enable_chunking is False, num_seqs are updated before running
@@ -600,12 +605,9 @@ class Scheduler:
         swapped_out: Set[SequenceGroup] = set()
 
         partial_swap_out_flag = self.scheduler_config.swap_out_tokens_policy=="partial"
-
-        # NOTE(woosuk): Preemption happens only when there is no available slot
-        # to keep all the sequence groups in the RUNNING state.
-        # In this case, the policy is responsible for deciding which sequence
-        # groups to preempt.
         iter_threshold = self.scheduler_config.iter_threshold
+        is_preempted = False
+
         if (self.iter_nums == iter_threshold or self.has_finished_seqs):
             running_queue = policy.sort_by_priority(-1, running_queue)
             self.iter_nums = 0
@@ -619,7 +621,30 @@ class Scheduler:
                 break
 
             running_queue.popleft()
+
             seq_group_request_id = seq_group.request_id
+            if not is_preempted and seq_group.execution_over_budget and len(self.swapped) > 1:  # noqa: SIM102
+                # preempt the sequence group due to the budget overrun
+                if self.seq_group_with_max_length is not None and self.seq_group_with_max_length[0]==seq_group:                    
+                    budget.subtract_num_batched_tokens(seq_group_request_id,
+                                                        num_running_tokens)
+                    swap_out_seq_group = seq_group
+                    num_running_seqs = seq_group.get_max_num_running_seqs()
+                    seq_group.update_waiting_iter_nums()
+                    budget.subtract_num_seqs(seq_group_request_id,
+                                            num_running_seqs)
+                    preempted_mode = self._preempt(swap_out_seq_group,
+                                                blocks_to_swap_out,
+                                                self.preemption_mode)
+                    if seq_group_request_id in self.partial_swapped:
+                        (left_block_size, seq_group) = self.partial_swapped.pop(seq_group_request_id)
+                        self.partial_swapped_values.remove((left_block_size, seq_group_request_id))
+                    if preempted_mode == PreemptionMode.RECOMPUTE:
+                        preempted.add(swap_out_seq_group)
+                    else:
+                        swapped_out.add(swap_out_seq_group) 
+                    is_preempted=True
+                    continue
             if not self._can_append_slots(seq_group):
                 # If there's no other sequence groups in the waiting queue, only
                 # swap out part of the tokens belong to current seq_group.
@@ -1036,7 +1061,10 @@ class Scheduler:
 
         leftover_swapped: Deque[SequenceGroup] = deque()
         while swapped_queue:
-            seq_group = swapped_queue[0]
+            seq_group:SequenceGroup = swapped_queue[0]
+            if seq_group.execution_over_budget:
+                seq_group.reset_execution_iter_nums()
+                continue
             # If the sequence group cannot be swapped in, stop.
             is_prefill = seq_group.is_prefill()
             alloc_status = self.block_manager.can_swap_in(
@@ -1089,7 +1117,9 @@ class Scheduler:
             self._swap_in(seq_group, blocks_to_swap_in)
             seq_group_request_id = seq_group.request_id
             if seq_group_request_id in self.partial_swapped:
-                del self.partial_swapped[seq_group_request_id]
+                left_block_size, _ = self.partial_swapped.pop(seq_group_request_id)
+                if len(self.partial_swapped_values) > 0 and (left_block_size, seq_group_request_id) in self.partial_swapped_values:
+                    self.partial_swapped_values.remove((left_block_size, seq_group_request_id))
             self._append_slots(seq_group, blocks_to_copy)
             is_prefill = seq_group.is_prefill()
             if is_prefill:
@@ -1364,12 +1394,6 @@ class Scheduler:
         inter token latency because decodes requests don't need to blocked
         by prefill requests.
         """
-        # if self.scheduler_config.policy == "infer":
-        #     budget = SchedulingBudget(
-        #         token_budget=self.scheduler_config.max_num_batched_tokens,
-        #         max_num_seqs=self.current_num_seqs,
-        #     )
-        # else:
         budget = SchedulingBudget(
             token_budget=self.scheduler_config.max_num_batched_tokens,
             max_num_seqs=self.scheduler_config.max_num_seqs,
@@ -1393,6 +1417,8 @@ class Scheduler:
             # filling the budget with swapped out requests
             remaining_swapped, swapped_in, = self._schedule_swapped(
                 self.swapped, budget, curr_loras, policy)
+            remaining_waiting, prefills = self._schedule_prefills(
+                self.waiting, budget, curr_loras, enable_chunking=True)
         else:
             remaining_running, running_scheduled, recomputed_token_nums = \
                 self._schedule_running_partial(self.running,
@@ -1408,9 +1434,9 @@ class Scheduler:
                 remaining_swapped, swapped_in, = self._schedule_swapped(
                     self.swapped, budget, curr_loras, policy)
 
-        # Schedule new prefills.
-        remaining_waiting, prefills = self._schedule_prefills(
-            self.waiting, budget, curr_loras, enable_chunking=True)
+            # Schedule new prefills.
+            remaining_waiting, prefills = self._schedule_prefills(
+                self.waiting, budget, curr_loras, enable_chunking=True)
         # et = time.time()
         # print(f"schedule chunked prefill time: {et - st}")
 

@@ -38,7 +38,7 @@ def predict(model: Model, inputs: torch.Tensor, input_idx: int, eos_token_id: in
     device = inputs.device
     batch_size, initial_length = inputs.size()
     total_length = 3000
-    input_length = inputs.shape[0]
+    input_length = inputs.shape
     output_length = 0
     if inputs.shape[1] > total_length:
         return [], [], -1, -1
@@ -211,7 +211,7 @@ def test_max_model_output_length(large_model: Model, prompt: List[str]):
     eos_probabilities = []
     input_lengths = []
     output_lengths = []
-    # tmp_result = {"eos_poss": [], "eos_probabilities": [],"output_lengths": [], "input_lengths": []}
+    tmp_result = {"eos_poss": [], "eos_probabilities": [],"output_lengths": [], "input_lengths": []}
     for seq in track(prompt, description="Predicting eos position..."):
         inputs = large_model.tokenizer(seq, return_tensors="pt")
         inputs.to("cuda:1")
@@ -225,10 +225,11 @@ def test_max_model_output_length(large_model: Model, prompt: List[str]):
         eos_probabilities.append(eos_probability)
         input_lengths.append(input_length)
         output_lengths.append(output_length)
-        # tmp_result["eos_poss"].append(eos_pos)
-        # tmp_result["eos_probabilities"].append(eos_probability)
-        # print("save_tmp_result")
-        # save_tmp_result(tmp_result)
+        tmp_result["eos_poss"].append(eos_pos)
+        tmp_result["eos_probabilities"].append(eos_probability)
+        tmp_result["output_lengths"].append(output_length)
+        tmp_result["input_lengths"].append(input_length)
+        save_tmp_result(tmp_result)
     return eos_poss, eos_probabilities, input_lengths, output_lengths
 
 

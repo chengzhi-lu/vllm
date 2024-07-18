@@ -40,6 +40,20 @@ class FCFS(Policy):
 
 class InferSchedule(Policy):
 
+    def get_gittins_index(self, eos_probs: float):
+        # gittins index is the probability of the job ending in the next interval divided by the expected remaining length of the job.
+        i = np.arange(1, 14)
+        eos_probs_in_next_interval = 1 - np.power((1 - eos_probs), 14)
+        expect_remaining_length = np.sum(i * (1 - eos_probs) ** i)
+        return eos_probs_in_next_interval / expect_remaining_length 
+
+    def get_penalty(self, decoding_length: int, eos_probs: float):
+        # only consider the gittins index is not enough due to the long sequence 
+        # may occupy too much GPU memory and block the inference of other sequences.
+        # we add a penalty term to the priority to avoid this.
+        eos_probs_before_decoding = 1 - np.power((1 - eos_probs), decoding_length)
+        
+
     def get_priority(
         self,
         now: float,
@@ -51,19 +65,21 @@ class InferSchedule(Policy):
         for _, seq in seq_group.seqs_dict.items():
             eos_token_probs.extend(seq.get_eos_token_prob())
             decoding_length += seq.get_output_len()
-        mean_eos_token_prob = np.mean(eos_token_probs)
-        if mean_eos_token_prob == -1000.0:
+        max_eos_token_prob = np.max(eos_token_probs)
+        if max_eos_token_prob == -1000.0:
             # priority = len(seq_group.prompt_token_ids)
             if decoding_length == 0:
-                priority = - len(seq_group.prompt_token_ids)
+                priority = (1000-len(seq_group.prompt_token_ids))
             else:
-                priority = - decoding_length
+                priority = (1000-decoding_length)
         else:
-            probs = np.exp(mean_eos_token_prob) # short job may have high eos prob. however, this value is too small to be considered.
+            probs = np.exp(max_eos_token_prob) # short job may have high eos prob. however, this value is too small to be considered.
+            priority = self.get_gittins_index(probs)
+            # print(f"Seq group is {seq_group.request_id}, priority is {priority}")
             # probs = mean_eos_token_prob
-            waiting_percent = \
-                seq_group.metrics.waiting_iter_nums**1.5 / decoding_length
-            priority = probs + waiting_percent
+            # waiting_percent = \
+            #     seq_group.metrics.waiting_iter_nums**1.5 / decoding_length
+            # priority = probs + waiting_percent
         return priority
 
 
