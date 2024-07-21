@@ -78,6 +78,7 @@ class EngineArgs:
     preemption_mode: Optional[str] = None
     iter_threshold: int = 1
     swap_out_partial_rate: float = 0.5
+    execution_budget:int = 32768 
 
     # Related to Vision-language models such as llava
     image_input_type: Optional[str] = None
@@ -540,12 +541,20 @@ class EngineArgs:
             "--swap-out-partial-rate",
             type=float,
             default=EngineArgs.swap_out_partial_rate,
-            help='The rate at which the engine will swap out partial '
+            help=('The rate at which the engine will swap out partial '
             'tokens in the current batch to free up GPU memory for '
             'the next batch. The rate is the fraction of tokens to '
             'swap out, which can range from 0 to 1. For example, a '
             'value of 0.5 would imply swapping out 50%% of the tokens '
-            'in the current batch. Only effective when swap-out-tokens is set to "partial".')
+            'in the current batch. Only effective when swap-out-tokens is set to "partial".'))
+        parser.add_argument(
+            "--execution-budget",
+            type=int,
+            default=EngineArgs.execution_budget,
+            help='The execution budget is the maximum continuous execution iteration number of a sequence'
+            'before the engine preempts it. The engine will preempt the sequence if the execution budget is exceeded.'
+            'Also the execution budget is used to determine the maximum number of the waiting iterations before promoting into the running queue.'
+        )
 
         parser.add_argument(
             "--iter-threshold",
@@ -731,6 +740,7 @@ class EngineArgs:
             policy=self.scheduler_policy,
             swap_out_tokens_policy=self.swap_out_tokens_policy,
             swap_out_partial_rate=self.swap_out_partial_rate,
+            execution_budget=self.execution_budget,
             iter_threshold=self.iter_threshold,
             preemption_mode=self.preemption_mode,
             embedding_mode=model_config.embedding_mode,

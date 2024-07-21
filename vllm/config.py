@@ -671,6 +671,7 @@ class SchedulerConfig:
         policy: str = "fcfs",
         swap_out_tokens_policy: str = "full",
         swap_out_partial_rate: float = 0.5,
+        execution_budget: int = 32768,
         iter_threshold: int = 1,
         embedding_mode: Optional[bool] = False,
         preemption_mode: Optional[str] = None
@@ -701,6 +702,7 @@ class SchedulerConfig:
         self.chunked_prefill_enabled = enable_chunked_prefill
         self.swap_out_tokens_policy = swap_out_tokens_policy 
         self.swap_out_partial_rate = swap_out_partial_rate
+        self.execution_budget = execution_budget
         self.iter_threshold = iter_threshold
         self.policy = policy
         self.preemption_mode = preemption_mode

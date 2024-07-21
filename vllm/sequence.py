@@ -282,8 +282,7 @@ class Sequence:
         return self.lora_request.lora_int_id if self.lora_request else 0
 
     def get_eos_token_prob(self) -> List[float]:
-        if len(self.eos_token_prob) < self.eos_prob_estimation_window \
-            or self.default_eos_token_prob in self.eos_token_prob:
+        if len(self.eos_token_prob) < self.eos_prob_estimation_window:
             return [self.default_eos_token_prob]
         else:
             # return float(np.mean(self.eos_token_prob))
@@ -360,9 +359,6 @@ class Sequence:
                 self.eos_token_id,
                 Logprob(self.default_eos_token_prob)).logprob
             self.eos_token_prob.append(eos_token_prob)
-            if len(self.eos_token_prob) > self.eos_prob_estimation_window:
-                self.eos_token_prob = \
-                    self.eos_token_prob[-self.eos_prob_estimation_window:]
 
         else:
             self.eos_token_prob.append(self.default_eos_token_prob)
@@ -472,6 +468,7 @@ class SequenceGroup:
         request_id: str,
         seqs: List[Sequence],
         arrival_time: float,
+        execution_budget: int,
         sampling_params: Optional[SamplingParams] = None,
         lora_request: Optional[LoRARequest] = None,
         embeddings: Optional[List[float]] = None,
@@ -497,6 +494,9 @@ class SequenceGroup:
             self.seqs_dict))].eos_token_id
         self.current_priority = None
         self.promoted = 0
+        self.execution_budget = execution_budget
+        self.execution_iters = 0
+        self.execution_over_budget = False
 
     @property
     def prompt(self) -> Optional[str]:
@@ -616,6 +616,16 @@ class SequenceGroup:
 
     def reset_waiting_iter_nums(self):
         self.metrics.waiting_iter_nums = 0
+
+    def update_execution_iter_nums(self):
+        self.execution_iters += 1
+        if self.execution_iters >= self.execution_budget:
+            self.execution_over_budget = True
+            self.execution_iters = 0
+
+    def reset_execution_iter_nums(self):
+        self.execution_iters = 0
+        self.execution_over_budget = False
 
     def update_num_computed_tokens(self, num_new_computed_tokens: int):
         """Update number of tokens computed so far."""
@@ -862,6 +872,8 @@ class SamplerOutput:
 
     # On-device tensor containing the logprobs of each token.
     logprobs: Optional["torch.Tensor"] = None
+
+    swap_time: Optional[float] =  0.0
 
     # On-device tensor containing the sampled token ids.
     sampled_token_ids: Optional[torch.Tensor] = None

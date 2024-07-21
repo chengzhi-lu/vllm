@@ -138,6 +138,7 @@ async def create_embedding(request: EmbeddingRequest, raw_request: Request):
         return JSONResponse(content=generator.model_dump())
 
 
+
 if __name__ == "__main__":
     args = parse_args()
 
@@ -183,7 +184,7 @@ if __name__ == "__main__":
         served_model_names = [args.model]
 
     engine_args = AsyncEngineArgs.from_cli_args(args)
-    engine = AsyncLLMEngine.from_engine_args(
+    engine:AsyncLLMEngine = AsyncLLMEngine.from_engine_args(
         engine_args, usage_context=UsageContext.OPENAI_API_SERVER)
 
     event_loop: Optional[asyncio.AbstractEventLoop]

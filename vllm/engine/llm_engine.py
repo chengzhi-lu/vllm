@@ -221,6 +221,12 @@ class LLMEngine:
         self.generation_config_fields = _load_generation_config_dict(
             model_config)
 
+        self.schedule_time: float=0.0
+        self.execution_time: float=0.0
+        self.swap_time: float=0.0
+        self.handle_output_time: float=0.0
+        self.total_count: int =  0
+
         self.model_executor = executor_class(
             model_config=model_config,
             cache_config=cache_config,
@@ -592,6 +598,7 @@ class LLMEngine:
         seq_group = SequenceGroup(request_id=request_id,
                                   seqs=[seq],
                                   arrival_time=arrival_time,
+                                  execution_budget=self.scheduler_config.execution_budget,
                                   sampling_params=sampling_params,
                                   lora_request=lora_request)
 
@@ -781,7 +788,8 @@ class LLMEngine:
             logger.debug("interval time:", self.et - st)
         seq_group_metadata_list, scheduler_outputs = self.scheduler.schedule()
         et = time.time()
-        logger.debug(f"schedule time: {et - st}")
+        self.schedule_time+=et-st
+        # logger.debug(f"schedule time: {et - st}")
         st = time.time()
         if not scheduler_outputs.is_empty():
             execute_model_req = ExecuteModelRequest(
@@ -797,7 +805,8 @@ class LLMEngine:
         else:
             output = []
         et = time.time()
-        logger.debug(f"execute time: {et - st}")
+        # print(f"execute time: {et - st}")
+        self.execution_time += et - st
         st = time.time()
         request_outputs = self._process_model_outputs(
             output,
@@ -821,7 +830,8 @@ class LLMEngine:
             self.model_executor.stop_remote_worker_execution_loop()
 
         self.et = time.time()
-        logger.debug(f"process time: {self.et - st}")
+        # print(f"process time: {self.et - st}")
+        self.handle_output_time += self.et - st
         return request_outputs
 
     def do_log_stats(
@@ -853,6 +863,7 @@ class LLMEngine:
         #   Scheduler State
         num_running_sys = len(self.scheduler.running)
         num_swapped_sys = len(self.scheduler.swapped)
+        num_partial_swapped_sys= len(self.scheduler.partial_swapped)
         num_waiting_sys = len(self.scheduler.waiting)
 
         # Free internel memory in GPU blocks of the seq in waiting queue
@@ -992,6 +1003,7 @@ class LLMEngine:
             #   Scheduler State
             num_running_sys=num_running_sys,
             num_swapped_sys=num_swapped_sys,
+            num_partial_swapped_sys=num_partial_swapped_sys,
             num_waiting_sys=num_waiting_sys,
             num_in_page_fragements=int(num_in_page_fragements),
             num_preemption_tokens_iter=num_preemption_tokens_iter,

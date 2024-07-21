@@ -220,13 +220,15 @@ class _AsyncLLMEngine(LLMEngine):
         and updates the scheduler with the model outputs. Finally, it decodes
         the sequences and returns the newly generated results.
         """
-        # st = time.time()
-        # if self.et != 0:
-        #     logger.debug("interval time is:", st - self.et)
+        st = time.time()
+        if self.et != 0:
+            logger.debug("interval time is:", st - self.et)
         seq_group_metadata_list, scheduler_outputs = self.scheduler.schedule()
-        # et = time.time()
+        et = time.time()
+        self.schedule_time += et - st
+        self.total_count += 1
         # print("schedule time is:", et - st)
-        # st = time.time()
+        st = time.time()
         if not scheduler_outputs.is_empty():
             # Execute the model.
             execute_model_req = ExecuteModelRequest(
@@ -239,11 +241,13 @@ class _AsyncLLMEngine(LLMEngine):
             )
             output = await self.model_executor.execute_model_async(
                 execute_model_req)
+            self.swap_time += output[0].swap_time
         else:
             output = []
-        # et = time.time()
+        et = time.time()
+        self.execution_time += et - st
         # print("execute time is:", et - st)
-        # st = time.time()
+        st = time.time()
         request_outputs = self._process_model_outputs(
             output,
             scheduler_outputs.scheduled_seq_groups,
@@ -253,7 +257,8 @@ class _AsyncLLMEngine(LLMEngine):
             num_waiting_to_running=scheduler_outputs.num_waiting_to_running,
             recomputed_token_nums=scheduler_outputs.recomputed_token_nums,
             num_preemption_iter=scheduler_outputs.preempted)
-
+        self.et = time.time()
+        self.handle_output_time += self.et - st
         # Log stats.
         self.do_log_stats(scheduler_outputs, output)
 
@@ -264,8 +269,8 @@ class _AsyncLLMEngine(LLMEngine):
             # the RPC thread in the workers so that they can process any other
             # queued control plane messages, such as add/remove lora adapters.
             await self.model_executor.stop_remote_worker_execution_loop_async()
-        # self.et = time.time()
         # print("handle output time is:", self.et - st)
+        print(f"Total schedule time: {self.schedule_time}, execution time: {self.execution_time}, handle output time: {self.handle_output_time}, swap time: {self.swap_time}, total iteration number is: {self.total_count}")
         return request_outputs
 
     async def process_model_inputs_async(

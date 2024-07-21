@@ -159,10 +159,10 @@ class RequestOutput:
         ]
         wasted_block_size = 0
         total_block_size = 0
-        for seq in seqs:
-            for token_block in seq.logical_token_blocks:
-                wasted_block_size += token_block.get_num_empty_slots()
-                total_block_size += token_block.block_size
+        # for seq in seqs:
+        #     for token_block in seq.logical_token_blocks:
+        #         wasted_block_size += token_block.get_num_empty_slots()
+        #         total_block_size += token_block.block_size
         # Create the request output.
         # Every sequence in the sequence group should have the same prompt.
         prompt = seq_group.prompt
