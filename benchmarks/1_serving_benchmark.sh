@@ -15,8 +15,8 @@ swap_policies=(partial)
 # start vllm server
 model_name="meta-llama/Llama-2-13b-chat-hf"
 dataset_name="sharegpt"
-dataset_path="/root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
-result_dir="/root/vllm/benchmarks/result"
+dataset_path="/root/v1/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
+result_dir="/root/v1/vllm/benchmarks/result"
 preemption_mode="swap"
 gpu_memory_utilization=0.5
 max_num_seqs=8
@@ -25,13 +25,13 @@ max_tokens=2048
 iter_theshold=15
 request_rates=(1000)
 swap_out_partial_rates=(0.5)
-gpu_devices=1
+gpu_devices=3
 
 for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do
     for request_rate in "${request_rates[@]}"; do
         for swap_policy in "${swap_policies[@]}"; do
             for policy in "${scheduler_policy[@]}"; do
-                CUDA_VISIBLE_DEVICES=2 taskset -c 10-11 python3 -m vllm.entrypoints.openai.api_server \
+                CUDA_VISIBLE_DEVICES=$gpu_devices taskset -c 10-11 python3 -m vllm.entrypoints.openai.api_server \
                         --model $model_name --swap-space $swap_space\
                         --preemption-mode $preemption_mode --scheduler-policy $policy \
                         --enable-chunked-prefill --max-num-batched-tokens $max_tokens --iter-threshold $iter_theshold\

@@ -533,6 +533,7 @@ def main(args: argparse.Namespace):
         dir_name = f"{days}/{args.execution_counter}"
         file_name = f"{backend}-{args.request_rate}qps-{base_model_id}-{seconds}-{args.scheduler_policy}.json"  #noqa
         if args.result_dir:
+            print("result_dir:", args.result_dir)
             if not os.path.exists(os.path.join(args.result_dir, dir_name)):
                 os.makedirs(os.path.join(args.result_dir, dir_name))
             file_name = os.path.join(args.result_dir, dir_name, file_name)
