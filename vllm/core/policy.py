@@ -97,7 +97,8 @@ class InferSchedule(Policy):
         # only consider the gittins index is not enough due to the long sequence 
         # may occupy too much GPU memory and block the inference of other sequences.
         # we add a penalty term to the priority to avoid this.
-        eos_probs_before_decoding = 1 - np.power((1 - eos_probs), decoding_length)
+        eos_probs_before = 1 - np.power((1 - eos_probs), decoding_length)
+        
         
 
     def get_priority(
@@ -159,7 +160,7 @@ class WaitingTimeFirst(Policy):
         return seq_group.metrics.waiting_iter_nums
 
 
-class ShortestTokensFirst(Policy):
+class ShortJobFirst(Policy):
 
     def get_priority(
         self,
@@ -167,14 +168,13 @@ class ShortestTokensFirst(Policy):
         seq_group: SequenceGroup,
     ) -> float:
         tokens = 0
-        waiting_iter_nums = seq_group.metrics.waiting_iter_nums
         for seq_id, seq in seq_group.seqs_dict.items():
             tokens += seq.get_len()
-        priority = waiting_iter_nums * waiting_iter_nums - tokens
+        priority =  - tokens
         return priority
 
 
-class LongestTokensFirst(Policy):
+class LongJobFirst(Policy):
 
     def get_priority(
         self,
@@ -195,10 +195,11 @@ class PolicyFactory:
         "utf": UncomputedTokensFirst,
         "random": Random,
         "wtf": WaitingTimeFirst,
-        "stf": ShortestTokensFirst,
-        "ltf": LongestTokensFirst,
+        "sjf": ShortJobFirst,
+        "ljf": LongJobFirst,
         "infer": InferSchedule,
         "sjmlfq": SkipJoinMLFQ,
+        "inferpreempt": InferSchedule,
     }
 
     @classmethod

@@ -15,22 +15,25 @@ model_name="meta-llama/Llama-2-13b-chat-hf"
 dataset_name="sharegpt"
 dataset_path="/root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
 result_dir="/root/vllm/benchmarks/result"
-scheduler_policy=(fcfs)
-swap_policies=(full)
+# scheduler_policy=(fcfs)
+# swap_policies=(full)
 # scheduler_policy=(infer)
 # swap_policies=(partial)
 declare -a scheduler_swap_policies
 # scheduler_swap_policies[0]="fcfs full"
-scheduler_swap_policies[1]="fcfs partial"
+# scheduler_swap_policies[1]="infer partial"
+scheduler_swap_policies[2]="inferpreempt full"
+# scheduler_swap_policies[3]="sjf full"
+
 preemption_mode="swap"
-gpu_memory_utilization=0.9
+gpu_memory_utilization=0.5
 max_num_seqs=256
-swap_space=32
+swap_space=64
 max_tokens=2048
 iter_theshold=15
 
 request_rates=(-1)
-swap_out_partial_rates=(0.1)
+swap_out_partial_rates=(0.5)
 gpu_devices=2
 for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do
   for request_rate in "${request_rates[@]}"; do
@@ -39,9 +42,9 @@ for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do
       policy=${element[0]}
       swap_policy=${element[1]}
       CUDA_VISIBLE_DEVICES=$gpu_devices taskset -c 10-11 python3 -m vllm.entrypoints.openai.api_server \
-        --model $model_name --swap-space $swap_space --preemption-mode $preemption_mode --scheduler-policy $policy \
-        --enable-chunked-prefill --max-num-batched-tokens $max_tokens --iter-threshold $iter_theshold --max-num-seqs $max_num_seqs --swap-out-tokens-policy $swap_policy --swap-out-partial-rate $swap_out_partial_rate --execution-budget $iter_theshold \
-        --gpu-memory-utilization $gpu_memory_utilization --disable-log-requests >api_server_${policy}_${swap_policy}.log 2>&1 &
+       --model $model_name --swap-space $swap_space --preemption-mode $preemption_mode --scheduler-policy $policy \
+       --enable-chunked-prefill --max-num-batched-tokens $max_tokens --iter-threshold $iter_theshold --max-num-seqs $max_num_seqs --swap-out-tokens-policy $swap_policy --swap-out-partial-rate $swap_out_partial_rate --execution-budget $iter_theshold \
+       --gpu-memory-utilization $gpu_memory_utilization --disable-log-requests >api_server_${policy}_${swap_policy}.log 2>&1 &
       pid=$!
 
       # run benchmark and save the output to benchmark.log
