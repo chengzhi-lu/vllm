@@ -798,27 +798,18 @@ class Scheduler:
             num_lookahead_slots_prefill=num_lookahead_slots_prefill,
         )
         total_block_size = 0
-        swap_out_seq_groups: List[SequenceGroup] = []
-        running_seq_groups: List[SequenceGroup] = []
         while total_queue:
             seq_group: SequenceGroup = total_queue[0]
             total_queue.popleft()
-            total_block_size += seq_group.total_token_block_size
+            total_block_size = seq_group.total_token_block_size
             if not self._can_allocate_seq(total_block_size):
-                total_block_size -= seq_group.total_token_block_size
-                swap_out_seq_groups.append(seq_group)
-            else:
-                running_seq_groups.append(seq_group)
-
-        
-        for seq_group in swap_out_seq_groups:
-            preempted, error = self._preempt_seq(
+                preempted, error = self._preempt_seq(
                     seq_group=seq_group,
                     budget=budget,
                     schedule_preemption=scheduler_preemtion,
                     running_queue=running_queue,
                 )
-        for seq_group in running_seq_groups:
+            else:
                 allocated, error, recomputed_token_nums = self._allocate_seq(
                     seq_group=seq_group,
                     budget=budget,
@@ -828,6 +819,7 @@ class Scheduler:
                     swapped_queue=swapped_queue,
                     recomputed_token_nums=recomputed_token_nums,
                 )
+
         running_scheduler_output = SchedulerRunningOutputs(
             decode_seq_groups=scheduler_preemtion.decode_seq_groups_running,
             prefill_seq_groups=scheduler_preemtion.prefill_seq_groups_running,
@@ -1823,7 +1815,7 @@ class Scheduler:
         )
 
     def _can_allocate_seq(self, block_size: int) -> bool:
-        return self.block_manager.can_allocat_infer(block_size)
+        return self.block_manager.can_allocate_infer(block_size)
 
     def schedule(self) -> Tuple[List[SequenceGroupMetadata], SchedulerOutputs]:
         # Schedule sequence groups.
