@@ -76,7 +76,7 @@ class SkipJoinMLFQ(Policy):
         if not seq_group.current_priority: # Have been assigned with a priority?
             seq_group.current_priority = self.get_highest_priority(input_length)
         else:
-            if now-seq_group.metrics.first_scheduled_time > (2**(priority-1))*self.min_quantum and not seq_group.promoted:
+            if now-seq_group.metrics.first_scheduled_time > (2**(seq_group.current_priority-1))*self.min_quantum and not seq_group.promoted:
                 seq_group.current_priority += 1
             elif seq_group.metrics.time_in_queue >= self.starve_limit:
                 seq_group.current_priority = 1  # Promote to highest priority (Q1)
@@ -198,6 +198,7 @@ class PolicyFactory:
         "stf": ShortestTokensFirst,
         "ltf": LongestTokensFirst,
         "infer": InferSchedule,
+        "sjmlfq": SkipJoinMLFQ,
     }
 
     @classmethod

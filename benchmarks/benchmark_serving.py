@@ -678,7 +678,7 @@ if __name__ == "__main__":
     parser.add_argument("--scheduler-policy",
                         type=str,
                         default="fcfs",
-                        choices=["fcfs", "infer"],
+                        choices=["fcfs", "infer", "sjmlfq"],
                         help="Specify the scheduler policy.")
     parser.add_argument("--execution-counter",
                         type=int,
