@@ -497,6 +497,7 @@ class SequenceGroup:
         self.execution_budget = execution_budget
         self.execution_iters = 0
         self.execution_over_budget = False
+        self.swap_time_unit = 0.002
 
     @property
     def prompt(self) -> Optional[str]:
@@ -525,9 +526,16 @@ class SequenceGroup:
         _total_token_block_size = sum(
             [seq.logical_token_block_size for seq in self.seqs_dict.values()])
         if self.is_prefill():
-            return _total_token_block_size
+            return _total_token_block_size + 1
         else:
             return _total_token_block_size + len(self.get_seqs())
+    @property
+    def seq_len(self) -> int:
+        return sum([seq.get_len() for seq in self.seqs_dict.values()])
+
+    @property
+    def swap_out_time(self)->float:
+        return self.total_token_block_size * self.swap_time_unit
 
     def get_last_latency(self, now: float) -> Optional[float]:
         """Sets the last token time for Request level timings."""
@@ -658,6 +666,7 @@ class SequenceGroup:
         if seq_id not in self.seqs_dict:
             raise ValueError(f"Sequence {seq_id} not found.")
         return self.seqs_dict[seq_id]
+
 
     def add(self, seq: Sequence) -> None:
         if seq.seq_id in self.seqs_dict:

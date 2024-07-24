@@ -160,7 +160,7 @@ if __name__ == "__main__":
     with mp.Manager() as manager:
         result_queue = manager.Queue()
         max_token_nums = [1912]
-        batch_sizes = [48]
+        batch_sizes = [16]
         total_iter_result, total_request_result = Utils.load_tmp_result(
             test_type, BASE_DIR)
         enable_chunk_prefill = True

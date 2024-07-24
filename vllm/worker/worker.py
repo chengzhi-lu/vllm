@@ -238,6 +238,40 @@ class Worker(WorkerBase):
                 if self.all_swapped_blocks[gpu_block_number] == 0:
                     del self.all_swapped_blocks[gpu_block_number]
 
+    def swap_block(self,num_seq_groups:int, blocks_to_swap_in: List[Tuple[int, int]],blocks_to_swap_out: List[Tuple[int, int]],blocks_to_copy: List[Tuple[int, int]]) -> float:
+        self.update_swapped_blocks(blocks_to_swap_in,
+                                   blocks_to_swap_out)
+        # `blocks_to_swap_in` and `blocks_to_swap_out` are cpu tensors.
+        # they contain parameters to launch cudamemcpyasync.
+        blocks_to_swap_in = torch.tensor(blocks_to_swap_in,
+                                         device="cpu",
+                                         dtype=torch.int64).view(-1, 2)
+        blocks_to_swap_out = torch.tensor(blocks_to_swap_out,
+                                          device="cpu",
+                                          dtype=torch.int64).view(-1, 2)
+        # `blocks_to_copy` is a gpu tensor. The src and tgt of
+        # blocks to copy are in the same device, and `blocks_to_copy`
+        # can be used directly within cuda kernels.
+        # st = time.time()
+        blocks_to_copy = torch.tensor(blocks_to_copy,
+                                      device=self.device,
+                                      dtype=torch.int64).view(-1, 2)
+        data: Dict[str, Any] = {
+            "num_seq_groups": num_seq_groups,
+            "blocks_to_swap_in": blocks_to_swap_in,
+            "blocks_to_swap_out": blocks_to_swap_out,
+            "blocks_to_copy": blocks_to_copy,
+        }
+        broadcast_tensor_dict(data, src=0)
+
+        st = time.time()
+        # torch.zeros(1, device=self.device, dtype=torch.int32)
+        self.cache_swap(blocks_to_swap_in, blocks_to_swap_out, blocks_to_copy)
+        # torch.zeros(1, device=self.device, dtype=torch.int32)
+        et = time.time()
+        swap_time = et - st
+        return swap_time
+
     @torch.inference_mode()
     def execute_model(
         self,
@@ -256,40 +290,40 @@ class Worker(WorkerBase):
             broadcast_tensor_dict({}, src=0)
             return []
 
-        self.update_swapped_blocks(execute_model_req.blocks_to_swap_in,
-                                   execute_model_req.blocks_to_swap_out)
         seq_group_metadata_list = execute_model_req.seq_group_metadata_list
         num_seq_groups = len(seq_group_metadata_list)
-        # `blocks_to_swap_in` and `blocks_to_swap_out` are cpu tensors.
-        # they contain parameters to launch cudamemcpyasync.
-        blocks_to_swap_in = torch.tensor(execute_model_req.blocks_to_swap_in,
-                                         device="cpu",
-                                         dtype=torch.int64).view(-1, 2)
-        blocks_to_swap_out = torch.tensor(execute_model_req.blocks_to_swap_out,
-                                          device="cpu",
-                                          dtype=torch.int64).view(-1, 2)
-        # `blocks_to_copy` is a gpu tensor. The src and tgt of
-        # blocks to copy are in the same device, and `blocks_to_copy`
-        # can be used directly within cuda kernels.
+        # self.update_swapped_blocks(execute_model_req.blocks_to_swap_in,
+        #                            execute_model_req.blocks_to_swap_out)
+        # # `blocks_to_swap_in` and `blocks_to_swap_out` are cpu tensors.
+        # # they contain parameters to launch cudamemcpyasync.
+        # blocks_to_swap_in = torch.tensor(execute_model_req.blocks_to_swap_in,
+        #                                  device="cpu",
+        #                                  dtype=torch.int64).view(-1, 2)
+        # blocks_to_swap_out = torch.tensor(execute_model_req.blocks_to_swap_out,
+        #                                   device="cpu",
+        #                                   dtype=torch.int64).view(-1, 2)
+        # # `blocks_to_copy` is a gpu tensor. The src and tgt of
+        # # blocks to copy are in the same device, and `blocks_to_copy`
+        # # can be used directly within cuda kernels.
+        # # st = time.time()
+        # blocks_to_copy = torch.tensor(execute_model_req.blocks_to_copy,
+        #                               device=self.device,
+        #                               dtype=torch.int64).view(-1, 2)
+        # data: Dict[str, Any] = {
+        #     "num_seq_groups": num_seq_groups,
+        #     "blocks_to_swap_in": blocks_to_swap_in,
+        #     "blocks_to_swap_out": blocks_to_swap_out,
+        #     "blocks_to_copy": blocks_to_copy,
+        # }
+        # broadcast_tensor_dict(data, src=0)
+
         # st = time.time()
-        blocks_to_copy = torch.tensor(execute_model_req.blocks_to_copy,
-                                      device=self.device,
-                                      dtype=torch.int64).view(-1, 2)
-        data: Dict[str, Any] = {
-            "num_seq_groups": num_seq_groups,
-            "blocks_to_swap_in": blocks_to_swap_in,
-            "blocks_to_swap_out": blocks_to_swap_out,
-            "blocks_to_copy": blocks_to_copy,
-        }
-        broadcast_tensor_dict(data, src=0)
-
-        st = time.time()
-        # torch.zeros(1, device=self.device, dtype=torch.int32)
-        self.cache_swap(blocks_to_swap_in, blocks_to_swap_out, blocks_to_copy)
-        # torch.zeros(1, device=self.device, dtype=torch.int32)
-        et = time.time()
-        swap_time = et - st
-
+        # # torch.zeros(1, device=self.device, dtype=torch.int32)
+        # self.cache_swap(blocks_to_swap_in, blocks_to_swap_out, blocks_to_copy)
+        # # torch.zeros(1, device=self.device, dtype=torch.int32)
+        # et = time.time()
+        # swap_time = et - st
+        swap_time = self.swap_block(num_seq_groups, execute_model_req.blocks_to_swap_in, execute_model_req.blocks_to_swap_out, execute_model_req.blocks_to_copy)
         # If there is no input, we don't need to execute the model.
         if num_seq_groups == 0:
             return []

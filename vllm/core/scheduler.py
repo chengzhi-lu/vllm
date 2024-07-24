@@ -1,3 +1,4 @@
+import asyncio
 import enum
 from math import ceil
 import os
@@ -351,7 +352,7 @@ class Scheduler:
             num_cpu_blocks=self.cache_config.num_cpu_blocks,
             sliding_window=self.cache_config.sliding_window,
             enable_caching=self.cache_config.enable_prefix_caching)
-
+        
         # Sequence groups in the WAITING state.
         # Contain new prefill or preempted requests.
         self.waiting: Deque[SequenceGroup] = deque()
@@ -797,19 +798,31 @@ class Scheduler:
             num_lookahead_slots_swapped=num_lookahead_slots_swapped,
             num_lookahead_slots_prefill=num_lookahead_slots_prefill,
         )
-        total_block_size = 0
-        while total_queue:
-            seq_group: SequenceGroup = total_queue[0]
-            total_queue.popleft()
-            total_block_size = seq_group.total_token_block_size
-            if not self._can_allocate_seq(total_block_size):
+        total_seq_groups_list = [seq_group for seq_group in total_queue]
+        total_block_sizes = [seq_group.total_token_block_size for seq_group in total_seq_groups_list]
+        block_capacity = self.block_manager.gpu_allocator.get_num_total_blocks()-self.block_manager.watermark_blocks
+        running_index = self.max_numbers_sum_at_most(total_block_sizes, block_capacity)
+        if running_index != -1:
+            for seq_group in total_seq_groups_list[running_index:]:
                 preempted, error = self._preempt_seq(
                     seq_group=seq_group,
                     budget=budget,
                     schedule_preemption=scheduler_preemtion,
                     running_queue=running_queue,
-                )
-            else:
+            )
+        
+            for seq_group in total_seq_groups_list[:running_index]:
+                allocated, error, recomputed_token_nums = self._allocate_seq(
+                    seq_group=seq_group,
+                    budget=budget,
+                    schedule_preemption=scheduler_preemtion,
+                    running_queue=running_queue,
+                    waiting_queue=waiting_queue,
+                    swapped_queue=swapped_queue,
+                    recomputed_token_nums=recomputed_token_nums,
+                ) 
+        else:
+            for seq_group in total_seq_groups_list:
                 allocated, error, recomputed_token_nums = self._allocate_seq(
                     seq_group=seq_group,
                     budget=budget,
@@ -819,6 +832,30 @@ class Scheduler:
                     swapped_queue=swapped_queue,
                     recomputed_token_nums=recomputed_token_nums,
                 )
+
+        # total_block_size = 0
+        # while total_queue:
+        #     seq_group: SequenceGroup = total_queue[0]
+        #     total_queue.popleft()
+        #     total_block_size += seq_group.total_token_block_size+1
+        #     if not self._can_allocate_seq(total_block_size):
+        #         total_block_size -= seq_group.total_token_block_size+1
+        #         preempted, error = self._preempt_seq(
+        #             seq_group=seq_group,
+        #             budget=budget,
+        #             schedule_preemption=scheduler_preemtion,
+        #             running_queue=running_queue,
+        #         )
+        #     else:
+        #         allocated, error, recomputed_token_nums = self._allocate_seq(
+        #             seq_group=seq_group,
+        #             budget=budget,
+        #             schedule_preemption=scheduler_preemtion,
+        #             running_queue=running_queue,
+        #             waiting_queue=waiting_queue,
+        #             swapped_queue=swapped_queue,
+        #             recomputed_token_nums=recomputed_token_nums,
+        #         )
 
         running_scheduler_output = SchedulerRunningOutputs(
             decode_seq_groups=scheduler_preemtion.decode_seq_groups_running,
@@ -918,7 +955,6 @@ class Scheduler:
             budget.add_num_seqs(seq_group.request_id, num_new_seqs)
 
         elif seq_group in waiting_queue:
-
             waiting_seqs = seq_group.get_seqs(status=SequenceStatus.WAITING)
             assert len(waiting_seqs) == 1, (
                 "Waiting sequence group should have only one prompt "
@@ -949,13 +985,18 @@ class Scheduler:
                     seq.status = SequenceStatus.FINISHED_IGNORED
                 schedule_preemption.ignored_seq_groups.append(seq_group)
                 waiting_queue.remove(seq_group)
+            elif can_allocate == AllocStatus.LATER:
+                return False, "Cannot allocate sequence group in the waiting queue.", recomputed_token_nums
             num_new_seqs = seq_group.get_max_num_running_seqs()
             if (num_new_tokens == 0
                     or not budget.can_schedule(num_new_tokens=num_new_tokens,
                                                num_new_seqs=num_new_seqs)):
                 return False, "No enough budgets to run new sequences in the waiting queue.", recomputed_token_nums
+            try:
+                self._allocate_and_set_running(seq_group)
+            except Exception as e:
+                return False, "Failed to allocate sequence group.", recomputed_token_nums
             waiting_queue.remove(seq_group)
-            self._allocate_and_set_running(seq_group)
             schedule_preemption.seq_groups_prefill.append(
                 ScheduledSequenceGroup(seq_group=seq_group,
                                        token_chunk_size=num_new_tokens))
@@ -966,21 +1007,21 @@ class Scheduler:
     def _preempt_seq(self, seq_group: SequenceGroup, budget: SchedulingBudget,
                      schedule_preemption: SchedulerPreemption,
                      running_queue: deque):
+        preemption_mode = self.preemption_mode
         if seq_group in running_queue:
+            if not self.block_manager.can_swap_out(seq_group):
+                preemption_mode= PreemptionMode.RECOMPUTE
             num_running_tokens = self._get_num_new_tokens(
                 seq_group, SequenceStatus.RUNNING, self.enable_chunking, budget)
             budget.subtract_num_batched_tokens(seq_group.request_id,
                                                num_running_tokens)
             num_running_seqs = seq_group.get_max_num_running_seqs()
             budget.subtract_num_seqs(seq_group.request_id, num_running_seqs)
-            if self.preemption_mode:
-                preempted_mode = self._preempt(
+            preempted_mode = self._preempt(
                     seq_group, schedule_preemption.blocks_to_swap_out,
-                    self.preemption_mode)
-            else:
-                preempted_mode = self._preempt(
+                    preemption_mode)
+            preempted_mode = self._preempt(
                     seq_group, schedule_preemption.blocks_to_swap_out)
-
             if preempted_mode == PreemptionMode.RECOMPUTE:
                 schedule_preemption.preempted_running.append(seq_group)
             else:
@@ -1713,7 +1754,6 @@ class Scheduler:
                 policy=policy,
                 enable_chunking=True,
             )
-        
         else:
             remaining_running, running_scheduled, recomputed_token_nums = \
                 self._schedule_running_partial(self.running,
@@ -1967,7 +2007,7 @@ class Scheduler:
 
         if (self.num_cumulative_preemption % 50 == 0
                 and self.num_cumulative_preemption > 0):
-            logger.warning(
+            logger.debug(
                 "Sequence group %s is preempted by %s mode because there is "
                 "not enough KV cache space. This can affect the end-to-end "
                 "performance. Increase gpu_memory_utilization or "
@@ -2018,6 +2058,7 @@ class Scheduler:
         seqs = seq_group.get_seqs(
             status=SequenceStatus.SWAPPED) + seq_group.get_seqs(
                 status=SequenceStatus.PARTIAL_SWAPPED)
+        # asyncio.run(self._async_swap(blocks_to_swap_in,[],[]))
 
         for seq in seqs:
             seq.status = SequenceStatus.RUNNING
@@ -2037,8 +2078,19 @@ class Scheduler:
         mapping = self.block_manager.swap_out(
             seq_group, swap_out_block_nums=swap_out_block_nums)
         blocks_to_swap_out.extend(mapping)
+        
+        # asyncio.run(self._async_swap([],blocks_to_swap_out,[]))
         for seq in seq_group.get_seqs(status=SequenceStatus.RUNNING):
             seq.status = seq_group_status
+
+    async def _async_swap(self, blocks_to_swap_in: List[Tuple[int, int]],blocks_to_swap_out: List[Tuple[int, int]],blocks_to_copy: List[Tuple[int, int]]):
+        self.worker.swap_block(
+            1,
+            blocks_to_swap_in,
+            blocks_to_swap_out,
+            blocks_to_copy,
+        )
+
 
     def _passed_delay(self, now: float) -> bool:
         if self.prev_prompt:
@@ -2102,17 +2154,28 @@ class Scheduler:
                                  budget.remaining_token_budget())
         return num_new_tokens
 
+    def max_numbers_sum_at_most(self, numbers: List[int], target: int)-> int:
+        prefix_sum = list(accumulate(numbers))
+    
+        # Use bisect_right for binary search
+        index = bisect.bisect_right(prefix_sum, target)
+    
+        if index >= len(prefix_sum):
+            return -1 
+        return index
+    
+
     def min_numbers_sum_at_least(self, numbers: List[int], target: int) -> int:
         """
         Find the minimum sum of numbers that is at least `target`.
         """
         # Calculate prefix sums using accumulate
         prefix_sum = list(accumulate(numbers))
-
+    
         # Use bisect_left for binary search
-        index = bisect.bisect_left(prefix_sum, target + 1)
-
+        index = bisect.bisect_left(prefix_sum, target)
+    
         if index >= len(prefix_sum):
-            return -1
-
-        return index + 1  # return the number of elements needed
+            return -1 
+    
+        return index + 1 # return the number of elements needed

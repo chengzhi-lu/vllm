@@ -115,10 +115,7 @@ class InferSchedule(Policy):
         max_eos_token_prob = np.max(eos_token_probs)
         if max_eos_token_prob == -1000.0:
             # priority = len(seq_group.prompt_token_ids)
-            if decoding_length == 0:
-                priority = (1000-len(seq_group.prompt_token_ids))
-            else:
-                priority = (1000-decoding_length)
+            priority = (2000-seq_group.seq_len)
         else:
             probs = np.exp(max_eos_token_prob) # short job may have high eos prob. however, this value is too small to be considered.
             priority = self.get_gittins_index(probs)
@@ -126,7 +123,7 @@ class InferSchedule(Policy):
             # probs = mean_eos_token_prob
             # waiting_percent = \
             #     seq_group.metrics.waiting_iter_nums**1.5 / decoding_length
-            # priority = probs + waiting_percent
+            # priority = priority + waiting_percent
         return priority
 
 

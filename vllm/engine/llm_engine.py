@@ -783,6 +783,7 @@ class LLMEngine:
             >>>     if not (engine.has_unfinished_requests() or example_inputs):
             >>>         break
         """
+        self.total_count+=1
         st = time.time()
         if self.et != 0:
             logger.debug("interval time:", self.et - st)
@@ -802,6 +803,7 @@ class LLMEngine:
             )
             output = self.model_executor.execute_model(
                 execute_model_req=execute_model_req)
+            self.swap_time += output[0].swap_time
         else:
             output = []
         et = time.time()
@@ -832,6 +834,7 @@ class LLMEngine:
         self.et = time.time()
         # print(f"process time: {self.et - st}")
         self.handle_output_time += self.et - st
+        print(f"Total schedule time: {self.schedule_time}, execution time: {self.execution_time}, handle output time: {self.handle_output_time}, swap time: {self.swap_time}, total iteration number is: {self.total_count}")
         return request_outputs
 
     def do_log_stats(
@@ -905,8 +908,7 @@ class LLMEngine:
                                scheduler_outputs.preempted)
         num_preemption_tokens_iter = 0
         for seq_group in self.scheduler.swapped:
-            for seq in seq_group.get_seqs():
-                num_preemption_tokens_iter += seq.get_len()
+            num_preemption_tokens_iter = seq_group.seq_len
         # Request stats
         #   Latency
         time_e2e_requests: List[float] = []

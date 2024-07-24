@@ -189,3 +189,5 @@ hip_compat.h
 *.json
 *.gz
 *.txt
+
+tags
