@@ -498,6 +498,7 @@ class SequenceGroup:
         self.execution_iters = 0
         self.execution_over_budget = False
         self.swap_time_unit = 0.002
+        self.expected_length = 0.0
 
     @property
     def prompt(self) -> Optional[str]:

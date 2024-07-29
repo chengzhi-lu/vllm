@@ -834,7 +834,19 @@ class LLMEngine:
         self.et = time.time()
         # print(f"process time: {self.et - st}")
         self.handle_output_time += self.et - st
-        print(f"Total schedule time: {self.schedule_time}, execution time: {self.execution_time}, handle output time: {self.handle_output_time}, swap time: {self.swap_time}, total iteration number is: {self.total_count}")
+        # print(f"Total schedule time: {self.schedule_time}, execution time: {self.execution_time}, handle output time: {self.handle_output_time}, swap time: {self.swap_time}, total iteration number is: {self.total_count},swap out block_num: {self.scheduler.total_swap_out_blocks}, swap out seq num: {self.scheduler.total_swap_out_seqs}, swap in block num: {self.scheduler.total_swap_in_blocks}, swap in seq num: {self.scheduler.total_swap_in_seqs}")
+        #logger.info(
+        #    "Total schedule time: %.1f s, execution time: %.1f s, "
+        #    "handle output time: %.1f s, swap time: %.1f s, "
+        #    "total iteration number: %d, "
+        #    "swap out block num: %d, swap out seq num: %d, "
+        #    "swap in block num: %d, swap in seq num: %d",
+        #    self.schedule_time, self.execution_time, 
+        #    self.handle_output_time, self.swap_time,
+        #    self.total_count, 
+        #    self.scheduler.total_swap_out_blocks, self.scheduler.total_swap_out_seqs,
+        #    self.scheduler.total_swap_in_blocks, self.scheduler.total_swap_in_seqs
+        #)
         return request_outputs
 
     def do_log_stats(

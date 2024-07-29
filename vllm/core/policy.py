@@ -1,4 +1,5 @@
 from collections import deque
+import math
 from typing import Deque
 import numpy as np
 
@@ -84,22 +85,24 @@ class SkipJoinMLFQ(Policy):
 
         return -seq_group.current_priority # higher value means higher priority
 
-class InferSchedule(Policy):
+class TFTLatencyTrade(Policy):
 
-    def get_gittins_index(self, eos_probs: float):
-        # gittins index is the probability of the job ending in the next interval divided by the expected remaining length of the job.
-        i = np.arange(1, 14)
-        eos_probs_in_next_interval = 1 - np.power((1 - eos_probs), 14)
-        expect_remaining_length = np.sum(i * (1 - eos_probs) ** i)
-        return eos_probs_in_next_interval / expect_remaining_length 
+    def get_gittins_index(self,seq_group:SequenceGroup, eos_probs: float, decoding_length: int):
+        # gittins index is the probability of the job ending in the next interval 
+        # divided by the expected remaining length of the job.
+        # Optimization for the request-level latency and ttft
 
-    def get_penalty(self, decoding_length: int, eos_probs: float):
-        # only consider the gittins index is not enough due to the long sequence 
-        # may occupy too much GPU memory and block the inference of other sequences.
-        # we add a penalty term to the priority to avoid this.
-        eos_probs_before = 1 - np.power((1 - eos_probs), decoding_length)
+        n=15
+        value = 1-eos_probs
+        eos_probs_in_next_interval = 1 -value**15
+        expect_remaining_length =value*((1+n*value**(n+1)-(n+1)*(value**n))/(((1-value)**2))) 
+        gittins_index =eos_probs_in_next_interval / expect_remaining_length
+        waiting_percent = \
+               seq_group.metrics.waiting_iter_nums**2 * math.sqrt(decoding_length)
+        priority = gittins_index*(1+waiting_percent)
+        return priority
         
-        
+    
 
     def get_priority(
         self,
@@ -108,22 +111,62 @@ class InferSchedule(Policy):
     ) -> float:
         eos_token_probs = []
         decoding_length = 0
+        seq_length = seq_group.seq_len
         # token_blocks = seq_group.total_token_block_size
         for _, seq in seq_group.seqs_dict.items():
             eos_token_probs.extend(seq.get_eos_token_prob())
             decoding_length += seq.get_output_len()
-        max_eos_token_prob = np.max(eos_token_probs)
+        max_eos_token_prob = max(eos_token_probs)
         if max_eos_token_prob == -1000.0:
-            # priority = len(seq_group.prompt_token_ids)
             priority = (2000-seq_group.seq_len)
         else:
-            probs = np.exp(max_eos_token_prob) # short job may have high eos prob. however, this value is too small to be considered.
-            priority = self.get_gittins_index(probs)
-            # print(f"Seq group is {seq_group.request_id}, priority is {priority}")
-            # probs = mean_eos_token_prob
-            # waiting_percent = \
-            #     seq_group.metrics.waiting_iter_nums**1.5 / decoding_length
-            # priority = priority + waiting_percent
+            probs = math.exp(max_eos_token_prob) # short job may have high eos prob. however, this value is too small to be considered.
+            priority = self.get_gittins_index(seq_group,probs,decoding_length)
+        return priority
+
+
+class TFITTradeoff(Policy):
+
+    def get_waiting_index(self,seq_group:SequenceGroup, eos_probs: float):
+        # waiting index is the probability of the job 
+        expected_length = seq_group.expected_length
+        if expected_length == 0:
+            seq_len = seq_group.seq_len
+            value = 1-eos_probs
+            n=15
+            expect_remaining_length = value*((1+n*value**(n+1)-(n+1)*(value**n))/(((1-value)**2)))
+            # index = -seq_group.metrics.waiting_iter_nums**2 / math.sqrt(expect_remaining_length)
+            seq_group.expected_length = (seq_len+expect_remaining_length)
+            expected_length = (seq_len+expect_remaining_length)
+        index = -expected_length
+        return index 
+
+    def get_priority(
+        self,
+        now: float,
+        seq_group: SequenceGroup,
+    ) -> float:
+        # eos_token_probs = []
+        seq_len = seq_group.seq_len
+        max_eos_token_prob = -1000.0
+        for _, seq in seq_group.seqs_dict.items():
+            tmp_max=max(seq.get_eos_token_prob())
+            if tmp_max > max_eos_token_prob:
+                max_eos_token_prob = tmp_max
+        if max_eos_token_prob == -1000.0:
+            priority = -seq_len
+        else:
+            probs = math.exp(max_eos_token_prob) # short job may have high eos prob. however, this value is too small to be considered.
+            # priority = self.get_waiting_index(seq_group, probs)
+            expected_length = seq_group.expected_length
+            if expected_length == 0:
+                value = 1-probs
+                n=15
+                expect_remaining_length = value*((1+n*value**(n+1)-(n+1)*(value**n))/(((1-value)**2)))
+                # index = -seq_group.metrics.waiting_iter_nums**2 / math.sqrt(expect_remaining_length)
+                seq_group.expected_length = (seq_len+expect_remaining_length)
+                expected_length = (seq_len+expect_remaining_length)
+            priority = -expected_length
         return priority
 
 
@@ -194,9 +237,10 @@ class PolicyFactory:
         "wtf": WaitingTimeFirst,
         "sjf": ShortJobFirst,
         "ljf": LongJobFirst,
-        "infer": InferSchedule,
+        "infer": TFTLatencyTrade,
         "sjmlfq": SkipJoinMLFQ,
-        "inferpreempt": InferSchedule,
+        "inferpreempt": TFTLatencyTrade,
+        "tfittradeoff": TFITTradeoff,
     }
 
     @classmethod

@@ -24,6 +24,7 @@ scheduler_swap_policies[0]="fcfs full"
 # scheduler_swap_policies[1]="infer partial"
 #scheduler_swap_policies[2]="inferpreempt full"
 # scheduler_swap_policies[3]="sjf full"
+# scheduler_swap_policies[4]="tfittradeoff full"
 
 preemption_mode="swap"
 gpu_memory_utilization=0.9

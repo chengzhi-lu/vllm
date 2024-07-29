@@ -270,7 +270,19 @@ class _AsyncLLMEngine(LLMEngine):
             # queued control plane messages, such as add/remove lora adapters.
             await self.model_executor.stop_remote_worker_execution_loop_async()
         # print("handle output time is:", self.et - st)
-        print(f"Total schedule time: {self.schedule_time}, execution time: {self.execution_time}, handle output time: {self.handle_output_time}, swap time: {self.swap_time}, total iteration number is: {self.total_count}")
+        # print(f"Total schedule time: {self.schedule_time}, execution time: {self.execution_time}, handle output time: {self.handle_output_time}, swap time: {self.swap_time}, total iteration number is: {self.total_count}")
+        logger.info(
+            "Total schedule time: %.5f s, execution time: %.5f s, "
+            "handle output time: %.5f s, swap time: %.5f s, "
+            "total iteration number: %d, "
+            "swap out block num: %d, swap out seq num: %d, "
+            "swap in block num: %d, swap in seq num: %d",
+            self.schedule_time, self.execution_time, 
+            self.handle_output_time, self.swap_time,
+            self.total_count, 
+            self.scheduler.total_swap_out_blocks, self.scheduler.total_swap_out_seqs,
+            self.scheduler.total_swap_in_blocks, self.scheduler.total_swap_in_seqs
+        )
         return request_outputs
 
     async def process_model_inputs_async(
