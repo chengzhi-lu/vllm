@@ -246,6 +246,7 @@ class _AsyncLLMEngine(LLMEngine):
             output = []
         et = time.time()
         self.execution_time += et - st
+        self.total_iteration_time = self.execution_time - self.swap_time
         # print("execute time is:", et - st)
         st = time.time()
         request_outputs = self._process_model_outputs(
@@ -261,7 +262,8 @@ class _AsyncLLMEngine(LLMEngine):
         self.handle_output_time += self.et - st
         # Log stats.
         self.do_log_stats(scheduler_outputs, output)
-
+        self.scheduler.update_iter_time(self.total_iteration_time /
+                                        self.total_count)
         if not request_outputs:
             # Stop the execute model loop in parallel workers until there are
             # more requests to process. This avoids waiting indefinitely in
@@ -276,13 +278,12 @@ class _AsyncLLMEngine(LLMEngine):
             "handle output time: %.5f s, swap time: %.5f s, "
             "total iteration number: %d, "
             "swap out block num: %d, swap out seq num: %d, "
-            "swap in block num: %d, swap in seq num: %d",
-            self.schedule_time, self.execution_time, 
-            self.handle_output_time, self.swap_time,
-            self.total_count, 
-            self.scheduler.total_swap_out_blocks, self.scheduler.total_swap_out_seqs,
-            self.scheduler.total_swap_in_blocks, self.scheduler.total_swap_in_seqs
-        )
+            "swap in block num: %d, swap in seq num: %d", self.schedule_time,
+            self.execution_time, self.handle_output_time, self.swap_time,
+            self.total_count, self.scheduler.total_swap_out_blocks,
+            self.scheduler.total_swap_out_seqs,
+            self.scheduler.total_swap_in_blocks,
+            self.scheduler.total_swap_in_seqs)
         return request_outputs
 
     async def process_model_inputs_async(

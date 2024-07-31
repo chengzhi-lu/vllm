@@ -497,8 +497,9 @@ class SequenceGroup:
         self.execution_budget = execution_budget
         self.execution_iters = 0
         self.execution_over_budget = False
-        self.swap_time_unit = 0.002
+        self.swap_time_unit = 0.00065
         self.expected_length = 0.0
+        self.priority = 0
 
     @property
     def prompt(self) -> Optional[str]:
@@ -530,12 +531,13 @@ class SequenceGroup:
             return _total_token_block_size + 1
         else:
             return _total_token_block_size + len(self.get_seqs())
+
     @property
     def seq_len(self) -> int:
         return sum([seq.get_len() for seq in self.seqs_dict.values()])
 
     @property
-    def swap_out_time(self)->float:
+    def swap_out_time(self) -> float:
         return self.total_token_block_size * self.swap_time_unit
 
     def get_last_latency(self, now: float) -> Optional[float]:
@@ -667,7 +669,6 @@ class SequenceGroup:
         if seq_id not in self.seqs_dict:
             raise ValueError(f"Sequence {seq_id} not found.")
         return self.seqs_dict[seq_id]
-
 
     def add(self, seq: Sequence) -> None:
         if seq.seq_id in self.seqs_dict:
@@ -883,7 +884,7 @@ class SamplerOutput:
     # On-device tensor containing the logprobs of each token.
     logprobs: Optional["torch.Tensor"] = None
 
-    swap_time: Optional[float] =  0.0
+    swap_time: Optional[float] = 0.0
 
     # On-device tensor containing the sampled token ids.
     sampled_token_ids: Optional[torch.Tensor] = None

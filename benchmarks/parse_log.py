@@ -5,9 +5,18 @@ import argparse
 
 
 def parse_line(line):
-    input_str = (
-        line.split("]")[1].replace("reqs", "").replace("tokens/s", "").replace("%", "")
-    )
+    input_str = (line.split("]")[1].replace("reqs",
+                                            "").replace("tokens/s",
+                                                        "").replace("%", ""))
+    pattern = re.compile(r"(\w[\w\s]*\w):\s*([^,]+)")
+    matches = pattern.findall(input_str)
+    result_dict = {key.strip(): value.strip() for key, value in matches}
+    return result_dict
+
+
+def parse_detailed_line(line):
+    input_str = line.split("]")[1].replace(" s,", ",")
+
     pattern = re.compile(r"(\w[\w\s]*\w):\s*([^,]+)")
     matches = pattern.findall(input_str)
     result_dict = {key.strip(): value.strip() for key, value in matches}
@@ -18,18 +27,30 @@ def parse_log():
     selected_lines = []
     with open(log_path, "r") as f:
         lines = f.readlines()
-        selected_lines = [parse_line(line) for line in lines if "generation" in line]
+        selected_lines = [
+            parse_line(line) for line in lines if "generation" in line
+        ]
+        selected_detaile_lines = [
+            parse_detailed_line(line) for line in lines
+            if "iteration number" in line
+        ]
     df = pd.DataFrame(selected_lines)
+    detailed_df = pd.DataFrame(selected_detaile_lines)
     df.to_csv(result_path, index=False)
+    detailed_df.to_csv(result_path.replace(".csv", "_detailed.csv"),
+                       index=False)
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--policy", type=str, default="fcfs", required=True)
-    parser.add_argument("--swap-policy", type=str, default="full", required=True)
-    parser.add_argument(
-        "--result-dir", type=str, default="/root/vllm/benchmarks/result"
-    )
+    parser.add_argument("--swap-policy",
+                        type=str,
+                        default="full",
+                        required=True)
+    parser.add_argument("--result-dir",
+                        type=str,
+                        default="/root/vllm/benchmarks/result")
     parser.add_argument(
         "--model",
         type=str,
