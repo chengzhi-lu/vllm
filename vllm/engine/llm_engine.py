@@ -622,7 +622,8 @@ class LLMEngine:
                                   seqs=[seq],
                                   arrival_time=arrival_time,
                                   lora_request=lora_request,
-                                  pooling_params=pooling_params)
+                                  pooling_params=pooling_params,
+                                  waiting_iter_base=self.scheduler_config.waiting_iter_base)
         return seq_group
 
     def abort_request(self, request_id: Union[str, Iterable[str]]) -> None:

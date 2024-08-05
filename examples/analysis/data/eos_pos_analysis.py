@@ -28,6 +28,12 @@ def __(json, pd):
 
 
 @app.cell
+def __(df):
+    df
+    return
+
+
+@app.cell
 def __(df, df_prob, plt, sns):
     _corrs = []
     ratio = []
@@ -45,6 +51,7 @@ def __(df, df_prob, plt, sns):
     plt.xlabel("# of Iters")
     plt.ylabel("Corr. Seq Len vs. Prob")
     plt.grid(alpha=0.3, linestyle="--")
+    plt.show()
     return ratio,
 
 

@@ -44,6 +44,13 @@ private:
     std::vector<cudaStream_t> streams;
 };
 
+static StreamPool* streamPool = nullptr;
+static size_t stream_pool_size = 16; 
+static std::once_flag init_flag;
+void initializeStreamPool() {
+    streamPool = new StreamPool(stream_pool_size);
+}
+
 void parallelMemcpy(const torch::Tensor& block_mapping, size_t num_blocks, int64_t block_size_in_bytes,
                     char* dst_ptr, char* src_ptr, cudaMemcpyKind memcpy_type, StreamPool& streamPool) {
     for (size_t i = 0; i < num_blocks; ++i) {
@@ -82,7 +89,7 @@ void swap_blocks(torch::Tensor& src, torch::Tensor& dst,
   // a cpu tensor, otherwise every `item` call will require a gpu-cpu
   // synchronization.
   TORCH_CHECK(block_mapping.device().is_cpu(), "block_mapping must be on CPU");
-  
+  // std::call_once(init_flag, initializeStreamPool);
   char* src_ptr = static_cast<char*>(src.data_ptr());
   char* dst_ptr = static_cast<char*>(dst.data_ptr());
 
@@ -100,12 +107,7 @@ void swap_blocks(torch::Tensor& src, torch::Tensor& dst,
     cudaMemcpyAsync(dst_ptr + dst_offset, src_ptr + src_offset,
                     block_size_in_bytes, memcpy_type, stream);
   }
-  // static StreamPool* streamPool = nullptr;
-  //   static size_t stream_pool_size = 4; 
-  //   if (streamPool == nullptr) {
-  //       streamPool = new StreamPool(stream_pool_size);
-  //   }
-
+  
   // parallelMemcpy(block_mapping, num_blocks, block_size_in_bytes, dst_ptr, src_ptr, memcpy_type, *streamPool);
 }
 

@@ -17,7 +17,7 @@ class Policy:
 
     def got_priority(
         self,
-        iter_time: float,
+        avg_priorities: float,
         seq_group: SequenceGroup,
         avg_block_size: float,
     ):
@@ -35,14 +35,14 @@ class Policy:
                 reverse=True,
             ))
 
-    def sorted_by_priority(self, iter_time: float,
+    def sorted_by_priority(self, avg_priorities: float,
                            seq_groups: Deque[SequenceGroup],
                            avg_block_size: float) -> Deque[SequenceGroup]:
         return deque(
             sorted(
                 seq_groups,
                 key=lambda seq_group: self.got_priority(
-                    iter_time, seq_group, avg_block_size),
+                    avg_priorities, seq_group, avg_block_size),
                 reverse=True,
             ))
 
@@ -167,78 +167,104 @@ class TFITTradeoff(Policy):
         index = -expected_length
         return index
 
-    def got_priority(self, iter_time: float, seq_group: SequenceGroup,
-                     avg_block_size: float):
+    # def got_priority(self, iter_time: float, seq_group: SequenceGroup,
+    #                  avg_block_size: float):
 
-        seq_len = seq_group.seq_len
-        max_eos_token_prob = -1000.0
-        decoding_length = 0
-        for _, seq in seq_group.seqs_dict.items():
-            tmp_max = max(seq.get_eos_token_prob())
-            decoding_length += seq.get_output_len()
-            if tmp_max > max_eos_token_prob:
-                max_eos_token_prob = tmp_max
-        if max_eos_token_prob == -1000.0:
-            # if decoding_length > 0:
-            # priority = -seq_len+seq_group.metrics.waiting_iter_nums**2
-            # else:
-            priority = -seq_len
-        else:
-            expected_length = seq_group.expected_length
-            if expected_length == 0:
-                value = 1 - math.exp(max_eos_token_prob)
-                n = int(-max_eos_token_prob + 25)
-                expect_remaining_length = int(
-                    value * ((1 + n * value**(n + 1) - (n + 1) * (value**n)) /
-                             (((1 - value)**2))))
-                seq_group.expected_length = expect_remaining_length
-                expected_length = expect_remaining_length
-                seq_block_size = seq_group.total_token_block_size
-                swap_time_cost = seq_group.swap_time_unit * seq_block_size
-                opportunity_cost = seq_group.total_token_block_size / avg_block_size * expected_length * iter_time
-                if swap_time_cost >= opportunity_cost:
-                    priority = -(seq_len)
-                else:
-                    priority = -(seq_len + expected_length)
-                seq_group.priority = priority
-            else:
-                priority = seq_group.priority
+    #     seq_len = seq_group.seq_len
+    #     max_eos_token_prob = -1000.0
+    #     decoding_length = 0
+    #     for _, seq in seq_group.seqs_dict.items():
+    #         tmp_max = max(seq.get_eos_token_prob())
+    #         decoding_length += seq.get_output_len()
+    #         if tmp_max > max_eos_token_prob:
+    #             max_eos_token_prob = tmp_max
+    #     if max_eos_token_prob == -1000.0:
+    #         # if decoding_length > 0:
+    #         # priority = -seq_len+seq_group.metrics.waiting_iter_nums**2
+    #         # else:
+    #         priority = -seq_len
+    #     else:
+    #         expected_length = seq_group.expected_length
+    #         if expected_length == 0 or expected_length < decoding_length: 
+    #             value = 1 - math.exp(max_eos_token_prob)
+    #             n = int(-max_eos_token_prob + 25)
+    #             expect_remaining_length = int(
+    #                 value * ((1 + n * value**(n + 1) - (n + 1) * (value**n)) /
+    #                          (((1 - value)**2))))
+    #             seq_group.expected_length = expect_remaining_length
+    #             expected_length = expect_remaining_length
+    #             seq_block_size = seq_group.total_token_block_size
+    #             swap_time_cost = seq_group.swap_time_unit * seq_block_size
+    #             opportunity_cost = seq_block_size / avg_block_size * expected_length * iter_time
+    #             if swap_time_cost >= opportunity_cost:
+    #                 priority = -(seq_len)
+    #             else:
+    #                 priority = -(seq_len + expected_length)
+    #             seq_group.priority = priority
+    #         else:
+    #             priority = seq_group.priority
 
-        return priority
+    #     return priority
 
-    def get_priority(
+    # def get_priority(
+    #     self,
+    #     now: float,
+    #     seq_group: SequenceGroup,
+    # ) -> float:
+    #     # eos_token_probs = []
+    #     seq_len = seq_group.seq_len
+    #     max_eos_token_prob = -1000.0
+    #     decoding_length = 0
+    #     for _, seq in seq_group.seqs_dict.items():
+    #         tmp_max = max(seq.get_eos_token_prob())
+    #         decoding_length += seq.get_output_len()
+    #         if tmp_max > max_eos_token_prob:
+    #             max_eos_token_prob = tmp_max
+    #     if max_eos_token_prob == -1000.0:
+    #         # if decoding_length > 0:
+    #         # priority = -seq_len+seq_group.metrics.waiting_iter_nums**2
+    #         # else:
+    #         priority = -seq_len
+    #     else:
+    #         # priority = self.get_waiting_index(seq_group, probs)
+    #         expected_length = seq_group.expected_length
+    #         if expected_length == 0:
+    #             # short job may have high eos prob. however, this value is too small to be considered.
+    #             value = 1 - math.exp(max_eos_token_prob)
+    #             n = 15
+    #             expect_remaining_length = int(
+    #                 value * ((1 + n * value**(n + 1) - (n + 1) * (value**n)) /
+    #                          (((1 - value)**2))))
+    #             seq_group.expected_length = (seq_len + expect_remaining_length)
+    #             expected_length = (seq_len + expect_remaining_length)
+    #         priority = -expected_length
+    #     return priority
+
+    def got_priority(
         self,
-        now: float,
+        avg_priorities: float, 
         seq_group: SequenceGroup,
+        avg_block_size: float
     ) -> float:
-        # eos_token_probs = []
-        seq_len = seq_group.seq_len
-        max_eos_token_prob = -1000.0
-        decoding_length = 0
-        for _, seq in seq_group.seqs_dict.items():
-            tmp_max = max(seq.get_eos_token_prob())
-            decoding_length += seq.get_output_len()
-            if tmp_max > max_eos_token_prob:
-                max_eos_token_prob = tmp_max
-        if max_eos_token_prob == -1000.0:
-            # if decoding_length > 0:
-            # priority = -seq_len+seq_group.metrics.waiting_iter_nums**2
-            # else:
-            priority = -seq_len
+        # decode_length = sum(seq.get_output_len() for seq in seq_group.seqs_dict.values())
+        decode_length = seq_group.seq_len
+        priority = seq_group.priority
+        if priority != -1000:
+            priority = priority * (decode_length + seq_group.metrics.waiting_iter_nums) /2000
         else:
-            # priority = self.get_waiting_index(seq_group, probs)
-            expected_length = seq_group.expected_length
-            if expected_length == 0:
-                # short job may have high eos prob. however, this value is too small to be considered.
-                value = 1 - math.exp(max_eos_token_prob)
-                n = 15
-                expect_remaining_length = int(
-                    value * ((1 + n * value**(n + 1) - (n + 1) * (value**n)) /
-                             (((1 - value)**2))))
-                seq_group.expected_length = (seq_len + expect_remaining_length)
-                expected_length = (seq_len + expect_remaining_length)
-            priority = -expected_length
+            max_eos_token_pos = max(
+                (max(seq.get_eos_token_pos()) for seq in seq_group.seqs_dict.values()),
+                default=-1
+            )
+            if max_eos_token_pos > 0:
+                seq_group.priority = max_eos_token_pos/32000
+                priority = seq_group.priority * seq_group.seq_len/2000
+            else:
+                # seq_group.priority = int(math.log(max(seq_group.metrics.waiting_iter_nums, 1), int(seq_group.waiting_iter_base)))
+                # seq_group.priority = (int(math.pow(max(seq_group.metrics.waiting_iter_nums, 1), seq_group.waiting_iter_base)) + seq_group.seq_len)/ 2000
+                priority = avg_priorities * (len(seq_group.prompt_token_ids)+seq_group.metrics.waiting_iter_nums)/ 2000
         return priority
+
 
 
 class Random(Policy):

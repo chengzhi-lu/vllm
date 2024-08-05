@@ -256,13 +256,14 @@ class Sequence:
         self.prefix_offset = 0
         self.read_offset = 0
         self.eos_token_prob: List[float] = []
+        self.eos_token_prob_pos: List[int] = []
         # Input + output tokens
         self.tokens: Optional[List[str]] = None
 
         # Swapped out block raio
         self.swapped_out_block_nums: int = 0
 
-        self.eos_prob_estimation_window = 17
+        self.eos_prob_estimation_window = 5
         self.default_eos_token_prob = -1000.0
 
     @property
@@ -287,6 +288,12 @@ class Sequence:
         else:
             # return float(np.mean(self.eos_token_prob))
             return self.eos_token_prob
+    def get_eos_token_pos(self) -> List[int]:
+        if len(self.eos_token_prob_pos) < self.eos_prob_estimation_window:
+            return [-1]
+        else:
+            return self.eos_token_prob_pos
+
 
     def update_swapped_out_block_nums(self, swap_out_block_nums: int):
         self.swapped_out_block_nums += swap_out_block_nums
@@ -358,10 +365,15 @@ class Sequence:
             eos_token_prob = logprobs.get(
                 self.eos_token_id,
                 Logprob(self.default_eos_token_prob)).logprob
+            eos_token_prob_pos = logprobs.get(
+                self.eos_token_id,
+                Logprob(0,-1)).rank
             self.eos_token_prob.append(eos_token_prob)
+            self.eos_token_prob_pos.append(eos_token_prob_pos)
 
         else:
             self.eos_token_prob.append(self.default_eos_token_prob)
+            self.eos_token_prob_pos.append(-1)
 
     @property
     def logical_token_block_size(self) -> int:
@@ -474,6 +486,7 @@ class SequenceGroup:
         embeddings: Optional[List[float]] = None,
         pooling_params: Optional[PoolingParams] = None,
         encoder_seq: Optional[Sequence] = None,
+        waiting_iter_base: float = 1,
     ) -> None:
         self.request_id = request_id
         self.seqs_dict = {seq.seq_id: seq for seq in seqs}
@@ -499,7 +512,9 @@ class SequenceGroup:
         self.execution_over_budget = False
         self.swap_time_unit = 0.00065
         self.expected_length = 0.0
-        self.priority = 0
+        self.waiting_iter_base = waiting_iter_base
+        self.priority = -1000
+        self.weighted:Tuple[float,float] = (0,0)
 
     @property
     def prompt(self) -> Optional[str]:

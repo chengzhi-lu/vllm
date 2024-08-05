@@ -725,6 +725,7 @@ def _get_logprobs(
     query_indices: List[int] = []
     # The next token ids to get the logprob value from.
     next_token_ids: List[int] = []
+    eos_token_ids: List[int] = []
     # The largest requested number of logprobs. We find logprobs as many as the
     # largest num logprobs in this API.
     largest_num_logprobs = 1
@@ -734,8 +735,8 @@ def _get_logprobs(
     for (seq_group, sample_result) in zip(sampling_metadata.seq_groups,
                                           sample_results):
         sampling_params = seq_group.sampling_params
-
         # Update indices and tokens for prompt logprobs.
+        eos_token_id = seq_group.eos_token_id if seq_group.eos_token_id is not None else 2
         if (seq_group.is_prompt
                 and sampling_params.prompt_logprobs is not None):
             largest_num_logprobs = max(largest_num_logprobs,
@@ -743,6 +744,7 @@ def _get_logprobs(
             next_prompt_tokens = _get_next_prompt_tokens(seq_group)
             query_indices.extend(seq_group.prompt_logprob_indices)
             next_token_ids.extend(next_prompt_tokens)
+            eos_token_ids.append(eos_token_id)
 
         # Update indices and next tokenes for sample logprob.
         if seq_group.do_sample:
@@ -755,6 +757,7 @@ def _get_logprobs(
             query_indices.extend(
                 [query_idx + parent_id for parent_id in parent_seq_ids])
             next_token_ids.extend(token_ids)
+            eos_token_ids.append(eos_token_id)
 
             if sampling_params.logprobs is not None:
                 largest_num_logprobs = max(largest_num_logprobs,
@@ -769,7 +772,7 @@ def _get_logprobs(
 
     query_indices_gpu = torch.tensor(query_indices, device=logprobs.device)
     next_token_ids_gpu = torch.tensor(next_token_ids, device=logprobs.device)
-
+    eos_token_ids_gpu = torch.tensor(eos_token_ids, device=logprobs.device)
     # (num_selected_query_tokens, num_logprobs). Note that query_indices can
     # contain duplicates if beam search is enabled.
     selected_logprobs = logprobs[[
@@ -779,6 +782,10 @@ def _get_logprobs(
     ranks = _get_ranks(
         logprobs[query_indices_gpu],
         next_token_ids_gpu,
+    )
+    eos_ranks = _get_ranks(
+        logprobs[query_indices_gpu],
+        eos_token_ids_gpu,
     )
     assert selected_logprobs.shape[0] == ranks.shape[0]
 
@@ -793,6 +800,7 @@ def _get_logprobs(
 
     selected_logprobs = selected_logprobs.to('cpu')
     ranks = ranks.to('cpu')
+    eos_ranks = eos_ranks.to('cpu')
     if top_logprobs is not None and top_token_ids is not None:
         top_logprobs = top_logprobs.to('cpu')
         top_token_ids = top_token_ids.to('cpu')
@@ -806,12 +814,12 @@ def _get_logprobs(
                                         sample_results):
         (prompt_logprobs, top_logprob_idx,
          selected_logprobs_idx) = _get_prompt_logprob_if_needed(
-             seq_group, selected_logprobs, ranks, top_token_ids, top_logprobs,
+             seq_group, selected_logprobs, ranks,  top_token_ids, top_logprobs,
              selected_logprobs_idx, top_logprob_idx)
         prompt_logprobs_per_seq_group.append(prompt_logprobs)
         (sampled_logprobs, top_logprob_idx,
          selected_logprobs_idx) = _get_sampled_logprob_if_needed(
-             seq_group, sample_result, selected_logprobs, logprobs, ranks,
+             seq_group, sample_result, selected_logprobs, logprobs, ranks, eos_ranks,
              top_token_ids, top_logprobs, selected_logprobs_idx,
              top_logprob_idx)
         sample_logprobs_per_seq_group.append(sampled_logprobs)
@@ -845,7 +853,6 @@ def _get_prompt_logprob_if_needed(
             len(next_prompt_tokens)].tolist()
         rank_items = ranks[selected_logprobs_idx:selected_logprobs_idx +
                            len(next_prompt_tokens)].tolist()
-
         for idx, token_id in enumerate(next_prompt_tokens):
             # Calculate the prompt logprob of the real prompt tokens.
             # {token_id: (logprob, rank_from_vocab)}
@@ -885,6 +892,7 @@ def _get_sampled_logprob_if_needed(
     selected_logprobs: torch.Tensor,
     logprobs: torch.Tensor,
     ranks: torch.Tensor,
+    eos_ranks: torch.Tensor,
     top_token_ids: torch.Tensor,
     top_logprobs: torch.Tensor,
     selected_logprobs_idx: int,
@@ -907,13 +915,14 @@ def _get_sampled_logprob_if_needed(
             len(next_token_ids)].tolist()
         rank_items = ranks[selected_logprobs_idx:selected_logprobs_idx +
                            len(next_token_ids)].tolist()
+        eos_rank_items = eos_ranks[selected_logprobs_idx:selected_logprobs_idx + len(next_token_ids)].tolist()
         for idx, (next_token_id,
                   parent_id) in enumerate(zip(next_token_ids, parent_seq_ids)):
             # Get the logprob of a sampled token.
             sampled_logprobs_dict = {
                 next_token_id: (selected_logprob_items[idx], rank_items[idx]),
                 seq_group.eos_token_id:
-                (eos_token_items[selected_logprobs_idx], rank_items[idx]),
+                (eos_token_items[selected_logprobs_idx], eos_rank_items[idx]),
             }
             # Get top K logprobs.
             if num_logprobs > 0:

@@ -77,6 +77,7 @@ class EngineArgs:
     model_loader_extra_config: Optional[dict] = None
     preemption_mode: Optional[str] = None
     iter_threshold: int = 1
+    waiting_iter_base: float = 1.0
     swap_out_partial_rate: float = 0.5
     execution_budget:int = 32768 
 
@@ -565,6 +566,14 @@ class EngineArgs:
         )
 
         parser.add_argument(
+            "--waiting-iter-base",
+            type=float,
+            default=EngineArgs.waiting_iter_base,
+            help=
+            'The base number of waiting iterations before the engine promotes a sequence from the waiting queue to the running queue.'
+        )
+
+        parser.add_argument(
             '--speculative-model',
             type=nullable_str,
             default=EngineArgs.speculative_model,
@@ -744,6 +753,7 @@ class EngineArgs:
             iter_threshold=self.iter_threshold,
             preemption_mode=self.preemption_mode,
             embedding_mode=model_config.embedding_mode,
+            waiting_iter_base=self.waiting_iter_base,
         )
         lora_config = LoRAConfig(
             max_lora_rank=self.max_lora_rank,

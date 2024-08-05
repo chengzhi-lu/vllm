@@ -1,6 +1,6 @@
-import asyncio
 import enum
 from math import ceil
+import numpy as np
 import os
 import random
 from itertools import accumulate
@@ -729,9 +729,9 @@ class Scheduler:
 
     def _schedule_infer_preemption(
         self,
-        running_queue: deque,
-        swapped_queue: deque,
-        waiting_queue: deque,
+        running_queue: deque[SequenceGroup],
+        swapped_queue: deque[SequenceGroup],
+        waiting_queue: deque[SequenceGroup],
         budget: SchedulingBudget,
         policy: Policy,
         enable_chunking: bool = False,
@@ -765,11 +765,7 @@ class Scheduler:
         """
         # create a copy of queues to avoid in-place modification
         total_queue = deque(running_queue + swapped_queue + waiting_queue)
-        if self.has_finished_seqs:
-            total_queue = policy.sorted_by_priority(self.avg_iter_time,
-                                                    total_queue,
-                                                    self.avg_block_size)
-            self.has_finished_seqs = False
+        total_waiting_queue = deque(swapped_queue+waiting_queue)
         self.enable_chunking = enable_chunking
 
         decode_seq_groups_running: List[SequenceGroup] = []
@@ -811,19 +807,52 @@ class Scheduler:
         total_seq_groups_list = total_queue
         gpu_block_capacity = self.block_manager.gpu_block_capacity
         tmp_total_block_size = 0
-        selected_running_seq_groups = []
-        selected_swapped_seq_groups = []
+        selected_running_seq_groups: List[SequenceGroup] = []
+        selected_swapped_seq_groups: List[SequenceGroup] = []
         running_seq_group_nums = 0
-
-        for sg in total_seq_groups_list:
+        if self.has_finished_seqs:
+            running_queue = policy.sorted_by_priority(self.avg_iter_time,
+                                                    running_queue,
+                                                    self.avg_block_size)
+            self.has_finished_seqs = False
+        for sg in running_queue:
             block_size = sg.total_token_block_size
             tmp_total_block_size += block_size
-            if tmp_total_block_size <= gpu_block_capacity and len(
-                    selected_running_seq_groups) < 128:
+            if tmp_total_block_size <= gpu_block_capacity:
+                sg.reset_waiting_iter_nums()
                 selected_running_seq_groups.append(sg)
                 running_seq_group_nums += 1
             else:
-                selected_swapped_seq_groups.append(sg)
+                # if sg.is_prefill() and running_seq_group_nums < 128:
+                #     sg.reset_waiting_iter_nums()
+                #     selected_running_seq_groups.append(sg) 
+                #     running_seq_group_nums += 1
+                # else:
+                    sg.update_waiting_iter_nums()
+                    selected_swapped_seq_groups.append(sg)
+                    total_waiting_queue.append(sg)
+        priorities = [seq_group.priority for seq_group in selected_swapped_seq_groups]
+        avg_priorities = np.mean(priorities) if len(priorities) > 0 else 1
+        if len(selected_swapped_seq_groups) > 0:
+            total_waiting_queue= policy.sorted_by_priority(avg_priorities,
+                                                total_waiting_queue,
+                                                self.avg_block_size)
+        for sg in total_waiting_queue:
+            block_size = sg.total_token_block_size
+            tmp_total_block_size += block_size
+            if tmp_total_block_size <= gpu_block_capacity: 
+                sg.reset_waiting_iter_nums()
+                selected_running_seq_groups.append(sg)
+                running_seq_group_nums += 1
+            else:
+                # if sg.is_prefill() and running_seq_group_nums < 128:
+                #     sg.reset_waiting_iter_nums()
+                #     selected_running_seq_groups.append(sg) 
+                #     running_seq_group_nums += 1
+                # else:
+                    sg.update_waiting_iter_nums()
+                    selected_swapped_seq_groups.append(sg)
+            
         self.avg_block_size = tmp_total_block_size / max(
             len(total_seq_groups_list), 1)
         for seq_group in selected_swapped_seq_groups:
@@ -1740,7 +1769,7 @@ class Scheduler:
             remaining_swapped, swapped_in, = self._schedule_swapped(
                 self.swapped, budget, curr_loras, policy)
 
-        elif self.scheduler_config.policy in ["inferpreempt"]:
+        elif self.scheduler_config.policy in ["inferpreempt","tfittradeoff"]:
             (remaining_running, remaining_swapped, remaining_waiting,
              running_scheduled, swapped_in,
              prefills, recomputed_token_nums) = \
@@ -1945,9 +1974,11 @@ class Scheduler:
         self.block_manager.free(seq)
 
     def free_finished_seq_groups(self) -> None:
+        running_queue_length = len(self.running)
         self.running = deque(seq_group for seq_group in self.running
                              if not seq_group.is_finished())
-        self.has_finished_seqs = True
+        if len(self.running) < running_queue_length:
+            self.has_finished_seqs = True
 
     def _allocate_and_set_running(self, seq_group: SequenceGroup) -> None:
         self.block_manager.allocate(seq_group)
