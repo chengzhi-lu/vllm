@@ -811,9 +811,9 @@ class Scheduler:
         selected_swapped_seq_groups: List[SequenceGroup] = []
         running_seq_group_nums = 0
         if self.has_finished_seqs:
-            running_queue = policy.sorted_by_priority(self.avg_iter_time,
+            running_queue = policy.sorted_by_priority(1,
                                                     running_queue,
-                                                    self.avg_block_size)
+                                                    0)
             self.has_finished_seqs = False
         for sg in running_queue:
             block_size = sg.total_token_block_size
@@ -823,20 +823,17 @@ class Scheduler:
                 selected_running_seq_groups.append(sg)
                 running_seq_group_nums += 1
             else:
-                # if sg.is_prefill() and running_seq_group_nums < 128:
-                #     sg.reset_waiting_iter_nums()
-                #     selected_running_seq_groups.append(sg) 
-                #     running_seq_group_nums += 1
-                # else:
-                    sg.update_waiting_iter_nums()
-                    selected_swapped_seq_groups.append(sg)
-                    total_waiting_queue.append(sg)
-        priorities = [seq_group.priority for seq_group in selected_swapped_seq_groups]
-        avg_priorities = np.mean(priorities) if len(priorities) > 0 else 1
+                if sg.is_prefill():
+                    tmp_total_block_size -= block_size
+                sg.update_waiting_iter_nums()
+                selected_swapped_seq_groups.append(sg)
+                total_waiting_queue.append(sg)
+        priorities = [seq_group.priority for seq_group in selected_swapped_seq_groups if seq_group.priority > 0]
+        avg_priorities = np.max(priorities) if len(priorities) > 0 else 1
         if len(selected_swapped_seq_groups) > 0:
             total_waiting_queue= policy.sorted_by_priority(avg_priorities,
                                                 total_waiting_queue,
-                                                self.avg_block_size)
+                                                1)
         for sg in total_waiting_queue:
             block_size = sg.total_token_block_size
             tmp_total_block_size += block_size
@@ -845,13 +842,10 @@ class Scheduler:
                 selected_running_seq_groups.append(sg)
                 running_seq_group_nums += 1
             else:
-                # if sg.is_prefill() and running_seq_group_nums < 128:
-                #     sg.reset_waiting_iter_nums()
-                #     selected_running_seq_groups.append(sg) 
-                #     running_seq_group_nums += 1
-                # else:
-                    sg.update_waiting_iter_nums()
-                    selected_swapped_seq_groups.append(sg)
+                if sg.is_prefill():
+                    tmp_total_block_size -= block_size
+                sg.update_waiting_iter_nums()
+                selected_swapped_seq_groups.append(sg)
             
         self.avg_block_size = tmp_total_block_size / max(
             len(total_seq_groups_list), 1)
@@ -1072,7 +1066,10 @@ class Scheduler:
         # In this case, the policy is responsible for deciding which sequence
         # groups to preempt.
         now = time.time()
-        running_queue = policy.sort_by_priority(now, running_queue)
+        if self.scheduler_config.policy == "tfittradeoff":
+            running_queue = policy.sorted_by_priority(0, running_queue, 0)
+        else:
+            running_queue = policy.sort_by_priority(now, running_queue)
         while running_queue:
             seq_group: SequenceGroup = running_queue[0]
             num_running_tokens = self._get_num_new_tokens(
@@ -1266,7 +1263,10 @@ class Scheduler:
         # In this case, the policy is responsible for deciding which sequence
         # groups to preempt.
         now = time.time()
-        running_queue = policy.sort_by_priority(now, running_queue)
+        if self.scheduler_config.policy == "tfittradeoff":
+            running_queue = policy.sorted_by_priority(0, running_queue, 0)
+        else:
+            running_queue = policy.sort_by_priority(now, running_queue)
         while running_queue:
             seq_group: SequenceGroup = running_queue[0]
             num_running_tokens = self._get_num_new_tokens(
@@ -1396,7 +1396,12 @@ class Scheduler:
         decode_seq_groups: List[ScheduledSequenceGroup] = []
         prefill_seq_groups: List[ScheduledSequenceGroup] = []
         now = time.time()
-        swapped_queue = policy.sort_by_priority(now, swapped_queue)
+        if self.scheduler_config.policy == "tfittradeoff":
+            priorities = [seq_group.priority for seq_group in swapped_queue if seq_group.priority > 0]
+            avg_priorities = np.mean(priorities) if len(priorities) > 0 else 1
+            swapped_queue = policy.sorted_by_priority(avg_priorities, swapped_queue, 1)
+        else:
+            swapped_queue = policy.sort_by_priority(now, swapped_queue)
         infeasible_seq_groups: List[SequenceGroup] = []
         leftover_swapped: Deque[SequenceGroup] = deque()
         while swapped_queue:
@@ -1549,7 +1554,12 @@ class Scheduler:
         # Copy the queue so that the input queue is not modified.
         waiting_queue = deque([s for s in waiting_queue])
         if policy is not None:
-            waiting_queue = policy.sort_by_priority(time.time(), waiting_queue)
+            if self.scheduler_config.policy == "tfittradeoff":
+                priorities = [seq_group.priority for seq_group in waiting_queue if seq_group.priority > 0]
+                avg_priorities = np.mean(priorities) if len(priorities) > 0 else 1
+                waiting_queue = policy.sorted_by_priority(avg_priorities, waiting_queue, 1)
+            else:
+                waiting_queue = policy.sort_by_priority(time.time(), waiting_queue)
         leftover_waiting_sequences: Deque[SequenceGroup] = deque()
         while self._passed_delay(time.time()) and waiting_queue:
             seq_group = waiting_queue[0]
@@ -1783,7 +1793,7 @@ class Scheduler:
             )
         else:
             remaining_running, running_scheduled, recomputed_token_nums = \
-                self._schedule_running_partial(self.running,
+                self._schedule_running(self.running,
                                        budget,
                                        curr_loras,
                                        policy,

@@ -240,17 +240,20 @@ class TFITTradeoff(Policy):
     #         priority = -expected_length
     #     return priority
 
-    def got_priority(
-        self,
-        avg_priorities: float, 
-        seq_group: SequenceGroup,
-        avg_block_size: float
-    ) -> float:
-        # decode_length = sum(seq.get_output_len() for seq in seq_group.seqs_dict.values())
-        decode_length = seq_group.seq_len
+    def _get_running_priority(self, seq_group: SequenceGroup):
         priority = seq_group.priority
+        # decode_length = sum(seq.get_output_len() for seq in seq_group.seqs_dict.values())
+        # avoid to swap long sequence or the sequence with high priority.
+        decode_length = seq_group.seq_len
+        priority = priority * decode_length/2000
+        return priority
+    
+    def _get_waiting_priority(self, avg_priorities: float, seq_group: SequenceGroup):
+        priority = seq_group.priority
+        decode_length = sum(seq.get_output_len() for seq in seq_group.seqs_dict.values())
+        max_eos_token_pos = -1
         if priority != -1000:
-            priority = priority * (decode_length + seq_group.metrics.waiting_iter_nums) /2000
+            priority = priority * (2000-decode_length+seq_group.metrics.waiting_iter_nums)/ 2000
         else:
             max_eos_token_pos = max(
                 (max(seq.get_eos_token_pos()) for seq in seq_group.seqs_dict.values()),
@@ -258,11 +261,25 @@ class TFITTradeoff(Policy):
             )
             if max_eos_token_pos > 0:
                 seq_group.priority = max_eos_token_pos/32000
-                priority = seq_group.priority * seq_group.seq_len/2000
+                priority = seq_group.priority  * seq_group.seq_len/2000
             else:
-                # seq_group.priority = int(math.log(max(seq_group.metrics.waiting_iter_nums, 1), int(seq_group.waiting_iter_base)))
-                # seq_group.priority = (int(math.pow(max(seq_group.metrics.waiting_iter_nums, 1), seq_group.waiting_iter_base)) + seq_group.seq_len)/ 2000
-                priority = avg_priorities * (len(seq_group.prompt_token_ids)+seq_group.metrics.waiting_iter_nums)/ 2000
+                # priority = avg_priorities * (len(seq_group.prompt_token_ids)+seq_group.metrics.waiting_iter_nums)/ 2000
+                # current length plus opportunity decoding length.
+                priority = avg_priorities * (seq_group.seq_len+seq_group.metrics.waiting_iter_nums)/ 2000
+        return priority
+
+
+
+    def got_priority(
+        self,
+        avg_priorities: float, 
+        seq_group: SequenceGroup,
+        avg_block_size: float
+    ) -> float:
+        if avg_block_size == 0:
+            priority = self._get_running_priority(seq_group)
+        else:
+            priority = self._get_waiting_priority(avg_priorities, seq_group)
         return priority
 
 
