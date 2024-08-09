@@ -112,7 +112,7 @@ class SamplingParams:
         best_of: Optional[int] = None,
         presence_penalty: float = 0.0,
         frequency_penalty: float = 0.0,
-        repetition_penalty: float = 1.0,
+        repetition_penalty: float = 2.0,
         temperature: float = 1.0,
         top_p: float = 1.0,
         top_k: int = -1,

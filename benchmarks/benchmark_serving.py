@@ -184,7 +184,9 @@ async def get_request(
     input_requests: List[Tuple[str, int, int]],
     request_rate: float,
 ) -> AsyncGenerator[Tuple[str, int, int], None]:
+    intervals = [np.random.exponential(1.0 / request_rate) for _ in input_requests]
     input_requests = iter(input_requests)
+    i=0
     for request in input_requests:
         yield request
 
@@ -192,10 +194,10 @@ async def get_request(
             # If the request rate is infinity, then we don't need to wait.
             continue
         # Sample the request interval from the exponential distribution.
-        interval = np.random.exponential(1.0 / request_rate)
+        interval = intervals[i] 
         # The next request will be sent after the interval.
         await asyncio.sleep(interval)
-
+        i+=1
 
 def calculate_metrics(
     input_requests: List[Tuple[str, int, int]],
@@ -678,7 +680,7 @@ if __name__ == "__main__":
     parser.add_argument("--scheduler-policy",
                         type=str,
                         default="fcfs",
-                        choices=["fcfs", "infer","sjmlfq", "inferpreempt","sjf"],
+                        choices=["fcfs", "infer","sjmlfq", "inferpreempt","sjf","tfittradeoff"],
                         help="Specify the scheduler policy.")
     parser.add_argument("--execution-counter",
                         type=int,

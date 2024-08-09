@@ -674,7 +674,8 @@ class SchedulerConfig:
         execution_budget: int = 32768,
         iter_threshold: int = 1,
         embedding_mode: Optional[bool] = False,
-        preemption_mode: Optional[str] = None
+        preemption_mode: Optional[str] = None,
+        waiting_iter_base: float = 1.0
     ) -> None:
         if max_num_batched_tokens is not None:
             self.max_num_batched_tokens = max_num_batched_tokens
@@ -708,6 +709,7 @@ class SchedulerConfig:
         self.preemption_mode = preemption_mode
         self.embedding_mode = embedding_mode
         self.preemption_mode = preemption_mode
+        self.waiting_iter_base= waiting_iter_base
 
         self._verify_args()
 
@@ -727,7 +729,7 @@ class SchedulerConfig:
                 f"max_num_batched_tokens ({self.max_num_batched_tokens}) must "
                 "be greater than or equal to max_num_seqs "
                 f"({self.max_num_seqs}).")
-        if self.policy not in ["fcfs", "ljf", "sjf", "utf", "random", "wtf","bff",'infer', 'sjmlfq', 'inferpreempt']:
+        if self.policy not in ["fcfs", "ljf", "sjf", "utf", "random", "wtf","bff",'infer', 'sjmlfq', 'inferpreempt','tfittradeoff']:
             raise NotImplementedError(
                 f"Scheduler policy {self.policy} is not implemented."
             )

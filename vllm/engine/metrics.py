@@ -340,8 +340,7 @@ class StatLogger:
         self.num_generation_tokens.append(stats.num_generation_tokens_iter)
         self.last_num_preemption_iter += stats.num_preemption_iter
         if stats.num_preemption_iter > 0:
-            logger.info("Num preemption: %d", self.last_num_preemption_iter)
-            logger.info("")
+            logger.debug("Num preemption: %d", self.last_num_preemption_iter)
         # Log locally every local_interval seconds.
         if self._local_interval_elapsed(stats.now):
             # Compute summary metrics for tracked stats (and log them

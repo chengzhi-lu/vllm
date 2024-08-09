@@ -258,7 +258,8 @@ class BlockSpaceManagerV1(BlockSpaceManager):
                 Device.CPU, block_size, num_cpu_blocks)
         # Mapping: seq_id -> BlockTable.
         self.block_tables: Dict[int, BlockTable] = {}
-
+        self.gpu_block_capacity = self.gpu_allocator.get_num_total_blocks(
+        ) - self.watermark_blocks
         # self.block_device_tables: Dict[int, Dict[int, Device]]={}
 
         # Mapping: req_id -> BlockTable
@@ -299,8 +300,9 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             return AllocStatus.LATER
 
     def can_allocate_infer(self, required_block_size: int) -> bool:
-        num_free_gpu_blocks = self.gpu_allocator.get_num_free_blocks()
-        return num_free_gpu_blocks - required_block_size >= self.watermark_blocks
+        num_total_gpu_blocks = self.gpu_allocator.get_num_total_blocks()
+        return num_total_gpu_blocks - required_block_size >= self.watermark_blocks
+
 
     def _allocate_sequence(self, \
                            seq: Sequence, \
@@ -369,7 +371,8 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         # Simple heuristic: If there is at least one free block
         # for each sequence, we can append.
         num_free_gpu_blocks = self.gpu_allocator.get_num_free_blocks()
-        num_seqs = seq_group.num_seqs(status=SequenceStatus.RUNNING) + pre_allocated_slots_num
+        num_seqs = seq_group.num_seqs(
+            status=SequenceStatus.RUNNING) + pre_allocated_slots_num
 
         return num_seqs <= num_free_gpu_blocks
 

@@ -280,7 +280,7 @@ def get_nvcc_cuda_version() -> Version:
     Adapted from https://github.com/NVIDIA/apex/blob/8b7a1ff183741dd8f9b87e7bafd04cfde99cea28/setup.py
     """
     assert CUDA_HOME is not None, "CUDA_HOME is not set"
-    nvcc_output = subprocess.check_output([CUDA_HOME + "/bin/nvcc", "-V"],
+    nvcc_output = subprocess.check_output([CUDA_HOME + "/bin/nvcc", "-V", "--default-stream per-thread"],
                                           universal_newlines=True)
     output = nvcc_output.split()
     release_idx = output.index("release") + 1

@@ -221,11 +221,12 @@ class LLMEngine:
         self.generation_config_fields = _load_generation_config_dict(
             model_config)
 
-        self.schedule_time: float=0.0
-        self.execution_time: float=0.0
-        self.swap_time: float=0.0
-        self.handle_output_time: float=0.0
-        self.total_count: int =  0
+        self.schedule_time: float = 0.0
+        self.execution_time: float = 0.0
+        self.swap_time: float = 0.0
+        self.handle_output_time: float = 0.0
+        self.total_count: int = 0
+        self.total_iteration_time: float = 0
 
         self.model_executor = executor_class(
             model_config=model_config,
@@ -291,11 +292,11 @@ class LLMEngine:
         if self.log_stats:
             self.stat_logger = StatLogger(
                 local_interval=_LOCAL_LOGGING_INTERVAL_SEC,
-                labels=dict(model_name=model_config.served_model_name, 
-                            scheduling_policy=self.scheduler_config.policy,
-                            swap_out_rate=self.scheduler_config.swap_out_partial_rate, 
-                            swap_policy=self.scheduler_config.swap_out_tokens_policy
-                            ),
+                labels=dict(
+                    model_name=model_config.served_model_name,
+                    scheduling_policy=self.scheduler_config.policy,
+                    swap_out_rate=self.scheduler_config.swap_out_partial_rate,
+                    swap_policy=self.scheduler_config.swap_out_tokens_policy),
                 max_model_len=self.model_config.max_model_len)
             self.stat_logger.info("cache_config", self.cache_config)
 
@@ -595,12 +596,13 @@ class LLMEngine:
             self.generation_config_fields)
 
         # Create the sequence group.
-        seq_group = SequenceGroup(request_id=request_id,
-                                  seqs=[seq],
-                                  arrival_time=arrival_time,
-                                  execution_budget=self.scheduler_config.execution_budget,
-                                  sampling_params=sampling_params,
-                                  lora_request=lora_request)
+        seq_group = SequenceGroup(
+            request_id=request_id,
+            seqs=[seq],
+            arrival_time=arrival_time,
+            execution_budget=self.scheduler_config.execution_budget,
+            sampling_params=sampling_params,
+            lora_request=lora_request)
 
         return seq_group
 
@@ -620,7 +622,8 @@ class LLMEngine:
                                   seqs=[seq],
                                   arrival_time=arrival_time,
                                   lora_request=lora_request,
-                                  pooling_params=pooling_params)
+                                  pooling_params=pooling_params,
+                                  waiting_iter_base=self.scheduler_config.waiting_iter_base)
         return seq_group
 
     def abort_request(self, request_id: Union[str, Iterable[str]]) -> None:
@@ -783,12 +786,13 @@ class LLMEngine:
             >>>     if not (engine.has_unfinished_requests() or example_inputs):
             >>>         break
         """
+        self.total_count += 1
         st = time.time()
         if self.et != 0:
             logger.debug("interval time:", self.et - st)
         seq_group_metadata_list, scheduler_outputs = self.scheduler.schedule()
         et = time.time()
-        self.schedule_time+=et-st
+        self.schedule_time += et - st
         # logger.debug(f"schedule time: {et - st}")
         st = time.time()
         if not scheduler_outputs.is_empty():
@@ -802,11 +806,13 @@ class LLMEngine:
             )
             output = self.model_executor.execute_model(
                 execute_model_req=execute_model_req)
+            self.swap_time += output[0].swap_time
         else:
             output = []
         et = time.time()
         # print(f"execute time: {et - st}")
         self.execution_time += et - st
+        self.total_iteration_time = self.execution_time - self.swap_time
         st = time.time()
         request_outputs = self._process_model_outputs(
             output,
@@ -832,6 +838,19 @@ class LLMEngine:
         self.et = time.time()
         # print(f"process time: {self.et - st}")
         self.handle_output_time += self.et - st
+        # print(f"Total schedule time: {self.schedule_time}, execution time: {self.execution_time}, handle output time: {self.handle_output_time}, swap time: {self.swap_time}, total iteration number is: {self.total_count},swap out block_num: {self.scheduler.total_swap_out_blocks}, swap out seq num: {self.scheduler.total_swap_out_seqs}, swap in block num: {self.scheduler.total_swap_in_blocks}, swap in seq num: {self.scheduler.total_swap_in_seqs}")
+        #logger.info(
+        #    "Total schedule time: %.1f s, execution time: %.1f s, "
+        #    "handle output time: %.1f s, swap time: %.1f s, "
+        #    "total iteration number: %d, "
+        #    "swap out block num: %d, swap out seq num: %d, "
+        #    "swap in block num: %d, swap in seq num: %d",
+        #    self.schedule_time, self.execution_time,
+        #    self.handle_output_time, self.swap_time,
+        #    self.total_count,
+        #    self.scheduler.total_swap_out_blocks, self.scheduler.total_swap_out_seqs,
+        #    self.scheduler.total_swap_in_blocks, self.scheduler.total_swap_in_seqs
+        #)
         return request_outputs
 
     def do_log_stats(
@@ -863,7 +882,7 @@ class LLMEngine:
         #   Scheduler State
         num_running_sys = len(self.scheduler.running)
         num_swapped_sys = len(self.scheduler.swapped)
-        num_partial_swapped_sys= len(self.scheduler.partial_swapped)
+        num_partial_swapped_sys = len(self.scheduler.partial_swapped)
         num_waiting_sys = len(self.scheduler.waiting)
 
         # Free internel memory in GPU blocks of the seq in waiting queue
@@ -905,8 +924,7 @@ class LLMEngine:
                                scheduler_outputs.preempted)
         num_preemption_tokens_iter = 0
         for seq_group in self.scheduler.swapped:
-            for seq in seq_group.get_seqs():
-                num_preemption_tokens_iter += seq.get_len()
+            num_preemption_tokens_iter = seq_group.seq_len
         # Request stats
         #   Latency
         time_e2e_requests: List[float] = []
