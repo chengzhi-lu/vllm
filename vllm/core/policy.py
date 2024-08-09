@@ -53,7 +53,7 @@ class MLFQ(Policy):
 class SkipJoinMLFQ(Policy):
     def __init__(self, quantum_ratio=2, starve_limit=1000):
         self.quantum_ratio = quantum_ratio # Q_i/Q_{i-1}
-        self.starve_limit = starve_limit
+        self.starve_limit = 5 # change to iter num
         self.min_quantum = 1000 # quantum of Q_1
 
     def get_highest_priority(self, first_iteration_time):
@@ -67,7 +67,7 @@ class SkipJoinMLFQ(Policy):
         return priority_level
 
     def get_priority(self, now: float, seq_group: SequenceGroup) -> float:
-        input_length = len(seq_group.seqs_dict)
+        input_length = len(seq_group.prompt_token_ids)
 
         # first_token_time = seq_group.metrics.first_token_time # Obtain the first_iteration_time for each job
         arrival_time = seq_group.metrics.arrival_time
@@ -76,9 +76,11 @@ class SkipJoinMLFQ(Policy):
         if not seq_group.current_priority: # Have been assigned with a priority?
             seq_group.current_priority = self.get_highest_priority(input_length)
         else:
-            if now-seq_group.metrics.first_scheduled_time > (2**(seq_group.current_priority-1))*self.min_quantum and not seq_group.promoted:
+            if seq_group.last_iter_time is None:
+                seq_group.last_iter_time = now - seq_group.metrics.last_token_time # when in prefill, last_token_time = arrival_time
+            if seq_group.last_iter_time > (2**(seq_group.current_priority-1))*self.min_quantum and not seq_group.promoted:
                 seq_group.current_priority += 1
-            elif seq_group.metrics.time_in_queue >= self.starve_limit:
+            elif seq_group.metrics.waiting_iter_nums >= self.starve_limit:
                 seq_group.current_priority = 1  # Promote to highest priority (Q1)
                 seq_group.promoted = 1 # has been promoted to the Q1
 

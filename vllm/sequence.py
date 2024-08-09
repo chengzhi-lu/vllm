@@ -497,6 +497,7 @@ class SequenceGroup:
         self.execution_budget = execution_budget
         self.execution_iters = 0
         self.execution_over_budget = False
+        self.last_iter_time = None
 
     @property
     def prompt(self) -> Optional[str]:
@@ -540,6 +541,7 @@ class SequenceGroup:
         # Otherwise return token latency.
         latency = now - self.metrics.last_token_time
         self.metrics.last_token_time = now
+        self.last_iter_time = latency
         return latency
 
     def maybe_set_first_token_time(self, time: float) -> None:
