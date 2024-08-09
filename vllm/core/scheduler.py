@@ -1778,17 +1778,9 @@ class Scheduler:
             # filling the budget with swapped out requests
             remaining_swapped, swapped_in, = self._schedule_swapped(
                 self.swapped, budget, curr_loras, policy)
-<<<<<<< HEAD
-            
-        elif self.scheduler_config.policy in ["inferpreempt", "sjmlfq"] :
-            (remaining_running, remaining_swapped, remaining_waiting, 
-             running_scheduled, swapped_in, 
-=======
-
-        elif self.scheduler_config.policy in ["inferpreempt","tfittradeoff"]:
+        elif self.scheduler_config.policy in ["inferpreempt","tfittradeoff", "sjmlfq"]:
             (remaining_running, remaining_swapped, remaining_waiting,
              running_scheduled, swapped_in,
->>>>>>> f634b871b43102d29c2bbee3547360df046e15c5
              prefills, recomputed_token_nums) = \
                 self._schedule_infer_preemption(
                 running_queue=self.running,
