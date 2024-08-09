@@ -70,15 +70,10 @@ class MLFQ(Policy):
 class SkipJoinMLFQ(Policy):
 
     def __init__(self, quantum_ratio=2, starve_limit=1000):
-<<<<<<< HEAD
         self.quantum_ratio = quantum_ratio # Q_i/Q_{i-1}
         self.starve_limit = 5 # change to iter num
         self.min_quantum = 1000 # quantum of Q_1
-=======
-        self.quantum_ratio = quantum_ratio  # Q_i/Q_{i-1}
-        self.starve_limit = starve_limit
-        self.min_quantum = 1000  # quantum of Q_1
->>>>>>> f634b871b43102d29c2bbee3547360df046e15c5
+
 
     def get_highest_priority(self, first_iteration_time):
         priority_level = 1  # the highest priority
@@ -101,15 +96,9 @@ class SkipJoinMLFQ(Policy):
             seq_group.current_priority = self.get_highest_priority(
                 input_length)
         else:
-<<<<<<< HEAD
             if seq_group.last_iter_time is None:
                 seq_group.last_iter_time = now - seq_group.metrics.last_token_time # when in prefill, last_token_time = arrival_time
             if seq_group.last_iter_time > (2**(seq_group.current_priority-1))*self.min_quantum and not seq_group.promoted:
-=======
-            if now - seq_group.metrics.first_scheduled_time > (
-                    2**(seq_group.current_priority -
-                        1)) * self.min_quantum and not seq_group.promoted:
->>>>>>> f634b871b43102d29c2bbee3547360df046e15c5
                 seq_group.current_priority += 1
             elif seq_group.metrics.waiting_iter_nums >= self.starve_limit:
                 seq_group.current_priority = 1  # Promote to highest priority (Q1)
