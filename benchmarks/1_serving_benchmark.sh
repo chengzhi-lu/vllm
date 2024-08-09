@@ -21,16 +21,10 @@ result_dir="/root/vllm/benchmarks/result"
 # swap_policies=(partial)
 declare -a scheduler_swap_policies
 # scheduler_swap_policies[0]="fcfs full"
-<<<<<<< HEAD
-# scheduler_swap_policies[1]="infer partial"
-scheduler_swap_policies[2]="fcfs partial"
-# scheduler_swap_policies[3]="sjf full"
-=======
 # scheduler_swap_policies[1]="sjf full"
 scheduler_swap_policies[2]="tfittradeoff full"
 # scheduler_swap_policies[3]="infer partial"
 # scheduler_swap_policies[4]="inferpreempt full"
->>>>>>> f634b871b43102d29c2bbee3547360df046e15c5
 
 preemption_mode="swap"
 gpu_memory_utilization=0.5
@@ -41,36 +35,6 @@ iter_theshold=15
 
 request_rates=(2)
 swap_out_partial_rates=(0.5)
-<<<<<<< HEAD
-gpu_devices=3
-for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do
-  for request_rate in "${request_rates[@]}"; do
-    for scheduler_swap_policy in "${scheduler_swap_policies[@]}"; do
-      element=(${scheduler_swap_policy})
-      policy=${element[0]}
-      swap_policy=${element[1]}
-      CUDA_VISIBLE_DEVICES=$gpu_devices taskset -c 10-11 python3 -m vllm.entrypoints.openai.api_server \
-       --model $model_name --swap-space $swap_space --preemption-mode $preemption_mode --scheduler-policy $policy \
-       --enable-chunked-prefill --max-num-batched-tokens $max_tokens --iter-threshold $iter_theshold --max-num-seqs $max_num_seqs --swap-out-tokens-policy $swap_policy --swap-out-partial-rate $swap_out_partial_rate --execution-budget $iter_theshold \
-       --gpu-memory-utilization $gpu_memory_utilization --disable-log-requests >api_server_${policy}_${swap_policy}.log 2>&1 &
-      pid=$!
-
-      # run benchmark and save the output to benchmark.log
-      python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
-        --dataset-name $dataset_name --request-rate $request_rate \
-        --num-prompts 100 --sharegpt-output-len 1000 \
-        --model $model_name --scheduler-policy $policy \
-        --save-result --result-dir $result_dir \
-        --metadata swap_space=$swap_space preemption_mode=$preemption_mode \
-        scheduler_policy=$policy gpu_memory_utilization=$gpu_memory_utilization \
-        max_num_seqs=$max_num_seqs max_tokens=$max_tokens swap_policy=$swap_policy \
-        iter_theshold=$iter_theshold swap_out_partial_rate=$swap_out_partial_rate >>benchmark.log 2>&1
-      sleep 5
-      kill $pid
-      python3 parse_log.py --policy $policy --swap-policy $swap_policy --result-dir $result_dir \
-        --execution-counter $COUNTER --request-rate $request_rate \
-        --swap-out-partial-rate $swap_out_partial_rate --model $model_name
-=======
 waiting_iter_base=(0.1)
 gpu_devices=1
 for i in {0..0}; do
@@ -103,7 +67,6 @@ for i in {0..0}; do
             --swap-out-partial-rate $swap_out_partial_rate --model $model_name
         done
       done
->>>>>>> f634b871b43102d29c2bbee3547360df046e15c5
     done
   done
 done
