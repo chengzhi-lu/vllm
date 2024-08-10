@@ -199,6 +199,23 @@ async def get_request(
         await asyncio.sleep(interval)
         i+=1
 
+async def get_request_duration(
+    input_requests: List[Tuple[str, int, int]],
+    request_rate: float,
+) -> AsyncGenerator[Tuple[str, int, int], None]:
+    st =time.time()
+    while time.time()-st<10*60:
+        request = input_requests[random.randint(0,len(input_requests)-1)]
+        yield request
+
+        if request_rate == float("inf") or request_rate == -1:
+            # If the request rate is infinity, then we don't need to wait.
+            continue
+        # Sample the request interval from the exponential distribution.
+        interval = np.random.exponential(1.0 / request_rate)
+        # The next request will be sent after the interval.
+        await asyncio.sleep(interval)
+
 def calculate_metrics(
     input_requests: List[Tuple[str, int, int]],
     outputs: List[RequestFuncOutput],

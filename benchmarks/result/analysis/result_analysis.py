@@ -40,7 +40,7 @@ def __(mo):
 @app.cell
 def __(base_dir, os):
     _date = "20240808"
-    _counters = [0, 1028, 1034, 1035, 1037]
+    _counters = [0]
     e2e_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
     ]
@@ -125,9 +125,9 @@ def e2e_result(add_num_annotation, e2e_result_dfs, pd, plt, sns):
     sns.set_style(style="whitegrid")
     sns.set_palette("deep")
     fig, axes = plt.subplots(
-        1,
         2,
-        figsize=(10, 2.5),
+        1,
+        figsize=(10, 6),
         dpi=150,
     )
     sns.barplot(
@@ -207,7 +207,7 @@ def __(e2e_result_dfs):
 def __():
     def get_metric_ratio(df):
         min_result = df["Value"].min()
-        df["Ratio"] = df["Value"] / min_result
+        df["Ratio"] = df["Value"] / 1
         return df
     return get_metric_ratio,
 
@@ -351,7 +351,7 @@ def __(
     # _long_df = _long_df[_long_df["metric_name"] == "P99"]
     show_legend = True
     # line_plot(_long_df)
-    barplot(_long_df, 10)
+    barplot(_long_df, 2)
     fig.tight_layout()
     plt.subplots_adjust(wspace=0.2, hspace=0.4)
 

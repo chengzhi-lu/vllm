@@ -1,6 +1,5 @@
 """A block manager that manages token blocks."""
 import math
-import numpy as np
 from abc import ABC, abstractmethod
 from itertools import count, takewhile
 from os.path import commonprefix
@@ -8,15 +7,13 @@ from typing import Dict, List, Optional
 from typing import Sequence as GenericSequence
 from typing import Set, Tuple
 
-from sympy import Li
-
 from vllm.block import BlockTable, PhysicalTokenBlock
 from vllm.core.block.utils import check_no_caching_or_swa_for_blockmgr_encdec
 from vllm.core.evictor_v1 import EvictionPolicy, Evictor, make_evictor
 from vllm.core.interfaces import AllocStatus, BlockSpaceManager
 from vllm.logger import init_logger
 from vllm.sequence import Sequence, SequenceGroup, SequenceStatus
-from vllm.utils import Device, time_it
+from vllm.utils import Device
 
 logger = init_logger(__name__)
 

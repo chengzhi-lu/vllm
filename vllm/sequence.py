@@ -514,7 +514,8 @@ class SequenceGroup:
         self.swap_time_unit = 0.00065
         self.expected_length = 0.0
         self.waiting_iter_base = waiting_iter_base
-        self.priority = -1000
+        self.priority_rate = -1000
+        self.max_length = self.sampling_params.max_tokens 
         self.weighted:Tuple[float,float] = (0,0)
 
     @property

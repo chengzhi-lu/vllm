@@ -1,5 +1,4 @@
 """A layer that samples the next tokens from the model's outputs."""
-from ast import In
 import itertools
 from typing import Dict, List, Optional, Tuple
 
@@ -66,7 +65,6 @@ class Sampler(nn.Module):
         (sampling_tensors, do_penalties, do_top_p_top_k,
          do_min_p) = SamplingTensors.from_sampling_metadata(
              sampling_metadata, vocab_size, logits.device, logits.dtype)
-
         # Apply presence and frequency penalties.
         if do_penalties:
             logits = _apply_penalties(logits, sampling_tensors.prompt_tokens,
@@ -74,7 +72,6 @@ class Sampler(nn.Module):
                                       sampling_tensors.presence_penalties,
                                       sampling_tensors.frequency_penalties,
                                       sampling_tensors.repetition_penalties)
-
         # Apply temperature scaling.
         # Use in-place division to avoid creating a new tensor.
         logits.div_(sampling_tensors.temperatures.unsqueeze_(dim=1))
@@ -90,6 +87,7 @@ class Sampler(nn.Module):
         logprobs = torch.log_softmax(logits, dim=-1, dtype=torch.float)
         probs = torch.exp(logprobs)
         # Sample the next tokens.
+        # st = time.time()
         sample_results, maybe_sampled_tokens_tensor = _sample(
             probs,
             logprobs,
@@ -98,7 +96,8 @@ class Sampler(nn.Module):
             include_gpu_probs_tensor=self.include_gpu_probs_tensor,
             modify_greedy_probs=self._should_modify_greedy_probs_inplace,
         )
-
+        # et = time.time()
+        # print(f"Sampling time: {et - st:.3f}s")
         if self.include_gpu_probs_tensor:
             assert maybe_sampled_tokens_tensor is not None
             on_device_tensors = (probs, logprobs, maybe_sampled_tokens_tensor)
@@ -112,7 +111,6 @@ class Sampler(nn.Module):
                                      prompt_logprobs,
                                      sample_logprobs,
                                      on_device_tensors=on_device_tensors)
-
     @property
     def _should_modify_greedy_probs_inplace(self) -> bool:
         """Whether or not the sampler should modify the probability distribution
@@ -466,7 +464,6 @@ def _sample_with_torch(
     sample_results_dict: Dict[int, Tuple[List[int], List[int]]] = {}
     sample_metadata = {}
     multinomial_samples = {}
-
     # Create output tensor for sampled token ids.
     if include_gpu_probs_tensor:
         sampled_token_ids_tensor = torch.empty(logprobs.shape[0],
@@ -484,7 +481,7 @@ def _sample_with_torch(
         if num_tokens == 0:
             continue
 
-        greedy_samples_cpu = torch.zeros(logprobs[sample_indices].shape[:-1],pin_memory=True,dtype=torch.long,device='cpu')
+        # greedy_samples_cpu = torch.zeros(logprobs[sample_indices].shape[:-1],pin_memory=True,dtype=torch.long,device='cpu')
         seq_group_id = categorized_seq_group_ids[sampling_type]
         seq_groups = [sampling_metadata.seq_groups[i] for i in seq_group_id]
         sample_metadata[sampling_type] = (seq_group_id, seq_groups)
@@ -530,7 +527,6 @@ def _sample_with_torch(
             beam_search_logprobs = logprobs[sample_indices]
         else:
             raise ValueError(f"Unsupported sampling type: {sampling_type}")
-
     # GPU<->CPU sync happens in the loop below.
     # This also converts the sample output to Python objects.
     for sampling_type in SamplingType:
@@ -539,10 +535,10 @@ def _sample_with_torch(
         (seq_group_id, seq_groups) = sample_metadata[sampling_type]
         if sampling_type == SamplingType.GREEDY:
             # st = time.time()
-            greedy_samples_cpu.copy_(greedy_samples)
-            sample_results = _greedy_sample(seq_groups, greedy_samples_cpu)
+            # greedy_samples_cpu.copy_(greedy_samples)
             # et = time.time()
-            # print(f"greedy sample time is: {et - st}")
+            # print(f"greedy sample time is: {et - st}, greedy_sample.shape is: {greedy_samples.shape}, contigous: {greedy_samples.is_contiguous()}")
+            sample_results = _greedy_sample(seq_groups, greedy_samples)
         elif sampling_type in (SamplingType.RANDOM, SamplingType.RANDOM_SEED):
             sample_results = _random_sample(seq_groups,
                                             multinomial_samples[sampling_type])
@@ -550,7 +546,6 @@ def _sample_with_torch(
             sample_results = _beam_search_sample(seq_groups,
                                                  beam_search_logprobs)
         sample_results_dict.update(zip(seq_group_id, sample_results))
-
     sample_results = [
         sample_results_dict.get(i, ([], []))
         for i in range(len(sampling_metadata.seq_groups))
@@ -641,7 +636,7 @@ def _sample_with_triton_kernel(
 def _sample(
     probs: torch.Tensor, logprobs: torch.Tensor,
     sampling_metadata: SamplingMetadata, sampling_tensors: SamplingTensors,
-    include_gpu_probs_tensor: bool, modify_greedy_probs: bool
+    include_gpu_probs_tensor: bool, modify_greedy_probs: bool, 
 ) -> Tuple[SampleResultType, Optional[torch.Tensor]]:
     """
     Args:
