@@ -199,6 +199,27 @@ async def get_request(
         await asyncio.sleep(interval)
         i+=1
 
+async def get_request_duration(
+    input_requests: List[Tuple[str, int, int]],
+    request_rate: float,
+    request_duration: float
+) -> AsyncGenerator[Tuple[str, int, int], None]:
+    intervals = [np.random.exponential(1.0 / request_rate) for _ in input_requests]
+    # input_requests = iter(input_requests)
+    st = time.time()
+    while(time.time() - st < request_duration):
+        # print(st)
+        request = input_requests[random.randint(0, len(input_requests) - 1)]
+    # for request in input_requests:
+        yield request
+        if request_rate == float("inf") or request_rate == -1:
+            # If the request rate is infinity, then we don't need to wait.
+            continue
+        # Sample the request interval from the exponential distribution.
+        interval = np.random.exponential(1.0 / request_rate)
+        # The next request will be sent after the interval.
+        await asyncio.sleep(interval)
+
 def calculate_metrics(
     input_requests: List[Tuple[str, int, int]],
     outputs: List[RequestFuncOutput],
@@ -212,6 +233,8 @@ def calculate_metrics(
     tpots = []
     ttfts = []
     latencies = []
+    print("length of the input_requests: ", len(input_requests))
+    print("length of the outputs: ", len(outputs))
     for i in range(len(outputs)):
         if outputs[i].success:
             # We use the tokenizer to count the number of output tokens for all
@@ -222,7 +245,8 @@ def calculate_metrics(
                 tokenizer(outputs[i].generated_text,
                           add_special_tokens=False).input_ids)
             actual_output_lens.append(output_len)
-            total_input += input_requests[i][1]
+            # print(i)
+            total_input += outputs[i].prompt_len
             if output_len > 1:
                 tpots.append(
                     (outputs[i].latency - outputs[i].ttft) / (output_len - 1))
@@ -273,6 +297,7 @@ async def benchmark(
     use_beam_search: bool,
     request_rate: float,
     disable_tqdm: bool,
+    request_duration: float
 ):
     if backend in ASYNC_REQUEST_FUNCS:
         request_func = ASYNC_REQUEST_FUNCS.get(backend)
@@ -303,7 +328,7 @@ async def benchmark(
 
     benchmark_start_time = time.perf_counter()
     tasks = []
-    async for request in get_request(input_requests, request_rate):
+    async for request in get_request_duration(input_requests, request_rate, request_duration):
         prompt, prompt_len, output_len = request
         request_func_input = RequestFuncInput(
             model=model_id,
@@ -494,6 +519,7 @@ def main(args: argparse.Namespace):
             use_beam_search=args.use_beam_search,
             request_rate=args.request_rate,
             disable_tqdm=args.disable_tqdm,
+            request_duration=args.request_duration
         ))
 
     # Save config and results to json
@@ -677,6 +703,14 @@ if __name__ == "__main__":
         help="Specify directory to save benchmark json results."
         "If not specified, results are saved in the current directory.",
     )
+
+    parser.add_argument(
+        "--request-duration",
+        type=float,
+        default=float("inf"),
+        help="the duration of sending requests(Seconds)",
+    )
+
     parser.add_argument("--scheduler-policy",
                         type=str,
                         default="fcfs",
@@ -686,5 +720,6 @@ if __name__ == "__main__":
                         type=int,
                         default=0,
                         help="Specify the execution counter.")
+    
     args = parser.parse_args()
     main(args)

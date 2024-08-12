@@ -23,8 +23,6 @@ declare -a scheduler_swap_policies
 scheduler_swap_policies[0]="fcfs full"
 # scheduler_swap_policies[1]="sjf full"
 # scheduler_swap_policies[2]="tfittradeoff full"
-# scheduler_swap_policies[3]="infer partial"
-# scheduler_swap_policies[4]="inferpreempt full"
 # scheduler_swap_policies[5]="sjmlfq full"
 
 preemption_mode="swap"
@@ -37,7 +35,7 @@ iter_theshold=15
 request_rates=(2)
 swap_out_partial_rates=(0.5)
 waiting_iter_base=(0.1)
-gpu_devices=3
+gpu_devices=1
 for i in {0..0}; do
   for waiting_iter in "${waiting_iter_base[@]}"; do
     for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do
@@ -55,7 +53,7 @@ for i in {0..0}; do
           # run benchmark and save the output to benchmark.log
           python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
             --dataset-name $dataset_name --request-rate $request_rate \
-            --num-prompts 200 --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
+            --num-prompts 10 --request-duration 20 --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
             --save-result --result-dir $result_dir \
             --metadata swap_space=$swap_space preemption_mode=$preemption_mode \
             scheduler_policy=$policy gpu_memory_utilization=$gpu_memory_utilization \
