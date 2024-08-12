@@ -203,8 +203,8 @@ async def get_request_duration(
     input_requests: List[Tuple[str, int, int]],
     request_rate: float,
 ) -> AsyncGenerator[Tuple[str, int, int], None]:
-    st =time.time()
-    while time.time()-st<10*60:
+    global count
+    while time.time()-st<10*60 and count < 1000:
         request = input_requests[random.randint(0,len(input_requests)-1)]
         yield request
 
@@ -213,6 +213,7 @@ async def get_request_duration(
             continue
         # Sample the request interval from the exponential distribution.
         interval = np.random.exponential(1.0 / request_rate)
+        count += 1
         # The next request will be sent after the interval.
         await asyncio.sleep(interval)
 
@@ -239,7 +240,7 @@ def calculate_metrics(
                 tokenizer(outputs[i].generated_text,
                           add_special_tokens=False).input_ids)
             actual_output_lens.append(output_len)
-            total_input += input_requests[i][1]
+            total_input += outputs[i].prompt_len 
             if output_len > 1:
                 tpots.append(
                     (outputs[i].latency - outputs[i].ttft) / (output_len - 1))
@@ -320,7 +321,7 @@ async def benchmark(
 
     benchmark_start_time = time.perf_counter()
     tasks = []
-    async for request in get_request(input_requests, request_rate):
+    async for request in get_request_duration(input_requests, request_rate):
         prompt, prompt_len, output_len = request
         request_func_input = RequestFuncInput(
             model=model_id,
@@ -561,6 +562,8 @@ def main(args: argparse.Namespace):
 
 
 if __name__ == "__main__":
+    st = time.time()
+    count = 0
     parser = argparse.ArgumentParser(
         description="Benchmark the online serving throughput.")
     parser.add_argument(

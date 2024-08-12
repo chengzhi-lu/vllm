@@ -821,11 +821,11 @@ class Scheduler:
                 selected_running_seq_groups.append(sg)
                 running_seq_group_nums += 1
             else:
-                if sg.is_prefill():
-                    tmp_total_block_size -= block_size
+                # if sg.is_prefill():
+                tmp_total_block_size -= block_size
                 sg.update_waiting_iter_nums()
                 selected_swapped_seq_groups.append(sg)
-                total_waiting_queue.append(sg)
+                # total_waiting_queue.append(sg)
         priorities = [
             seq_group.priority_rate for seq_group in selected_swapped_seq_groups
             if seq_group.priority_rate > 0
@@ -845,7 +845,7 @@ class Scheduler:
                 if sg.is_prefill():
                     tmp_total_block_size -= block_size
                 sg.update_waiting_iter_nums()
-                selected_swapped_seq_groups.append(sg)
+                # selected_swapped_seq_groups.append(sg)
 
         self.avg_block_size = tmp_total_block_size / max(
             len(total_seq_groups_list), 1)

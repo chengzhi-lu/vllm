@@ -161,39 +161,46 @@ class TFTLatencyTrade(Policy):
 
 class TFITTradeoff(Policy):
 
-    def get_waiting_index(self, seq_group: SequenceGroup, eos_probs: float):
-        # waiting index is the probability of the job
-        expected_length = seq_group.expected_length
-        if expected_length == 0:
-            seq_len = seq_group.seq_len
-            value = 1 - eos_probs
-            n = 15
-            expect_remaining_length = value * (
-                (1 + n * value ** (n + 1) - (n + 1) * (value**n)) / (((1 - value) ** 2))
-            )
-            # index = -seq_group.metrics.waiting_iter_nums**2 / math.sqrt(expect_remaining_length)
-            seq_group.expected_length = seq_len + expect_remaining_length
-            expected_length = seq_len + expect_remaining_length
-        index = -expected_length
-        return index
-
-    def _get_running_priority(self, seq_group: SequenceGroup):
-        priority = seq_group.priority_rate
+    def _get_running_priority(self,avg_priority_rate:float, seq_group: SequenceGroup):
+        priority_rate = seq_group.priority_rate
         # decode_length = sum(seq.get_output_len() for seq in seq_group.seqs_dict.values())
-        # avoid to swap long sequence or the sequence with high priority.
         decode_length = seq_group.seq_len
-        priority = priority * decode_length / seq_group.max_length
+        # priority = priority_rate * decode_length / seq_group.max_length
+        # avoid to swap long sequence or the sequence with high priority.
+        if priority_rate != -1000:
+            priority = priority_rate * seq_group.seq_len / seq_group.max_length
+        # else:
+        #     priority = 1*decode_length/seq_group.max_length
+        else:
+            max_eos_token_pos = max(
+                    (max(seq.get_eos_token_pos()) for seq in seq_group.seqs_dict.values()),
+                    default=-1,
+                )
+            if max_eos_token_pos > 0:
+                seq_group.priority_rate = max_eos_token_pos / 32000
+                priority = (
+                    seq_group.priority_rate
+                    * seq_group.seq_len 
+                    / seq_group.max_length
+                )
+            else:
+                priority = (
+                    avg_priority_rate
+                    * seq_group.seq_len
+                    / seq_group.max_length
+                )
+            
         return priority
 
-    def _get_waiting_priority(self, avg_priorities: float, seq_group: SequenceGroup):
-        priority = seq_group.priority_rate
+    def _get_waiting_priority(self, avg_priority_rate: float, seq_group: SequenceGroup):
+        priority_rate = seq_group.priority_rate
         decode_length = sum(
             seq.get_output_len() for seq in seq_group.seqs_dict.values()
         )
         max_eos_token_pos = -1
-        if priority != -1000:
+        if priority_rate != -1000:
             priority = (
-                priority
+               priority_rate 
                 * (
                     seq_group.max_length
                     - decode_length
@@ -209,27 +216,26 @@ class TFITTradeoff(Policy):
             if max_eos_token_pos > 0:
                 seq_group.priority_rate = max_eos_token_pos / 32000
                 priority = (
-                    seq_group.priority_rate
-                    * (seq_group.seq_len + seq_group.metrics.waiting_iter_nums)
+                    seq_group.priority_rate *seq_group.seq_len
                     / seq_group.max_length
                 )
             else:
                 # priority = avg_priorities * (len(seq_group.prompt_token_ids)+seq_group.metrics.waiting_iter_nums)/ 2000
                 # current length plus opportunity decoding length.
                 priority = (
-                    avg_priorities
+                    avg_priority_rate
                     * (seq_group.seq_len + seq_group.metrics.waiting_iter_nums)
                     / seq_group.max_length
                 )
         return priority
 
     def got_priority(
-        self, avg_priorities: float, seq_group: SequenceGroup, avg_block_size: float
+        self, avg_priority_rate: float, seq_group: SequenceGroup, avg_block_size: float
     ) -> float:
         if avg_block_size == 0:
-            priority = self._get_running_priority(seq_group)
+            priority = self._get_running_priority(avg_priority_rate, seq_group)
         else:
-            priority = self._get_waiting_priority(avg_priorities, seq_group)
+            priority = self._get_waiting_priority(avg_priority_rate, seq_group)
         return priority
 
 
