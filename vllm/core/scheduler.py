@@ -390,7 +390,7 @@ class Scheduler:
 
         # self.partial_swapped_values:SortedKeyList[(int, SequenceGroup)]=SortedKeyList(key=lambda x: x[0])
         self.partial_swapped_values: List[Tuple[int, str]] = []
-        self.seq_group_for_preempted: Tuple[SequenceGroup, int] = None
+        self.seq_group_for_preempted: Tuple[SequenceGroup, int] = ()
 
         self.total_swap_out_blocks = 0
         self.total_swap_in_blocks = 0
@@ -729,9 +729,9 @@ class Scheduler:
 
     def _schedule_infer_preemption(
         self,
-        running_queue: deque[SequenceGroup],
-        swapped_queue: deque[SequenceGroup],
-        waiting_queue: deque[SequenceGroup],
+        running_queue: Deque[SequenceGroup],
+        swapped_queue: Deque[SequenceGroup],
+        waiting_queue: Deque[SequenceGroup],
         budget: SchedulingBudget,
         policy: Policy,
         enable_chunking: bool = False,
@@ -765,7 +765,7 @@ class Scheduler:
         """
         # create a copy of queues to avoid in-place modification
         total_queue = deque(running_queue + swapped_queue + waiting_queue)
-        total_waiting_queue = deque(swapped_queue+waiting_queue)
+        total_waiting_queue = deque(swapped_queue + waiting_queue)
         self.enable_chunking = enable_chunking
 
         decode_seq_groups_running: List[SequenceGroup] = []
@@ -811,11 +811,30 @@ class Scheduler:
         selected_swapped_seq_groups: List[SequenceGroup] = []
         running_seq_group_nums = 0
         if self.has_finished_seqs:
-            running_queue = policy.sorted_by_priority(1,
-                                                    running_queue,
-                                                    0)
+            running_queue = policy.sorted_by_priority(1, running_queue, 0)
             self.has_finished_seqs = False
         for sg in running_queue:
+            block_size = sg.total_token_block_size
+            tmp_total_block_size += block_size
+            if tmp_total_block_size <= gpu_block_capacity:
+                sg.reset_waiting_iter_nums()
+                selected_running_seq_groups.append(sg)
+                running_seq_group_nums += 1
+            else:
+                # if sg.is_prefill():
+                tmp_total_block_size -= block_size
+                sg.update_waiting_iter_nums()
+                selected_swapped_seq_groups.append(sg)
+                # total_waiting_queue.append(sg)
+        priorities = [
+            seq_group.priority_rate for seq_group in selected_swapped_seq_groups
+            if seq_group.priority_rate > 0
+        ]
+        avg_priorities = np.mean(priorities) if len(priorities) > 0 else 1
+        if len(selected_swapped_seq_groups) > 0:
+            total_waiting_queue = policy.sorted_by_priority(
+                avg_priorities, total_waiting_queue, 1)
+        for sg in total_waiting_queue:
             block_size = sg.total_token_block_size
             tmp_total_block_size += block_size
             if tmp_total_block_size <= gpu_block_capacity:
@@ -826,27 +845,8 @@ class Scheduler:
                 if sg.is_prefill():
                     tmp_total_block_size -= block_size
                 sg.update_waiting_iter_nums()
-                selected_swapped_seq_groups.append(sg)
-                total_waiting_queue.append(sg)
-        priorities = [seq_group.priority for seq_group in selected_swapped_seq_groups if seq_group.priority > 0]
-        avg_priorities = np.max(priorities) if len(priorities) > 0 else 1
-        if len(selected_swapped_seq_groups) > 0:
-            total_waiting_queue= policy.sorted_by_priority(avg_priorities,
-                                                total_waiting_queue,
-                                                1)
-        for sg in total_waiting_queue:
-            block_size = sg.total_token_block_size
-            tmp_total_block_size += block_size
-            if tmp_total_block_size <= gpu_block_capacity: 
-                sg.reset_waiting_iter_nums()
-                selected_running_seq_groups.append(sg)
-                running_seq_group_nums += 1
-            else:
-                if sg.is_prefill():
-                    tmp_total_block_size -= block_size
-                sg.update_waiting_iter_nums()
-                selected_swapped_seq_groups.append(sg)
-            
+                # selected_swapped_seq_groups.append(sg)
+
         self.avg_block_size = tmp_total_block_size / max(
             len(total_seq_groups_list), 1)
         for seq_group in selected_swapped_seq_groups:
@@ -1397,9 +1397,13 @@ class Scheduler:
         prefill_seq_groups: List[ScheduledSequenceGroup] = []
         now = time.time()
         if self.scheduler_config.policy == "tfittradeoff":
-            priorities = [seq_group.priority for seq_group in swapped_queue if seq_group.priority > 0]
+            priorities = [
+                seq_group.priority for seq_group in swapped_queue
+                if seq_group.priority > 0
+            ]
             avg_priorities = np.mean(priorities) if len(priorities) > 0 else 1
-            swapped_queue = policy.sorted_by_priority(avg_priorities, swapped_queue, 1)
+            swapped_queue = policy.sorted_by_priority(avg_priorities,
+                                                      swapped_queue, 1)
         else:
             swapped_queue = policy.sort_by_priority(now, swapped_queue)
         infeasible_seq_groups: List[SequenceGroup] = []
@@ -1555,11 +1559,17 @@ class Scheduler:
         waiting_queue = deque([s for s in waiting_queue])
         if policy is not None:
             if self.scheduler_config.policy == "tfittradeoff":
-                priorities = [seq_group.priority for seq_group in waiting_queue if seq_group.priority > 0]
-                avg_priorities = np.mean(priorities) if len(priorities) > 0 else 1
-                waiting_queue = policy.sorted_by_priority(avg_priorities, waiting_queue, 1)
+                priorities = [
+                    seq_group.priority for seq_group in waiting_queue
+                    if seq_group.priority > 0
+                ]
+                avg_priorities = np.mean(
+                    priorities) if len(priorities) > 0 else 1
+                waiting_queue = policy.sorted_by_priority(
+                    avg_priorities, waiting_queue, 1)
             else:
-                waiting_queue = policy.sort_by_priority(time.time(), waiting_queue)
+                waiting_queue = policy.sort_by_priority(
+                    time.time(), waiting_queue)
         leftover_waiting_sequences: Deque[SequenceGroup] = deque()
         while self._passed_delay(time.time()) and waiting_queue:
             seq_group = waiting_queue[0]
@@ -2125,16 +2135,6 @@ class Scheduler:
         # asyncio.run(self._async_swap([],blocks_to_swap_out,[]))
         for seq in seq_group.get_seqs(status=SequenceStatus.RUNNING):
             seq.status = seq_group_status
-
-    async def _async_swap(self, blocks_to_swap_in: List[Tuple[int, int]],
-                          blocks_to_swap_out: List[Tuple[int, int]],
-                          blocks_to_copy: List[Tuple[int, int]]):
-        self.worker.swap_block(
-            1,
-            blocks_to_swap_in,
-            blocks_to_swap_out,
-            blocks_to_copy,
-        )
 
     def _passed_delay(self, now: float) -> bool:
         if self.prev_prompt:

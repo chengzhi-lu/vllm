@@ -207,7 +207,7 @@ async def get_request_duration(
     intervals = [np.random.exponential(1.0 / request_rate) for _ in input_requests]
     # input_requests = iter(input_requests)
     st = time.time()
-    while(time.time() - st < request_duration):
+    while(time.time() - st < request_duration) and count < 1000:
         # print(st)
         request = input_requests[random.randint(0, len(input_requests) - 1)]
     # for request in input_requests:
@@ -217,6 +217,7 @@ async def get_request_duration(
             continue
         # Sample the request interval from the exponential distribution.
         interval = np.random.exponential(1.0 / request_rate)
+        count += 1
         # The next request will be sent after the interval.
         await asyncio.sleep(interval)
 
@@ -570,6 +571,8 @@ def main(args: argparse.Namespace):
 
 
 if __name__ == "__main__":
+    st = time.time()
+    count = 0
     parser = argparse.ArgumentParser(
         description="Benchmark the online serving throughput.")
     parser.add_argument(

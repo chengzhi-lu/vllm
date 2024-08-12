@@ -20,9 +20,12 @@ result_dir="/root/vllm/benchmarks/result"
 # scheduler_policy=(infer)
 # swap_policies=(partial)
 declare -a scheduler_swap_policies
-scheduler_swap_policies[0]="fcfs full"
-# scheduler_swap_policies[1]="sjf full"
-# scheduler_swap_policies[2]="tfittradeoff full"
+scheduler_swap_policies[0]="tfittradeoff full"
+# scheduler_swap_policies[1]="fcfs full"
+# scheduler_swap_policies[2]="sjf full"
+# scheduler_swap_policies[3]="sjmlfq full"
+# scheduler_swap_policies[3]="infer partial"
+# scheduler_swap_policies[4]="inferpreempt full"
 # scheduler_swap_policies[5]="sjmlfq full"
 
 preemption_mode="swap"
