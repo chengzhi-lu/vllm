@@ -13,8 +13,8 @@ echo $COUNTER >$COUNTER_FILE
 # start vllm server
 model_name="meta-llama/Llama-2-13b-chat-hf"
 dataset_name="sharegpt"
-dataset_path="/root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
-result_dir="/root/vllm/benchmarks/result"
+dataset_path="/root/v1/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
+result_dir="/root/v1/vllm/benchmarks/result"
 # scheduler_policy=(fcfs)
 # swap_policies=(full)
 # scheduler_policy=(infer)
@@ -22,6 +22,7 @@ result_dir="/root/vllm/benchmarks/result"
 declare -a scheduler_swap_policies
 scheduler_swap_policies[0]="tfittradeoff full"
 # scheduler_swap_policies[1]="fcfs full"
+
 # scheduler_swap_policies[2]="sjf full"
 # scheduler_swap_policies[3]="sjmlfq full"
 # scheduler_swap_policies[3]="infer partial"
@@ -47,7 +48,7 @@ for i in {0..0}; do
           element=(${scheduler_swap_policy})
           policy=${element[0]}
           swap_policy=${element[1]}
-          CUDA_VISIBLE_DEVICES=$gpu_devices taskset -c 10-11 python3 -m vllm.entrypoints.openai.api_server \
+          CUDA_VISIBLE_DEVICES=$gpu_devices taskset -c 20-21 python3 -m vllm.entrypoints.openai.api_server \
             --model $model_name --swap-space $swap_space --preemption-mode $preemption_mode --scheduler-policy $policy \
             --enable-chunked-prefill --max-num-batched-tokens $max_tokens --iter-threshold $iter_theshold --max-num-seqs $max_num_seqs --swap-out-tokens-policy $swap_policy --swap-out-partial-rate $swap_out_partial_rate --execution-budget $iter_theshold \
             --gpu-memory-utilization $gpu_memory_utilization --waiting-iter-base $waiting_iter --disable-log-requests >api_server_${policy}_${swap_policy}.log 2>&1 &
@@ -56,7 +57,7 @@ for i in {0..0}; do
           # run benchmark and save the output to benchmark.log
           python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
             --dataset-name $dataset_name --request-rate $request_rate \
-            --num-prompts 10 --request-duration 20 --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
+            --num-prompts 500 --request-duration 600 --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
             --save-result --result-dir $result_dir \
             --metadata swap_space=$swap_space preemption_mode=$preemption_mode \
             scheduler_policy=$policy gpu_memory_utilization=$gpu_memory_utilization \

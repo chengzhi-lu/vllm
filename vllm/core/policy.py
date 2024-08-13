@@ -163,12 +163,13 @@ class TFITTradeoff(Policy):
 
     def _get_running_priority(self,avg_priority_rate:float, seq_group: SequenceGroup):
         priority_rate = seq_group.priority_rate
-        # decode_length = sum(seq.get_output_len() for seq in seq_group.seqs_dict.values())
-        decode_length = seq_group.seq_len
+        decode_length = sum(seq.get_output_len() for seq in seq_group.seqs_dict.values())
+        # decode_length = seq_group.seq_len
         # priority = priority_rate * decode_length / seq_group.max_length
         # avoid to swap long sequence or the sequence with high priority.
         if priority_rate != -1000:
             priority = priority_rate * seq_group.seq_len / seq_group.max_length
+            # priority = priority_rate * seq_group.seq_len 
         # else:
         #     priority = 1*decode_length/seq_group.max_length
         else:
@@ -177,16 +178,19 @@ class TFITTradeoff(Policy):
                     default=-1,
                 )
             if max_eos_token_pos > 0:
-                seq_group.priority_rate = max_eos_token_pos / 32000
+                seq_group.priority_rate = (32000-max_eos_token_pos) / 32000
+                # seq_group.priority_rate = max_eos_token_pos / 32000
                 priority = (
                     seq_group.priority_rate
-                    * seq_group.seq_len 
+                    # * (seq_group.max_length - decode_length) 
+                    * decode_length
                     / seq_group.max_length
                 )
             else:
                 priority = (
                     avg_priority_rate
-                    * seq_group.seq_len
+                    # * (seq_group.max_length - decode_length) 
+                    * decode_length
                     / seq_group.max_length
                 )
             
@@ -214,9 +218,10 @@ class TFITTradeoff(Policy):
                 default=-1,
             )
             if max_eos_token_pos > 0:
-                seq_group.priority_rate = max_eos_token_pos / 32000
+                seq_group.priority_rate = (32000 - max_eos_token_pos) / 32000
+                # seq_group.priority_rate = max_eos_token_pos / 32000
                 priority = (
-                    seq_group.priority_rate *seq_group.seq_len
+                    seq_group.priority_rate * decode_length 
                     / seq_group.max_length
                 )
             else:
@@ -224,7 +229,7 @@ class TFITTradeoff(Policy):
                 # current length plus opportunity decoding length.
                 priority = (
                     avg_priority_rate
-                    * (seq_group.seq_len + seq_group.metrics.waiting_iter_nums)
+                    * (decode_length  + seq_group.metrics.waiting_iter_nums)
                     / seq_group.max_length
                 )
         return priority

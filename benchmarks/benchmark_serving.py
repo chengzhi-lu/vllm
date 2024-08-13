@@ -84,7 +84,7 @@ def sample_sharegpt_requests(
 
     # Shuffle the dataset.
     random.shuffle(dataset)
-
+    prompt_len_list = []
     # Filter out sequences that are too long or too short
     filtered_dataset: List[Tuple[str, int, int]] = []
     for i in range(len(dataset)):
@@ -97,16 +97,19 @@ def sample_sharegpt_requests(
         completion = dataset[i][1]
         completion_token_ids = tokenizer(completion).input_ids
         prompt_len = len(prompt_token_ids)
+        prompt_len_list.append(prompt_len)
         output_len = len(completion_token_ids
                          ) if fixed_output_len is None else fixed_output_len
-        if prompt_len < 4 or output_len < 4:
-            # Prune too short sequences.
-            continue
+        # if prompt_len < 4 or output_len < 4:
+        #     # Prune too short sequences.
+        #     continue
         # if prompt_len > 1024 or prompt_len + output_len > 2048:
         #     # Prune too long sequences.
         #     continue
         filtered_dataset.append((prompt, prompt_len, output_len))
-
+    import collections
+    prompt_len_list=collections.Counter(prompt_len_list)
+    print(prompt_len_list)
     return filtered_dataset
 
 
@@ -207,6 +210,7 @@ async def get_request_duration(
     intervals = [np.random.exponential(1.0 / request_rate) for _ in input_requests]
     # input_requests = iter(input_requests)
     st = time.time()
+    count = 0
     while(time.time() - st < request_duration) and count < 1000:
         # print(st)
         request = input_requests[random.randint(0, len(input_requests) - 1)]

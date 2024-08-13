@@ -813,7 +813,7 @@ class Scheduler:
         if self.has_finished_seqs:
             running_queue = policy.sorted_by_priority(1, running_queue, 0)
             self.has_finished_seqs = False
-        for sg in running_queue:
+        for sg in running_queue: # 1111111
             block_size = sg.total_token_block_size
             tmp_total_block_size += block_size
             if tmp_total_block_size <= gpu_block_capacity:
@@ -834,7 +834,7 @@ class Scheduler:
         if len(selected_swapped_seq_groups) > 0:
             total_waiting_queue = policy.sorted_by_priority(
                 avg_priorities, total_waiting_queue, 1)
-        for sg in total_waiting_queue:
+        for sg in total_waiting_queue: # 111111111111111111
             block_size = sg.total_token_block_size
             tmp_total_block_size += block_size
             if tmp_total_block_size <= gpu_block_capacity:
@@ -1397,9 +1397,13 @@ class Scheduler:
         prefill_seq_groups: List[ScheduledSequenceGroup] = []
         now = time.time()
         if self.scheduler_config.policy == "tfittradeoff":
+            # priorities = [
+            #     seq_group.priority for seq_group in swapped_queue
+            #     if seq_group.priority > 0
+            # ]
             priorities = [
-                seq_group.priority for seq_group in swapped_queue
-                if seq_group.priority > 0
+                seq_group.priority_rate for seq_group in swapped_queue
+                if seq_group.priority_rate > 0
             ]
             avg_priorities = np.mean(priorities) if len(priorities) > 0 else 1
             swapped_queue = policy.sorted_by_priority(avg_priorities,
@@ -1788,7 +1792,7 @@ class Scheduler:
             # filling the budget with swapped out requests
             remaining_swapped, swapped_in, = self._schedule_swapped(
                 self.swapped, budget, curr_loras, policy)
-        elif self.scheduler_config.policy in ["inferpreempt","tfittradeoff", "sjmlfq"]:
+        elif self.scheduler_config.policy in ["inferpreempt", "sjmlfq"]:
             (remaining_running, remaining_swapped, remaining_waiting,
              running_scheduled, swapped_in,
              prefills, recomputed_token_nums) = \
