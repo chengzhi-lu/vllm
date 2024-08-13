@@ -211,7 +211,7 @@ class TFITTradeoff(Policy):
                     + seq_group.metrics.waiting_iter_nums
                 )
                 / seq_group.max_length
-            )
+            ) # short sequence has higher priority.
         else:
             max_eos_token_pos = max(
                 (max(seq.get_eos_token_pos()) for seq in seq_group.seqs_dict.values()),
@@ -221,9 +221,9 @@ class TFITTradeoff(Policy):
                 seq_group.priority_rate = (32000 - max_eos_token_pos) / 32000
                 # seq_group.priority_rate = max_eos_token_pos / 32000
                 priority = (
-                    seq_group.priority_rate * decode_length 
+                    seq_group.priority_rate *decode_length
                     / seq_group.max_length
-                )
+                ) # long sequence has higher priority.
             else:
                 # priority = avg_priorities * (len(seq_group.prompt_token_ids)+seq_group.metrics.waiting_iter_nums)/ 2000
                 # current length plus opportunity decoding length.
@@ -231,7 +231,7 @@ class TFITTradeoff(Policy):
                     avg_priority_rate
                     * (decode_length  + seq_group.metrics.waiting_iter_nums)
                     / seq_group.max_length
-                )
+                ) # long sequence has higher priority.
         return priority
 
     def got_priority(
