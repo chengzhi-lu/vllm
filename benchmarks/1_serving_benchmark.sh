@@ -39,7 +39,7 @@ iter_theshold=15
 request_rates=(1)
 swap_out_partial_rates=(0.5)
 waiting_iter_base=(0.1)
-gpu_devices=1
+gpu_devices=3
 for i in {0..0}; do
   for waiting_iter in "${waiting_iter_base[@]}"; do
     for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do
@@ -68,6 +68,7 @@ for i in {0..0}; do
           python3 parse_log.py --policy $policy --swap-policy $swap_policy --result-dir $result_dir \
             --execution-counter $COUNTER --request-rate $request_rate \
             --swap-out-partial-rate $swap_out_partial_rate --model $model_name
+          # sleep 10
         done
       done
     done

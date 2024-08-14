@@ -207,7 +207,7 @@ async def get_request_duration(
     request_rate: float,
     request_duration: float
 ) -> AsyncGenerator[Tuple[str, int, int], None]:
-    intervals = [np.random.exponential(1.0 / request_rate) for _ in input_requests]
+    global count
     # input_requests = iter(input_requests)
     st = time.time()
     count = 0

@@ -485,6 +485,254 @@ def __(np, swap_block_nums, swap_times):
 
 @app.cell
 def __():
+    request_len_dist = {
+        12: 6,
+        8: 6,
+        9: 6,
+        16: 4,
+        11: 4,
+        14: 3,
+        29: 3,
+        5: 3,
+        358: 3,
+        25: 3,
+        15: 2,
+        64: 2,
+        17: 2,
+        55: 2,
+        19: 2,
+        33: 2,
+        434: 2,
+        26: 2,
+        303: 2,
+        32: 2,
+        157: 2,
+        79: 2,
+        241: 2,
+        380: 2,
+        20: 2,
+        65: 2,
+        21: 2,
+        47: 2,
+        1433: 1,
+        30: 1,
+        3511: 1,
+        28: 1,
+        391: 1,
+        479: 1,
+        383: 1,
+        1523: 1,
+        1277: 1,
+        242: 1,
+        668: 1,
+        3: 1,
+        518: 1,
+        507: 1,
+        986: 1,
+        275: 1,
+        488: 1,
+        843: 1,
+        88: 1,
+        909: 1,
+        770: 1,
+        491: 1,
+        444: 1,
+        49: 1,
+        90: 1,
+        918: 1,
+        403: 1,
+        1923: 1,
+        41: 1,
+        707: 1,
+        322: 1,
+        828: 1,
+        677: 1,
+        334: 1,
+        153: 1,
+        568: 1,
+        923: 1,
+        430: 1,
+        7: 1,
+        402: 1,
+        302: 1,
+        971: 1,
+        582: 1,
+        99: 1,
+        752: 1,
+        24: 1,
+        85: 1,
+        1088: 1,
+        200: 1,
+        750: 1,
+        594: 1,
+        48: 1,
+        407: 1,
+        1854: 1,
+        595: 1,
+        867: 1,
+        127: 1,
+        120: 1,
+        468: 1,
+        100: 1,
+        2: 1,
+        589: 1,
+        297: 1,
+        13: 1,
+        472: 1,
+        3235: 1,
+        257: 1,
+        279: 1,
+        36: 1,
+        123: 1,
+        23: 1,
+        722: 1,
+        1561: 1,
+        404: 1,
+        156: 1,
+        375: 1,
+        1372: 1,
+        585: 1,
+        884: 1,
+        348: 1,
+        397: 1,
+        579: 1,
+        70: 1,
+        51: 1,
+        22: 1,
+        133: 1,
+        61: 1,
+        945: 1,
+        1138: 1,
+        354: 1,
+        38: 1,
+        607: 1,
+        2374: 1,
+        741: 1,
+        2331: 1,
+        850: 1,
+        765: 1,
+        388: 1,
+        59: 1,
+        84: 1,
+        39: 1,
+        641: 1,
+        3346: 1,
+        414: 1,
+        762: 1,
+        46: 1,
+        342: 1,
+        40: 1,
+        1777: 1,
+        292: 1,
+        191: 1,
+        834: 1,
+        199: 1,
+        80: 1,
+        45: 1,
+        317: 1,
+        56: 1,
+        612: 1,
+        101: 1,
+        748: 1,
+        549: 1,
+        1467: 1,
+        75: 1,
+    }
+    return request_len_dist,
+
+
+@app.cell
+def __(pd, plt, request_len_dist, sns):
+    request_len_dist_df = pd.DataFrame(
+        list(request_len_dist.items()), columns=["Request Length", "Frequency"]
+    )
+    plt.figure(figsize=(10, 6), dpi=150)
+    sns.barplot(x="Request Length", y="Frequency", data=request_len_dist_df)
+    plt.xlabel("Request Length")
+    plt.ylabel("Frequency")
+    plt.title("Distribution of Request Lengths")
+    plt.xticks(rotation=90)
+    plt.grid(linestyle="--", alpha=0.5, axis="y")
+    plt.gca()
+    return request_len_dist_df,
+
+
+@app.cell
+def __(np, plt):
+    algorithms = ["SMIless", "BFS", "DFS", "A*", "OPT"]
+    times = [0.1, 146, 162, 20, 0]  # in milliseconds
+    cost_ratios = [1.32, 1.2, 1.1, 1.13, 1]
+
+    _fig, _ax = plt.subplots(figsize=(4, 2.5), dpi=150)
+    _ax2 = _ax.twinx()
+    bar_width = 0.4
+    index = np.arange(len(algorithms))
+
+    bar1 = _ax.bar(index, times, bar_width, label="Time")
+    bar2 = _ax2.bar(
+        index + bar_width,
+        cost_ratios,
+        bar_width,
+        label="Cost Ratio",
+        color="orange",
+    )
+    handles, labels = _ax.get_legend_handles_labels()
+    handles2, labels2 = _ax2.get_legend_handles_labels()
+    handles.extend(handles2)
+    labels.extend(labels2)
+    _ax.legend(handles, labels, loc='best')
+    _ax.set_xlabel("")
+    _ax.set_ylabel("Time (s)")
+    _ax.set_xticks(index + bar_width / 2)
+    _ax.set_xticklabels(algorithms)
+    _ax.set_yscale("log")
+    _ax.set_ylim(0, 1000)
+    _ax2.grid(False)
+    _ax2.set_ylim(0, 2.0)
+    for bar in bar1:
+        height = bar.get_height()
+        _ax.annotate(
+            f"{height}",
+            xy=(bar.get_x() + bar.get_width() / 2, height),
+            xytext=(0, 2),
+            textcoords="offset points",
+            rotation=40,
+            ha="center",
+            va="bottom",
+        )
+
+    for bar in bar2:
+        height = bar.get_height()
+        _ax2.annotate(
+            f"{height}",
+            xy=(bar.get_x() + bar.get_width() / 2, height),
+            xytext=(0, 2),
+            textcoords="offset points",
+            rotation=40,
+            ha="center",
+            va="bottom",
+        )
+
+    plt.gca()
+    return (
+        algorithms,
+        bar,
+        bar1,
+        bar2,
+        bar_width,
+        cost_ratios,
+        handles,
+        handles2,
+        height,
+        index,
+        labels,
+        labels2,
+        times,
+    )
+
+
+@app.cell
+def __():
     return
 
 
