@@ -221,7 +221,7 @@ class TFITTradeoff(Policy):
                 seq_group.priority_rate = (32000 - max_eos_token_pos) / 32000
                 # seq_group.priority_rate = max_eos_token_pos / 32000
                 priority = (
-                    seq_group.priority_rate *decode_length
+                    seq_group.priority_rate * seq_group.seq_len
                     / seq_group.max_length
                 ) # long sequence has higher priority.
             else:

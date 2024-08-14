@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.7.12"
+__generated_with = "0.7.20"
 app = marimo.App(width="full")
 
 
@@ -19,7 +19,7 @@ def __():
 
 @app.cell
 def __():
-    base_dir = "/root/vllm/benchmarks/result"
+    base_dir = "/root/v1/vllm/benchmarks/result"
     replace_name = {
         "fcfs": "FCFS",
         "infer": "Infer",
@@ -39,7 +39,7 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "20240808"
+    _date = "20240813"
     _counters = [0]
     e2e_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
@@ -207,7 +207,7 @@ def __(e2e_result_dfs):
 def __():
     def get_metric_ratio(df):
         min_result = df["Value"].min()
-        df["Ratio"] = df["Value"] / 1
+        df["Ratio"] = df["Value"] / min_result
         return df
     return get_metric_ratio,
 
@@ -367,8 +367,8 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "20240807"
-    _counters = [981]
+    _date = "20240813"
+    _counters = [0]
     detailed_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
     ]
