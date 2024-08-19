@@ -39,7 +39,7 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "20240813"
+    _date = "20240816"
     _counters = [0]
     e2e_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
@@ -127,7 +127,7 @@ def e2e_result(add_num_annotation, e2e_result_dfs, pd, plt, sns):
     fig, axes = plt.subplots(
         2,
         1,
-        figsize=(10, 6),
+        figsize=(10, 4),
         dpi=150,
     )
     sns.barplot(
@@ -218,6 +218,7 @@ def __(add_num_annotation, plt, sns):
         (_fig, _axes) = plt.subplots(
             figsize=(4 * 2, 2.5 * 2), dpi=150, nrows=2, ncols=2
         )
+        _long_df = _long_df[_long_df['metric_name'] != "Median"] 
         metric_types = _long_df["metric_type"].unique().tolist()
         metric_names = _long_df["metric_name"].unique().tolist()
         scheduler_policies = _long_df["scheduler_policy"].unique().tolist()
@@ -312,9 +313,9 @@ def __(add_num_annotation, plt, sns):
 
 @app.cell
 def __(
-    barplot,
     fig,
     get_metric_ratio,
+    line_plot,
     pd,
     plt,
     selected_columns,
@@ -350,8 +351,9 @@ def __(
     )
     # _long_df = _long_df[_long_df["metric_name"] == "P99"]
     show_legend = True
-    # line_plot(_long_df)
-    barplot(_long_df, 2)
+
+    line_plot(_long_df)
+    # barplot(_long_df, 2)
     fig.tight_layout()
     plt.subplots_adjust(wspace=0.2, hspace=0.4)
 
@@ -367,7 +369,7 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "20240813"
+    _date = "20240816"
     _counters = [0]
     detailed_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters

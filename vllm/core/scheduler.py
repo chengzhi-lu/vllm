@@ -1292,6 +1292,8 @@ class Scheduler:
 
                     # logger.warning(
                     # "preemption mode: ", self.preemption_mode)
+                    self.total_swap_out_blocks += victim_seq_group.total_token_block_size
+                    self.total_swap_out_seqs += 1
 
                     if self.preemption_mode:
                         preempted_mode = self._preempt(victim_seq_group,

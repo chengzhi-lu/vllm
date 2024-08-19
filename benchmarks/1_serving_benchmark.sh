@@ -20,23 +20,29 @@ result_dir="/root/v1/vllm/benchmarks/result"
 # scheduler_policy=(infer)
 # swap_policies=(partial)
 declare -a scheduler_swap_policies
-# scheduler_swap_policies[0]="tfittradeoff full"
-scheduler_swap_policies[1]="fcfs full"
-
-# scheduler_swap_policies[2]="sjf full"
+scheduler_swap_policies[0]="fcfs full"
+scheduler_swap_policies[1]="tfittradeoff full"
+scheduler_swap_policies[2]="sjf full"
 # scheduler_swap_policies[3]="sjmlfq full"
 # scheduler_swap_policies[3]="infer partial"
 # scheduler_swap_policies[4]="inferpreempt full"
 # scheduler_swap_policies[5]="sjmlfq full"
 
 preemption_mode="swap"
-gpu_memory_utilization=0.5
+gpu_memory_utilization=0.7 # 0.5, 0.7, 0.9
 max_num_seqs=128
 swap_space=64
 max_tokens=2048
 iter_theshold=15
 
-request_rates=(1)
+# request_rates[0]=0.5
+# request_rates[1]=1.0
+# request_rates[2]=2.0
+request_rates[3]=5.0
+# request_rates[4]=10.0
+# request_rates[5]=20.0
+
+# request_rates=(2.0)
 swap_out_partial_rates=(0.5)
 waiting_iter_base=(0.1)
 gpu_devices=1

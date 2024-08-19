@@ -211,7 +211,7 @@ async def get_request_duration(
     # input_requests = iter(input_requests)
     st = time.time()
     count = 0
-    while(time.time() - st < request_duration) and count < 1000:
+    while(time.time() - st < request_duration):
         # print(st)
         request = input_requests[random.randint(0, len(input_requests) - 1)]
     # for request in input_requests:
