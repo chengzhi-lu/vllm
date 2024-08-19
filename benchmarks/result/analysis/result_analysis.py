@@ -234,11 +234,7 @@ def __(add_num_annotation, plt, sns):
         (_fig, _axes) = plt.subplots(
             figsize=(4 * 2, 2 * 2), dpi=150, nrows=2, ncols=2
         )
-<<<<<<< HEAD
-        _long_df = _long_df[_long_df['metric_name'] != "Median"] 
-=======
         _long_df = _long_df[_long_df["metric_name"] != "Median"]
->>>>>>> 0caf0bfacb94abbf8b34c836e6c088a861258f2c
         metric_types = _long_df["metric_type"].unique().tolist()
         metric_names = _long_df["metric_name"].unique().tolist()
         scheduler_policies = _long_df["scheduler_policy"].unique().tolist()
@@ -332,17 +328,6 @@ def __(add_num_annotation, plt, sns):
 
 
 @app.cell
-<<<<<<< HEAD
-def __(
-    fig,
-    get_metric_ratio,
-    line_plot,
-    pd,
-    plt,
-    selected_columns,
-    selected_result,
-):
-=======
 def __(barplot, fig, pd, plt, selected_columns, selected_result):
     def get_metric_ratio(df):
         min_result = df["Value"].min()
@@ -350,7 +335,6 @@ def __(barplot, fig, pd, plt, selected_columns, selected_result):
         return df
 
 
->>>>>>> 0caf0bfacb94abbf8b34c836e6c088a861258f2c
     _result_df = pd.DataFrame(selected_result)
     _result_df = (
         _result_df.groupby(["scheduler_policy", "swap_policy", "request_rate"])
@@ -518,8 +502,6 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-<<<<<<< HEAD
-=======
     _date = "20240818"
     _counters = [2, 1315]
     execute_result_dir_names = [
@@ -706,7 +688,6 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
->>>>>>> 0caf0bfacb94abbf8b34c836e6c088a861258f2c
     _date = "20240816"
     _counters = [0]
     detailed_result_dir_names = [
