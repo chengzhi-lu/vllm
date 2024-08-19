@@ -759,15 +759,15 @@ class ModelRunner:
             return None
 
         # Sample the next token.
-        sample_st = time.time()
+        # sample_st = time.time()
         output = self.model.sample(
             logits=logits,
             sampling_metadata=sampling_metadata,
         )
-        et = time.time()
+        # et = time.time()
         # self.total_sample_time += et - st
 
-        print(f"Total time: {et - st:.3f}s, sample time: {et - sample_st:.3f}s, ratio: {100 * (et - sample_st) / (et - st):.2f}%")
+        # print(f"Total time: {et - st:.3f}s, sample time: {et - sample_st:.3f}s, ratio: {100 * (et - sample_st) / (et - st):.2f}%")
         # print(f"Total prepare input time: {self.total_prepare_input_time:.3f}s, total execute time: {self.total_execute_time:.3f}s, total compute logits time: {self.total_compute_logits_time:.3f}s, total sample time: {self.total_sample_time:.3f}s")
 
         return output

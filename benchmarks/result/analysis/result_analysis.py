@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.7.20"
+__generated_with = "0.7.12"
 app = marimo.App(width="full")
 
 
@@ -19,7 +19,7 @@ def __():
 
 @app.cell
 def __():
-    base_dir = "/root/v1/vllm/benchmarks/result"
+    base_dir = "/root/vllm/benchmarks/result"
     replace_name = {
         "fcfs": "FCFS",
         "infer": "Infer",
@@ -39,7 +39,7 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "20240813"
+    _date = "20240816"
     _counters = [0]
     e2e_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
@@ -93,7 +93,24 @@ def __():
 
 
 @app.cell
-def e2e_result(add_num_annotation, e2e_result_dfs, pd, plt, sns):
+def __():
+    def get_tp_ratio(df):
+        print(df)
+        min_result = df["output_throughput"].min()
+        df["output_throughput"] = df["output_throughput"] / min_result
+        return df
+    return get_tp_ratio,
+
+
+@app.cell(hide_code=True)
+def e2e_result(
+    add_num_annotation,
+    e2e_result_dfs,
+    get_tp_ratio,
+    pd,
+    plt,
+    sns,
+):
     e2e_result = {
         "scheduling_policies": [],
         "swap_policies": [],
@@ -122,12 +139,20 @@ def e2e_result(add_num_annotation, e2e_result_dfs, pd, plt, sns):
         .mean()
         .reset_index()
     )
+    _result_df = (
+        _result_df.groupby(
+            ["swap_policies", "request_rates"],
+            group_keys=False,
+        )
+        .apply(lambda row: get_tp_ratio(row))
+        .reset_index()
+    )
     sns.set_style(style="whitegrid")
     sns.set_palette("deep")
     fig, axes = plt.subplots(
         2,
         1,
-        figsize=(10, 6),
+        figsize=(10, 4),
         dpi=150,
     )
     sns.barplot(
@@ -161,7 +186,7 @@ def e2e_result(add_num_annotation, e2e_result_dfs, pd, plt, sns):
         width=0.7,
     )
     add_num_annotation(axes[1], rotation=90)
-    axes[1].set_ylim(0, 600)
+    # axes[1].set_ylim(0, 600\
     axes[1].set_ylabel("Throughput (Token/s)")
     axes[1].set_xlabel("Request Rate (r/s)")
     axes[1].grid(linestyle="--", alpha=0.5, axis="y")
@@ -203,21 +228,13 @@ def __(e2e_result_dfs):
     return selected_columns, selected_result, tmp_df
 
 
-@app.cell
-def __():
-    def get_metric_ratio(df):
-        min_result = df["Value"].min()
-        df["Ratio"] = df["Value"] / min_result
-        return df
-    return get_metric_ratio,
-
-
-@app.cell
+@app.cell(hide_code=True)
 def __(add_num_annotation, plt, sns):
     def line_plot(_long_df):
         (_fig, _axes) = plt.subplots(
-            figsize=(4 * 2, 2.5 * 2), dpi=150, nrows=2, ncols=2
+            figsize=(4 * 2, 2 * 2), dpi=150, nrows=2, ncols=2
         )
+        _long_df = _long_df[_long_df["metric_name"] != "Median"]
         metric_types = _long_df["metric_type"].unique().tolist()
         metric_names = _long_df["metric_name"].unique().tolist()
         scheduler_policies = _long_df["scheduler_policy"].unique().tolist()
@@ -269,7 +286,7 @@ def __(add_num_annotation, plt, sns):
 
     def barplot(_long_df, request_rate):
         (_fig, _ax) = plt.subplots(
-            figsize=(6 * 2, 2 * 2), dpi=150, nrows=2, ncols=2
+            figsize=(6 * 2, 1.5 * 2), dpi=150, nrows=2, ncols=2
         )
         metric_types = _long_df["metric_type"].unique().tolist()
         metric_names = _long_df["metric_name"].unique().tolist()
@@ -311,15 +328,13 @@ def __(add_num_annotation, plt, sns):
 
 
 @app.cell
-def __(
-    barplot,
-    fig,
-    get_metric_ratio,
-    pd,
-    plt,
-    selected_columns,
-    selected_result,
-):
+def __(barplot, fig, pd, plt, selected_columns, selected_result):
+    def get_metric_ratio(df):
+        min_result = df["Value"].min()
+        df["Ratio"] = df["Value"] / 1
+        return df
+
+
     _result_df = pd.DataFrame(selected_result)
     _result_df = (
         _result_df.groupby(["scheduler_policy", "swap_policy", "request_rate"])
@@ -356,18 +371,323 @@ def __(
     plt.subplots_adjust(wspace=0.2, hspace=0.4)
 
     plt.show()
-    return show_legend,
+    return get_metric_ratio, show_legend
 
 
 @app.cell
 def __(mo):
-    mo.md(r"""# Detailed Analysis""")
+    mo.md(r"""# Request Level Analysis""")
+    return
+
+
+@app.cell
+def __(e2e_result_dfs, np, pd):
+    request_level_result = pd.DataFrame()
+    for _df_name in e2e_result_dfs:
+        _tmp_df = e2e_result_dfs[_df_name].copy()
+        _tmp_df["request_level_p99_itls"] = _tmp_df["itls"].apply(
+            lambda row: 0 if len(row) == 0 else np.percentile(row, 90)
+        )
+        _tmp_df.drop(
+            columns=[
+                "model_id",
+                "swap_space",
+                "preemption_mode",
+                "max_num_seqs",
+                "swap_policy",
+                "iter_theshold",
+                "swap_out_partial_rate",
+                "waiting_iter_base",
+                "duration",
+                "completed",
+                "total_input_tokens",
+                "total_output_tokens",
+                "median_tpot_ms",
+                "median_itl_ms",
+                "median_lat_ms",
+                "input_lens",
+                "output_lens",
+                "itls",
+            ],
+            inplace=True,
+        )
+        request_level_result = pd.concat([request_level_result, _tmp_df], axis=0)
+    return request_level_result,
+
+
+@app.cell
+def __(plt, request_level_result, sns):
+    def get_p99_ratio(df):
+        min_result = df["itls_p99"].min()
+        df["itls_p99"] = df["itls_p99"] / min_result
+        return df
+
+
+    _request_level_itls_p99_max = (
+        request_level_result.groupby(["scheduler_policy", "request_rate"])
+        .apply(lambda _df: _df["request_level_p99_itls"].quantile(0.99))
+        .reset_index()
+    )
+    _request_level_itls_p99_max.columns = [
+        "scheduler_policy",
+        "request_rate",
+        "itls_p99",
+    ]
+    _request_level_itls_p99_max = (
+        _request_level_itls_p99_max.groupby(
+            ["request_rate"],
+            group_keys=False,
+        )
+        .apply(lambda row: get_p99_ratio(row))
+        .reset_index()
+    )
+    plt.figure(figsize=(4, 2.5), dpi=150)
+    sns.barplot(
+        data=_request_level_itls_p99_max,
+        x="request_rate",
+        y="itls_p99",
+        hue="scheduler_policy",
+    )
+    plt.legend(title="")
+    plt.grid(alpha=0.3, linestyle="--")
+    plt.ylabel("P99 ITL")
+    return get_p99_ratio,
+
+
+@app.cell
+def __(plt, request_level_result, sns):
+    def get_max_mean_ttft_ratio(df):
+        min_result = df["median_ttft_ms"].min()
+        df["median_ttft_ms"] = df["median_ttft_ms"] / min_result
+        return df
+
+
+    _request_level_mean_ttfts_max = (
+        request_level_result.groupby(["scheduler_policy", "request_rate"])
+        .agg({"median_ttft_ms": "median"})
+        .reset_index()
+    )
+    _request_level_mean_ttfts_max.columns = [
+        "scheduler_policy",
+        "request_rate",
+        "median_ttft_ms",
+    ]
+    _request_level_mean_ttfts_max = (
+        _request_level_mean_ttfts_max.groupby(
+            ["request_rate"],
+            group_keys=False,
+        )
+        .apply(lambda row: get_max_mean_ttft_ratio(row))
+        .reset_index()
+    )
+    plt.figure(figsize=(4, 2.5), dpi=150)
+    sns.barplot(
+        data=_request_level_mean_ttfts_max,
+        x="request_rate",
+        y="median_ttft_ms",
+        hue="scheduler_policy",
+    )
+    plt.legend(title="")
+    plt.grid(alpha=0.3, linestyle="--")
+    plt.ylabel("P99 ITL")
+    return get_max_mean_ttft_ratio,
+
+
+@app.cell
+def __(mo):
+    mo.md("""# GPU KV Cache Util""")
     return
 
 
 @app.cell
 def __(base_dir, os):
-    _date = "20240813"
+    _date = "20240818"
+    _counters = [2, 1315]
+    execute_result_dir_names = [
+        os.path.join(base_dir, _date, str(counter)) for counter in _counters
+    ]
+    return execute_result_dir_names,
+
+
+@app.cell(hide_code=True)
+def __(execute_result_dir_names, os, pd):
+    execute_result_dfs = {
+        "SJF": pd.DataFrame(),
+        "FCFS": pd.DataFrame(),
+        "TFITTradeoff": pd.DataFrame(),
+    }
+    for _dir_name in execute_result_dir_names:
+        for _file in os.listdir(_dir_name):
+            if (
+                _file.endswith(".csv")
+                and "_detailed" not in _file
+                and "2.0qps" in _file
+            ):
+                _detailed_result_df = pd.read_csv(os.path.join(_dir_name, _file))
+                _detailed_result_df["Cache Efficiency"] = (
+                    _detailed_result_df["Running"]
+                    / _detailed_result_df["GPU KV cache usage"]
+                )
+                if "sjf" in _file:
+                    execute_result_dfs["SJF"] = _detailed_result_df
+                elif "fcfs" in _file:
+                    execute_result_dfs["FCFS"] = _detailed_result_df
+                elif "tfittradeoff" in _file:
+                    execute_result_dfs["TFITTradeoff"] = _detailed_result_df
+    return execute_result_dfs,
+
+
+@app.cell(hide_code=True)
+def __(execute_result_dfs, plt, sns):
+    plt.figure(figsize=(16, 6), dpi=150)
+
+    # Subplot 1: Avg generation throughput
+    plt.subplot(2, 3, 1)
+    sns.lineplot(
+        data=execute_result_dfs["TFITTradeoff"],
+        x=execute_result_dfs["TFITTradeoff"].index,
+        y="Avg generation throughput",
+        label="TFIT",
+    )
+    sns.lineplot(
+        data=execute_result_dfs["FCFS"],
+        x=execute_result_dfs["FCFS"].index,
+        y="Avg generation throughput",
+        label="FCFS",
+    )
+    sns.lineplot(
+        data=execute_result_dfs["SJF"],
+        x=execute_result_dfs["SJF"].index,
+        y="Avg generation throughput",
+        label="SJF",
+    )
+    plt.title("Avg generation throughput")
+    plt.grid(alpha=0.5, linestyle="--")
+    # Subplot 2: Running
+    plt.subplot(2, 3, 2)
+    sns.lineplot(
+        data=execute_result_dfs["TFITTradeoff"],
+        x=execute_result_dfs["TFITTradeoff"].index,
+        y="Running",
+        label="TFIT",
+    )
+    sns.lineplot(
+        data=execute_result_dfs["FCFS"],
+        x=execute_result_dfs["FCFS"].index,
+        y="Running",
+        label="FCFS",
+    )
+    sns.lineplot(
+        data=execute_result_dfs["SJF"],
+        x=execute_result_dfs["SJF"].index,
+        y="Running",
+        label="SJF",
+    )
+    plt.title("Running")
+    plt.grid(alpha=0.5, linestyle="--")
+    # Subplot 3: Pending
+    plt.subplot(2, 3, 3)
+    sns.lineplot(
+        data=execute_result_dfs["TFITTradeoff"],
+        x=execute_result_dfs["TFITTradeoff"].index,
+        y="Pending",
+        label="TFIT",
+    )
+    sns.lineplot(
+        data=execute_result_dfs["FCFS"],
+        x=execute_result_dfs["FCFS"].index,
+        y="Pending",
+        label="FCFS",
+    )
+    sns.lineplot(
+        data=execute_result_dfs["SJF"],
+        x=execute_result_dfs["SJF"].index,
+        y="Pending",
+        label="SJF",
+    )
+    plt.title("Pending")
+    plt.grid(alpha=0.5, linestyle="--")
+    # Suplt.grid(alpha=0.5, linestyle='--')bplot 4: Swapped
+    plt.subplot(2, 3, 4)
+    sns.lineplot(
+        data=execute_result_dfs["TFITTradeoff"],
+        x=execute_result_dfs["TFITTradeoff"].index,
+        y="Swapped",
+        label="TFIT",
+    )
+    sns.lineplot(
+        data=execute_result_dfs["FCFS"],
+        x=execute_result_dfs["FCFS"].index,
+        y="Swapped",
+        label="FCFS",
+    )
+    sns.lineplot(
+        data=execute_result_dfs["SJF"],
+        x=execute_result_dfs["SJF"].index,
+        y="Swapped",
+        label="SJF",
+    )
+    plt.title("Swapped")
+    plt.grid(alpha=0.5, linestyle="--")
+    # Subplot 5: GPU KV cache usage
+    plt.subplot(2, 3, 5)
+    sns.lineplot(
+        data=execute_result_dfs["TFITTradeoff"],
+        x=execute_result_dfs["TFITTradeoff"].index,
+        y="GPU KV cache usage",
+        label="TFIT",
+    )
+    sns.lineplot(
+        data=execute_result_dfs["FCFS"],
+        x=execute_result_dfs["FCFS"].index,
+        y="GPU KV cache usage",
+        label="FCFS",
+    )
+    sns.lineplot(
+        data=execute_result_dfs["SJF"],
+        x=execute_result_dfs["SJF"].index,
+        y="GPU KV cache usage",
+        label="SJF",
+    )
+    plt.grid(alpha=0.5, linestyle="--")
+    # Subplot 6: KV Cache Efficiency
+    start_index = 4
+    plt.subplot(2, 3, 6)
+    sns.lineplot(
+        data=execute_result_dfs["TFITTradeoff"][start_index:],
+        x=execute_result_dfs["TFITTradeoff"].index[start_index:],
+        y="Cache Efficiency",
+        label="TFIT",
+    )
+    sns.lineplot(
+        data=execute_result_dfs["FCFS"][start_index:],
+        x=execute_result_dfs["FCFS"].index[start_index:],
+        y="Cache Efficiency",
+        label="FCFS",
+    )
+    sns.lineplot(
+        data=execute_result_dfs["SJF"][start_index:],
+        x=execute_result_dfs["SJF"].index[start_index:],
+        y="Cache Efficiency",
+        label="SJF",
+    )
+
+    plt.title("GPU KV cache usage")
+    plt.grid(alpha=0.5, linestyle="--")
+    plt.tight_layout()
+    plt.gca()
+    return start_index,
+
+
+@app.cell
+def __(mo):
+    mo.md(r"""<!-- # Detailed Analysis -->""")
+    return
+
+
+@app.cell
+def __(base_dir, os):
+    _date = "20240816"
     _counters = [0]
     detailed_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
@@ -375,7 +695,7 @@ def __(base_dir, os):
     return detailed_result_dir_names,
 
 
-@app.cell
+@app.cell(hide_code=True)
 def __(detailed_result_dir_names, os, pd):
     detailed_result_dfs = {
         "SJF": pd.DataFrame(),
@@ -452,209 +772,26 @@ def __(detailed_mean_result, plt, sns):
 
 
 @app.cell
-def __(detailed_result_dfs, plt, sns):
-    swap_times = []
-    swap_block_nums = []
-
-    for df in detailed_result_dfs.values():
-        swap_times.extend(df["swap time"])
-        swap_block_nums.extend(df["swap out block num"] + df["swap in block num"])
-
-    plt.figure(figsize=(4, 2.5), dpi=150)
-
-    sns.lineplot(x=swap_block_nums, y=swap_times, label="Swap Time")
-    # plt.title("Swap Time")
-    plt.xlabel("Swap Block Num")
-    plt.ylabel("Time")
-    plt.grid(True, alpha=0.3, linestyle="--")
-    plt.legend()
-
-
-    plt.gca()
-    return df, swap_block_nums, swap_times
-
-
-@app.cell
-def __(np, swap_block_nums, swap_times):
-    block_swap_out_time = []
-    for i in range(len(swap_times)):
-        block_swap_out_time.append(swap_times[i] / swap_block_nums[i])
-    print(np.mean(block_swap_out_time))
-    return block_swap_out_time, i
-
-
-@app.cell
 def __():
-    request_len_dist = {
-        12: 6,
-        8: 6,
-        9: 6,
-        16: 4,
-        11: 4,
-        14: 3,
-        29: 3,
-        5: 3,
-        358: 3,
-        25: 3,
-        15: 2,
-        64: 2,
-        17: 2,
-        55: 2,
-        19: 2,
-        33: 2,
-        434: 2,
-        26: 2,
-        303: 2,
-        32: 2,
-        157: 2,
-        79: 2,
-        241: 2,
-        380: 2,
-        20: 2,
-        65: 2,
-        21: 2,
-        47: 2,
-        1433: 1,
-        30: 1,
-        3511: 1,
-        28: 1,
-        391: 1,
-        479: 1,
-        383: 1,
-        1523: 1,
-        1277: 1,
-        242: 1,
-        668: 1,
-        3: 1,
-        518: 1,
-        507: 1,
-        986: 1,
-        275: 1,
-        488: 1,
-        843: 1,
-        88: 1,
-        909: 1,
-        770: 1,
-        491: 1,
-        444: 1,
-        49: 1,
-        90: 1,
-        918: 1,
-        403: 1,
-        1923: 1,
-        41: 1,
-        707: 1,
-        322: 1,
-        828: 1,
-        677: 1,
-        334: 1,
-        153: 1,
-        568: 1,
-        923: 1,
-        430: 1,
-        7: 1,
-        402: 1,
-        302: 1,
-        971: 1,
-        582: 1,
-        99: 1,
-        752: 1,
-        24: 1,
-        85: 1,
-        1088: 1,
-        200: 1,
-        750: 1,
-        594: 1,
-        48: 1,
-        407: 1,
-        1854: 1,
-        595: 1,
-        867: 1,
-        127: 1,
-        120: 1,
-        468: 1,
-        100: 1,
-        2: 1,
-        589: 1,
-        297: 1,
-        13: 1,
-        472: 1,
-        3235: 1,
-        257: 1,
-        279: 1,
-        36: 1,
-        123: 1,
-        23: 1,
-        722: 1,
-        1561: 1,
-        404: 1,
-        156: 1,
-        375: 1,
-        1372: 1,
-        585: 1,
-        884: 1,
-        348: 1,
-        397: 1,
-        579: 1,
-        70: 1,
-        51: 1,
-        22: 1,
-        133: 1,
-        61: 1,
-        945: 1,
-        1138: 1,
-        354: 1,
-        38: 1,
-        607: 1,
-        2374: 1,
-        741: 1,
-        2331: 1,
-        850: 1,
-        765: 1,
-        388: 1,
-        59: 1,
-        84: 1,
-        39: 1,
-        641: 1,
-        3346: 1,
-        414: 1,
-        762: 1,
-        46: 1,
-        342: 1,
-        40: 1,
-        1777: 1,
-        292: 1,
-        191: 1,
-        834: 1,
-        199: 1,
-        80: 1,
-        45: 1,
-        317: 1,
-        56: 1,
-        612: 1,
-        101: 1,
-        748: 1,
-        549: 1,
-        1467: 1,
-        75: 1,
-    }
-    return request_len_dist,
+    # swap_times = []
+    # swap_block_nums = []
+
+    # for df in detailed_result_dfs.values():
+    #     swap_times.extend(df["swap time"])
+    #     swap_block_nums.extend(df["swap out block num"] + df["swap in block num"])
+
+    # plt.figure(figsize=(4, 2.5), dpi=150)
+
+    # sns.lineplot(x=swap_block_nums, y=swap_times, label="Swap Time")
+    # # plt.title("Swap Time")
+    # plt.xlabel("Swap Block Num")
+    # plt.ylabel("Time")
+    # plt.grid(True, alpha=0.3, linestyle="--")
+    # plt.legend()
 
 
-@app.cell
-def __(pd, plt, request_len_dist, sns):
-    request_len_dist_df = pd.DataFrame(
-        list(request_len_dist.items()), columns=["Request Length", "Frequency"]
-    )
-    plt.figure(figsize=(10, 6), dpi=150)
-    sns.barplot(x="Request Length", y="Frequency", data=request_len_dist_df)
-    plt.xlabel("Request Length")
-    plt.ylabel("Frequency")
-    plt.title("Distribution of Request Lengths")
-    plt.xticks(rotation=90)
-    plt.grid(linestyle="--", alpha=0.5, axis="y")
-    plt.gca()
-    return request_len_dist_df,
+    # plt.gca()
+    return
 
 
 @app.cell
@@ -680,7 +817,7 @@ def __(np, plt):
     handles2, labels2 = _ax2.get_legend_handles_labels()
     handles.extend(handles2)
     labels.extend(labels2)
-    _ax.legend(handles, labels, loc='best')
+    _ax.legend(handles, labels, loc="best")
     _ax.set_xlabel("")
     _ax.set_ylabel("Time (s)")
     _ax.set_xticks(index + bar_width / 2)
@@ -729,6 +866,11 @@ def __(np, plt):
         labels2,
         times,
     )
+
+
+@app.cell
+def __():
+    return
 
 
 @app.cell

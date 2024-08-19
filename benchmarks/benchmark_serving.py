@@ -109,7 +109,6 @@ def sample_sharegpt_requests(
         filtered_dataset.append((prompt, prompt_len, output_len))
     import collections
     prompt_len_list=collections.Counter(prompt_len_list)
-    print(prompt_len_list)
     return filtered_dataset
 
 
