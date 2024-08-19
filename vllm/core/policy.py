@@ -19,7 +19,7 @@ class Policy:
         self,
         avg_priorities: float,
         seq_group: SequenceGroup,
-        avg_block_size: float,
+        pending_swapped_rate: float,
     ):
         pass
 
@@ -40,13 +40,13 @@ class Policy:
         self,
         avg_priorities: float,
         seq_groups: Deque[SequenceGroup],
-        avg_block_size: float,
+        pending_swapped_rate: float,
     ) -> Deque[SequenceGroup]:
         return deque(
             sorted(
                 seq_groups,
                 key=lambda seq_group: self.got_priority(
-                    avg_priorities, seq_group, avg_block_size
+                    avg_priorities, seq_group, pending_swapped_rate
                 ),
                 reverse=True,
             )
@@ -76,10 +76,9 @@ class MLFQ(Policy):
 class SkipJoinMLFQ(Policy):
 
     def __init__(self, quantum_ratio=2, starve_limit=1000):
-        self.quantum_ratio = quantum_ratio # Q_i/Q_{i-1}
-        self.starve_limit = 5 # change to iter num
-        self.min_quantum = 1000 # quantum of Q_1
-
+        self.quantum_ratio = quantum_ratio  # Q_i/Q_{i-1}
+        self.starve_limit = 5  # change to iter num
+        self.min_quantum = 1000  # quantum of Q_1
 
     def get_highest_priority(self, first_iteration_time):
         priority_level = 1  # the highest priority
@@ -143,7 +142,6 @@ class TFTLatencyTrade(Policy):
     ) -> float:
         eos_token_probs = []
         decoding_length = 0
-        seq_length = seq_group.seq_len
         # token_blocks = seq_group.total_token_block_size
         for _, seq in seq_group.seqs_dict.items():
             eos_token_probs.extend(seq.get_eos_token_prob())
@@ -168,6 +166,7 @@ class TFITTradeoff(Policy):
         # priority = priority_rate * decode_length / seq_group.max_length
         # avoid to swap long sequence or the sequence with high priority.
         if priority_rate != -1000:
+            # priority = priority_rate * seq_group.seq_len / seq_group.max_length
             priority = priority_rate * seq_group.seq_len / seq_group.max_length
             # priority = priority_rate * seq_group.seq_len 
         # else:
@@ -182,36 +181,37 @@ class TFITTradeoff(Policy):
                 # seq_group.priority_rate = max_eos_token_pos / 32000
                 priority = (
                     seq_group.priority_rate
+                    * seq_group.seq_len
                     # * (seq_group.max_length - decode_length) 
-                    * decode_length
+                    # * decode_length
                     / seq_group.max_length
                 )
             else:
                 priority = (
                     avg_priority_rate
                     # * (seq_group.max_length - decode_length) 
-                    * decode_length
+                    * seq_group.seq_len 
                     / seq_group.max_length
                 )
             
         return priority
 
-    def _get_waiting_priority(self, avg_priority_rate: float, seq_group: SequenceGroup):
+    def _get_waiting_priority(self, avg_priority_rate: float, seq_group: SequenceGroup, pending_swapped_rate: float):
         priority_rate = seq_group.priority_rate
         decode_length = sum(
             seq.get_output_len() for seq in seq_group.seqs_dict.values()
         )
-        max_eos_token_pos = -1
+        # decode_length = seq_group.seq_len
+        # priority = priority_rate * decode_length / seq_group.max_length
+        # avoid to swap long sequence or the sequence with high priority.
         if priority_rate != -1000:
             priority = (
-               priority_rate 
-                * (
-                    seq_group.max_length
-                    - decode_length
-                    + seq_group.metrics.waiting_iter_nums
-                )
+                priority_rate
+                * ( seq_group.seq_len+ seq_group.metrics.waiting_iter_nums*(1-pending_swapped_rate))
                 / seq_group.max_length
-            ) # short sequence has higher priority.
+            )
+        # else
+        #     priority = 1*decode_length/seq_group.max_length
         else:
             max_eos_token_pos = max(
                 (max(seq.get_eos_token_pos()) for seq in seq_group.seqs_dict.values()),
@@ -225,22 +225,25 @@ class TFITTradeoff(Policy):
                     / seq_group.max_length
                 ) # long sequence has higher priority.
             else:
-                # priority = avg_priorities * (len(seq_group.prompt_token_ids)+seq_group.metrics.waiting_iter_nums)/ 2000
-                # current length plus opportunity decoding length.
                 priority = (
                     avg_priority_rate
-                    * (decode_length  + seq_group.metrics.waiting_iter_nums)
+                    # * (decode_length+ seq_group.metrics.waiting_iter_nums*pending_swapped_rate)
+                    * (decode_length + seq_group.metrics.waiting_iter_nums/seq_group.seq_len*pending_swapped_rate)
                     / seq_group.max_length
-                ) # long sequence has higher priority.
+                )
+
         return priority
 
     def got_priority(
-        self, avg_priority_rate: float, seq_group: SequenceGroup, avg_block_size: float
+        self,
+        avg_priority_rate: float,
+        seq_group: SequenceGroup,
+        pending_swapped_rate: float,
     ) -> float:
-        if avg_block_size == 0:
+        if pending_swapped_rate == -1:
             priority = self._get_running_priority(avg_priority_rate, seq_group)
         else:
-            priority = self._get_waiting_priority(avg_priority_rate, seq_group)
+            priority = self._get_waiting_priority(avg_priority_rate, seq_group, pending_swapped_rate)
         return priority
 
 

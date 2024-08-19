@@ -13,8 +13,8 @@ echo $COUNTER >$COUNTER_FILE
 # start vllm server
 model_name="meta-llama/Llama-2-13b-chat-hf"
 dataset_name="sharegpt"
-dataset_path="/root/v1/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
-result_dir="/root/v1/vllm/benchmarks/result"
+dataset_path="/root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
+result_dir="/root/vllm/benchmarks/result"
 # scheduler_policy=(fcfs)
 # swap_policies=(full)
 # scheduler_policy=(infer)
@@ -31,7 +31,7 @@ scheduler_swap_policies[2]="sjf full"
 preemption_mode="swap"
 gpu_memory_utilization=0.7 # 0.5, 0.7, 0.9
 max_num_seqs=128
-swap_space=64
+swap_space=32
 max_tokens=2048
 iter_theshold=15
 
@@ -45,7 +45,7 @@ request_rates[3]=5.0
 # request_rates=(2.0)
 swap_out_partial_rates=(0.5)
 waiting_iter_base=(0.1)
-gpu_devices=1
+gpu_devices=3
 for i in {0..0}; do
   for waiting_iter in "${waiting_iter_base[@]}"; do
     for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do
@@ -63,7 +63,7 @@ for i in {0..0}; do
           # run benchmark and save the output to benchmark.log
           python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
             --dataset-name $dataset_name --request-rate $request_rate \
-            --num-prompts 500 --request-duration 600 --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
+            --num-prompts 500 --request-duration 200 --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
             --save-result --result-dir $result_dir \
             --metadata swap_space=$swap_space preemption_mode=$preemption_mode \
             scheduler_policy=$policy gpu_memory_utilization=$gpu_memory_utilization \
@@ -74,6 +74,7 @@ for i in {0..0}; do
           python3 parse_log.py --policy $policy --swap-policy $swap_policy --result-dir $result_dir \
             --execution-counter $COUNTER --request-rate $request_rate \
             --swap-out-partial-rate $swap_out_partial_rate --model $model_name
+          # sleep 10
         done
       done
     done

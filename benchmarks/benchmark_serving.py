@@ -109,7 +109,6 @@ def sample_sharegpt_requests(
         filtered_dataset.append((prompt, prompt_len, output_len))
     import collections
     prompt_len_list=collections.Counter(prompt_len_list)
-    print(prompt_len_list)
     return filtered_dataset
 
 
@@ -207,7 +206,7 @@ async def get_request_duration(
     request_rate: float,
     request_duration: float
 ) -> AsyncGenerator[Tuple[str, int, int], None]:
-    intervals = [np.random.exponential(1.0 / request_rate) for _ in input_requests]
+    global count
     # input_requests = iter(input_requests)
     st = time.time()
     count = 0
