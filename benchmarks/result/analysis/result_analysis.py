@@ -102,7 +102,7 @@ def __():
     return get_tp_ratio,
 
 
-@app.cell(hide_code=True)
+@app.cell
 def e2e_result(
     add_num_annotation,
     e2e_result_dfs,
@@ -387,7 +387,7 @@ def __(e2e_result_dfs, np, pd):
     for _df_name in e2e_result_dfs:
         _tmp_df = e2e_result_dfs[_df_name].copy()
         _tmp_df["request_level_p99_itls"] = _tmp_df["itls"].apply(
-            lambda row: 0 if len(row) == 0 else np.percentile(row, 90)
+            lambda row: 0 if len(row) == 0 else np.percentile(row, 99)
         )
         _tmp_df.drop(
             columns=[
@@ -490,7 +490,7 @@ def __(plt, request_level_result, sns):
     )
     plt.legend(title="")
     plt.grid(alpha=0.3, linestyle="--")
-    plt.ylabel("P99 ITL")
+    plt.ylabel("Median TTFT")
     return get_max_mean_ttft_ratio,
 
 
@@ -502,15 +502,15 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "20240818"
-    _counters = [2, 1315]
+    _date = "20240816"
+    _counters = [0]
     execute_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
     ]
     return execute_result_dir_names,
 
 
-@app.cell(hide_code=True)
+@app.cell
 def __(execute_result_dir_names, os, pd):
     execute_result_dfs = {
         "SJF": pd.DataFrame(),
@@ -522,7 +522,7 @@ def __(execute_result_dir_names, os, pd):
             if (
                 _file.endswith(".csv")
                 and "_detailed" not in _file
-                and "2.0qps" in _file
+                and "10.0qps" in _file
             ):
                 _detailed_result_df = pd.read_csv(os.path.join(_dir_name, _file))
                 _detailed_result_df["Cache Efficiency"] = (
@@ -538,7 +538,7 @@ def __(execute_result_dir_names, os, pd):
     return execute_result_dfs,
 
 
-@app.cell(hide_code=True)
+@app.cell
 def __(execute_result_dfs, plt, sns):
     plt.figure(figsize=(16, 6), dpi=150)
 
@@ -672,6 +672,9 @@ def __(execute_result_dfs, plt, sns):
         y="Cache Efficiency",
         label="SJF",
     )
+    print(execute_result_dfs["SJF"]["Swapped"].mean())
+    print(execute_result_dfs["TFITTradeoff"]["Swapped"].mean())
+    print(execute_result_dfs["FCFS"]["Swapped"].mean())
 
     plt.title("GPU KV cache usage")
     plt.grid(alpha=0.5, linestyle="--")
@@ -682,7 +685,7 @@ def __(execute_result_dfs, plt, sns):
 
 @app.cell
 def __(mo):
-    mo.md(r"""<!-- # Detailed Analysis -->""")
+    mo.md(r"""# Detailed Analysis""")
     return
 
 
@@ -760,7 +763,16 @@ def __(fcfs_mean, pd, sjf_mean, tfittradeoff_mean):
 def __(detailed_mean_result, plt, sns):
     plt.figure(figsize=(12, 2.5), dpi=150)
     sns.barplot(
-        data=detailed_mean_result,
+        data=detailed_mean_result[
+            detailed_mean_result["metric"].isin(
+                [
+                    "Total schedule time",
+                    "execution time",
+                    "handle output time",
+                    "swap time",
+                ]
+            )
+        ],
         hue="policy",
         y="value",
         x="metric",
@@ -769,108 +781,6 @@ def __(detailed_mean_result, plt, sns):
     plt.legend(title="")
     plt.xticks(rotation=45)
     plt.show()
-    return
-
-
-@app.cell
-def __():
-    # swap_times = []
-    # swap_block_nums = []
-
-    # for df in detailed_result_dfs.values():
-    #     swap_times.extend(df["swap time"])
-    #     swap_block_nums.extend(df["swap out block num"] + df["swap in block num"])
-
-    # plt.figure(figsize=(4, 2.5), dpi=150)
-
-    # sns.lineplot(x=swap_block_nums, y=swap_times, label="Swap Time")
-    # # plt.title("Swap Time")
-    # plt.xlabel("Swap Block Num")
-    # plt.ylabel("Time")
-    # plt.grid(True, alpha=0.3, linestyle="--")
-    # plt.legend()
-
-
-    # plt.gca()
-    return
-
-
-@app.cell
-def __(np, plt):
-    algorithms = ["SMIless", "BFS", "DFS", "A*", "OPT"]
-    times = [0.1, 146, 162, 20, 0]  # in milliseconds
-    cost_ratios = [1.32, 1.2, 1.1, 1.13, 1]
-
-    _fig, _ax = plt.subplots(figsize=(4, 2.5), dpi=150)
-    _ax2 = _ax.twinx()
-    bar_width = 0.4
-    index = np.arange(len(algorithms))
-
-    bar1 = _ax.bar(index, times, bar_width, label="Time")
-    bar2 = _ax2.bar(
-        index + bar_width,
-        cost_ratios,
-        bar_width,
-        label="Cost Ratio",
-        color="orange",
-    )
-    handles, labels = _ax.get_legend_handles_labels()
-    handles2, labels2 = _ax2.get_legend_handles_labels()
-    handles.extend(handles2)
-    labels.extend(labels2)
-    _ax.legend(handles, labels, loc="best")
-    _ax.set_xlabel("")
-    _ax.set_ylabel("Time (s)")
-    _ax.set_xticks(index + bar_width / 2)
-    _ax.set_xticklabels(algorithms)
-    _ax.set_yscale("log")
-    _ax.set_ylim(0, 1000)
-    _ax2.grid(False)
-    _ax2.set_ylim(0, 2.0)
-    for bar in bar1:
-        height = bar.get_height()
-        _ax.annotate(
-            f"{height}",
-            xy=(bar.get_x() + bar.get_width() / 2, height),
-            xytext=(0, 2),
-            textcoords="offset points",
-            rotation=40,
-            ha="center",
-            va="bottom",
-        )
-
-    for bar in bar2:
-        height = bar.get_height()
-        _ax2.annotate(
-            f"{height}",
-            xy=(bar.get_x() + bar.get_width() / 2, height),
-            xytext=(0, 2),
-            textcoords="offset points",
-            rotation=40,
-            ha="center",
-            va="bottom",
-        )
-
-    plt.gca()
-    return (
-        algorithms,
-        bar,
-        bar1,
-        bar2,
-        bar_width,
-        cost_ratios,
-        handles,
-        handles2,
-        height,
-        index,
-        labels,
-        labels2,
-        times,
-    )
-
-
-@app.cell
-def __():
     return
 
 

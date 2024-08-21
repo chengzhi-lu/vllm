@@ -1,6 +1,5 @@
 import enum
 from math import ceil
-import math
 import numpy as np
 import os
 import random
@@ -588,7 +587,7 @@ class Scheduler:
             decode_seq_groups.append(
                 ScheduledSequenceGroup(seq_group=seq_group,
                                        token_chunk_size=1))
-        if self.seq_group_for_preempted is None or total_block_size > self.seq_group_for_preempted[
+        if self.seq_group_for_preempted==() or total_block_size > self.seq_group_for_preempted[
                 1]:
             self.seq_group_for_preempted = (seq_group, total_block_size)
         budget.add_num_batched_tokens(seq_group.request_id, num_running_tokens)
@@ -622,11 +621,14 @@ class Scheduler:
         swapped_out: Set[SequenceGroup] = set()
         partial_swap_out_flag = self.scheduler_config.swap_out_tokens_policy == "partial"
         iter_threshold = self.scheduler_config.iter_threshold
-
-        if (self.iter_nums == iter_threshold or self.has_finished_seqs):
-            running_queue = policy.sort_by_priority(-1, running_queue)
-            self.iter_nums = 0
-            self.has_finished_seqs = False
+        if self.scheduler_config.policy == "tfittradeoff":
+            running_queue = policy.sorted_by_priority(1, running_queue, -1)
+        else:
+            running_queue = policy.sort_by_priority(time.time(), running_queue)
+        # if (self.iter_nums == iter_threshold or self.has_finished_seqs):
+        #     running_queue = policy.sort_by_priority(-1, running_queue)
+        #     self.iter_nums = 0
+        #     self.has_finished_seqs = False
         while running_queue:
             seq_group: SequenceGroup = running_queue[0]
             num_running_tokens = self._get_num_new_tokens(
@@ -638,11 +640,10 @@ class Scheduler:
             running_queue.popleft()
 
             seq_group_request_id = seq_group.request_id
-            if seq_group.execution_over_budget and len(
-                    self.swapped) > 1:  # noqa: SIM102
+            if (len(self.swapped) > 1 and 
+                self.seq_group_for_preempted!=() and 
+                self.seq_group_for_preempted[0].request_id == seq_group_request_id):  # noqa: SIM102
                 # preempt the sequence group due to the budget overrun
-                if self.seq_group_for_preempted and self.seq_group_for_preempted[
-                        0].request_id == seq_group_request_id:
                     budget.subtract_num_batched_tokens(seq_group_request_id,
                                                        num_running_tokens)
                     swap_out_seq_group = seq_group
@@ -817,7 +818,7 @@ class Scheduler:
             seq_group.priority_rate for seq_group in running_queue
             if seq_group.priority_rate > 0
         ]
-        avg_priorities = np.mean(priorities) if len(priorities) > 0 else 1 
+        avg_priorities = np.median(priorities) if len(priorities) > 0 else 1 
         if self.total_running_block_size+len(running_queue) > gpu_block_capacity:
             # only sort when the running block size is larger than the gpu block capacity
             running_queue = policy.sorted_by_priority(avg_priorities, running_queue, -1)
@@ -1795,7 +1796,7 @@ class Scheduler:
             self.swapped, SchedulerSwappedInOutputs.create_empty())
         policy = PolicyFactory.get_policy(
             policy_name=self.scheduler_config.policy)
-        if self.scheduler_config.policy == "infer":
+        if self.scheduler_config.policy in ["infer",'tfittradeoff']:
             remaining_running, running_scheduled, recomputed_token_nums = \
                 self._schedule_infer(self.running,
                                                   budget,
@@ -1807,7 +1808,7 @@ class Scheduler:
             # filling the budget with swapped out requests
             remaining_swapped, swapped_in, = self._schedule_swapped(
                 self.swapped, budget, curr_loras, policy)
-        elif self.scheduler_config.policy in ["inferpreempt", "sjmlfq",'tfittradeoff']:
+        elif self.scheduler_config.policy in ["inferpreempt", "sjmlfq"]:
             (remaining_running, remaining_swapped, remaining_waiting,
              running_scheduled, swapped_in,
              prefills, recomputed_token_nums) = \

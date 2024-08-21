@@ -1,4 +1,4 @@
-rm -r build
+# rm -r build
 pip uninstall -y vllm
 taskset -c 14-19 python3 setup.py bdist_wheel --dist-dir=dist
 pip install dist/vllm-0.4.3+cu124-cp310-cp310-linux_x86_64.whl
