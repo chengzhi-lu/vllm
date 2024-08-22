@@ -273,17 +273,36 @@ class _AsyncLLMEngine(LLMEngine):
             await self.model_executor.stop_remote_worker_execution_loop_async()
         # print("handle output time is:", self.et - st)
         # print(f"Total schedule time: {self.schedule_time}, execution time: {self.execution_time}, handle output time: {self.handle_output_time}, swap time: {self.swap_time}, total iteration number is: {self.total_count}")
-        logger.info(
-            "Total schedule time: %.5f s, execution time: %.5f s, "
-            "handle output time: %.5f s, swap time: %.5f s, "
-            "total iteration number: %d, "
-            "swap out block num: %d, swap out seq num: %d, "
-            "swap in block num: %d, swap in seq num: %d", self.schedule_time,
-            self.execution_time, self.handle_output_time, self.swap_time,
-            self.total_count, self.scheduler.total_swap_out_blocks,
-            self.scheduler.total_swap_out_seqs,
-            self.scheduler.total_swap_in_blocks,
-            self.scheduler.total_swap_in_seqs)
+        if self.scheduler.total_swap_in_seqs != 0:
+            logger.info(
+                "Total schedule time: %.5f s, execution time: %.5f s, "
+                "handle output time: %.5f s, swap time: %.5f s, "
+                "total iteration number: %d, "
+                "swap out block num: %d, swap out seq num: %d, "
+                "swap in block num: %d, swap in seq num: %d, low efficient swap out ratio: %.5f, mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f", self.schedule_time,
+                self.execution_time, self.handle_output_time, self.swap_time,
+                self.total_count, self.scheduler.total_swap_out_blocks,
+                self.scheduler.total_swap_out_seqs,
+                self.scheduler.total_swap_in_blocks,
+                self.scheduler.total_swap_in_seqs, 
+                self.scheduler.total_low_eff_swap_out/self.scheduler.total_swap_in_seqs,
+                self.scheduler.total_low_eff_swap_out_diff/self.scheduler.total_swap_in_seqs,
+                self.scheduler.total_swap_out_waiting_time/self.scheduler.total_swap_in_seqs)
+        else:
+            logger.info(
+                "Total schedule time: %.5f s, execution time: %.5f s, "
+                "handle output time: %.5f s, swap time: %.5f s, "
+                "total iteration number: %d, "
+                "swap out block num: %d, swap out seq num: %d, "
+                "swap in block num: %d, swap in seq num: %d, low efficient swap out ratio: %.5f, mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f", self.schedule_time,
+                self.execution_time, self.handle_output_time, self.swap_time,
+                self.total_count, self.scheduler.total_swap_out_blocks,
+                self.scheduler.total_swap_out_seqs,
+                self.scheduler.total_swap_in_blocks,
+                self.scheduler.total_swap_in_seqs, 
+                0.0,
+                0.0,
+                0.0)
         return request_outputs
 
     async def process_model_inputs_async(

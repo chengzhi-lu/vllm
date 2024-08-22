@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.7.12"
+__generated_with = "0.8.0"
 app = marimo.App(width="full")
 
 
@@ -19,7 +19,7 @@ def __():
 
 @app.cell
 def __():
-    base_dir = "/root/vllm/benchmarks/result"
+    base_dir = "/root/v1/vllm/benchmarks/result"
     replace_name = {
         "fcfs": "FCFS",
         "infer": "Infer",
@@ -39,8 +39,8 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "20240816"
-    _counters = [0]
+    _date = "20240821"
+    _counters = [2]
     e2e_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
     ]
@@ -66,6 +66,7 @@ def __(e2e_result_dir_names, json, os, pd, replace_name):
                     ],
                     inplace=True,
                 )
+                print(len(file))
                 e2e_result_df.replace(
                     replace_name,
                     inplace=True,
@@ -228,7 +229,7 @@ def __(e2e_result_dfs):
     return selected_columns, selected_result, tmp_df
 
 
-@app.cell(hide_code=True)
+@app.cell
 def __(add_num_annotation, plt, sns):
     def line_plot(_long_df):
         (_fig, _axes) = plt.subplots(
@@ -366,8 +367,8 @@ def __(barplot, fig, pd, plt, selected_columns, selected_result):
     # _long_df = _long_df[_long_df["metric_name"] == "P99"]
     show_legend = True
 
-    line_plot(_long_df)
-    # barplot(_long_df, 2)
+    # line_plot(_long_df)
+    barplot(_long_df, 20)
     fig.tight_layout()
     plt.subplots_adjust(wspace=0.2, hspace=0.4)
 
@@ -494,7 +495,7 @@ def __(plt, request_level_result, sns):
     return get_max_mean_ttft_ratio,
 
 
-@app.cell
+@app.cell(hide_code=True)
 def __(mo):
     mo.md("""# GPU KV Cache Util""")
     return
@@ -502,7 +503,7 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "20240816"
+    _date = "20240821"
     _counters = [0]
     execute_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
@@ -522,7 +523,7 @@ def __(execute_result_dir_names, os, pd):
             if (
                 _file.endswith(".csv")
                 and "_detailed" not in _file
-                and "10.0qps" in _file
+                and "20.0qps" in _file
             ):
                 _detailed_result_df = pd.read_csv(os.path.join(_dir_name, _file))
                 _detailed_result_df["Cache Efficiency"] = (
@@ -538,149 +539,153 @@ def __(execute_result_dir_names, os, pd):
     return execute_result_dfs,
 
 
-@app.cell
-def __(execute_result_dfs, plt, sns):
-    plt.figure(figsize=(16, 6), dpi=150)
-
+app._unparsable_cell(
+    r"""
+        plt.figure(figsize=(16, 6), dpi=150)
     # Subplot 1: Avg generation throughput
     plt.subplot(2, 3, 1)
     sns.lineplot(
-        data=execute_result_dfs["TFITTradeoff"],
-        x=execute_result_dfs["TFITTradeoff"].index,
-        y="Avg generation throughput",
-        label="TFIT",
+        data=execute_result_dfs[\"TFITTradeoff\"],
+        x=execute_result_dfs[\"TFITTradeoff\"].index,
+        y=\"Avg generation throughput\",
+        label=\"TFIT\",
     )
     sns.lineplot(
-        data=execute_result_dfs["FCFS"],
-        x=execute_result_dfs["FCFS"].index,
-        y="Avg generation throughput",
-        label="FCFS",
+        data=execute_result_dfs[\"FCFS\"],
+        x=execute_result_dfs[\"FCFS\"].index,
+        y=\"Avg generation throughput\",
+        label=\"FCFS\",
     )
     sns.lineplot(
-        data=execute_result_dfs["SJF"],
-        x=execute_result_dfs["SJF"].index,
-        y="Avg generation throughput",
-        label="SJF",
+        data=execute_result_dfs[\"SJF\"],
+        x=execute_result_dfs[\"SJF\"].index,
+        y=\"Avg generation throughput\",
+        label=\"SJF\",
     )
-    plt.title("Avg generation throughput")
-    plt.grid(alpha=0.5, linestyle="--")
+    plt.title(\"Avg generation throughput\")
+    plt.grid(alpha=0.5, linestyle=\"--\")
     # Subplot 2: Running
     plt.subplot(2, 3, 2)
     sns.lineplot(
-        data=execute_result_dfs["TFITTradeoff"],
-        x=execute_result_dfs["TFITTradeoff"].index,
-        y="Running",
-        label="TFIT",
+        data=execute_result_dfs[\"TFITTradeoff\"],
+        x=execute_result_dfs[\"TFITTradeoff\"].index,
+        y=\"Running\",
+        label=\"TFIT\",
     )
     sns.lineplot(
-        data=execute_result_dfs["FCFS"],
-        x=execute_result_dfs["FCFS"].index,
-        y="Running",
-        label="FCFS",
+        data=execute_result_dfs[\"FCFS\"],
+        x=execute_result_dfs[\"FCFS\"].index,
+        y=\"Running\",
+        label=\"FCFS\",
     )
     sns.lineplot(
-        data=execute_result_dfs["SJF"],
-        x=execute_result_dfs["SJF"].index,
-        y="Running",
-        label="SJF",
+        data=execute_result_dfs[\"SJF\"],
+        x=execute_result_dfs[\"SJF\"].index,
+        y=\"Running\",
+        label=\"SJF\",
     )
-    plt.title("Running")
-    plt.grid(alpha=0.5, linestyle="--")
+    plt.title(\"Running\")
+    plt.grid(alpha=0.5, linestyle=\"--\")
     # Subplot 3: Pending
     plt.subplot(2, 3, 3)
     sns.lineplot(
-        data=execute_result_dfs["TFITTradeoff"],
-        x=execute_result_dfs["TFITTradeoff"].index,
-        y="Pending",
-        label="TFIT",
+        data=execute_result_dfs[\"TFITTradeoff\"],
+        x=execute_result_dfs[\"TFITTradeoff\"].index,
+        y=\"Pending\",
+        label=\"TFIT\",
     )
     sns.lineplot(
-        data=execute_result_dfs["FCFS"],
-        x=execute_result_dfs["FCFS"].index,
-        y="Pending",
-        label="FCFS",
+        data=execute_result_dfs[\"FCFS\"],
+        x=execute_result_dfs[\"FCFS\"].index,
+        y=\"Pending\",
+        label=\"FCFS\",
     )
     sns.lineplot(
-        data=execute_result_dfs["SJF"],
-        x=execute_result_dfs["SJF"].index,
-        y="Pending",
-        label="SJF",
+        data=execute_result_dfs[\"SJF\"],
+        x=execute_result_dfs[\"SJF\"].index,
+        y=\"Pending\",
+        label=\"SJF\",
     )
-    plt.title("Pending")
-    plt.grid(alpha=0.5, linestyle="--")
+    plt.title(\"Pending\")
+    plt.grid(alpha=0.5, linestyle=\"--\")
     # Suplt.grid(alpha=0.5, linestyle='--')bplot 4: Swapped
     plt.subplot(2, 3, 4)
     sns.lineplot(
-        data=execute_result_dfs["TFITTradeoff"],
-        x=execute_result_dfs["TFITTradeoff"].index,
-        y="Swapped",
-        label="TFIT",
+        data=execute_result_dfs[\"TFITTradeoff\"],
+        x=execute_result_dfs[\"TFITTradeoff\"].index,
+        y=\"Swapped\",
+        label=\"TFIT\",
     )
     sns.lineplot(
-        data=execute_result_dfs["FCFS"],
-        x=execute_result_dfs["FCFS"].index,
-        y="Swapped",
-        label="FCFS",
+        data=execute_result_dfs[\"FCFS\"],
+        x=execute_result_dfs[\"FCFS\"].index,
+        y=\"Swapped\",
+        label=\"FCFS\",
     )
     sns.lineplot(
-        data=execute_result_dfs["SJF"],
-        x=execute_result_dfs["SJF"].index,
-        y="Swapped",
-        label="SJF",
+        data=execute_result_dfs[\"SJF\"],
+        x=execute_result_dfs[\"SJF\"].index,
+        y=\"Swapped\",
+        label=\"SJF\",
     )
-    plt.title("Swapped")
-    plt.grid(alpha=0.5, linestyle="--")
+    plt.title(\"Swapped\")
+    plt.grid(alpha=0.5, linestyle=\"--\")
     # Subplot 5: GPU KV cache usage
     plt.subplot(2, 3, 5)
     sns.lineplot(
-        data=execute_result_dfs["TFITTradeoff"],
-        x=execute_result_dfs["TFITTradeoff"].index,
-        y="GPU KV cache usage",
-        label="TFIT",
+        data=execute_result_dfs[\"TFITTradeoff\"],
+        x=execute_result_dfs[\"TFITTradeoff\"].index,
+        y=\"GPU KV cache usage\",
+        label=\"TFIT\",
     )
     sns.lineplot(
-        data=execute_result_dfs["FCFS"],
-        x=execute_result_dfs["FCFS"].index,
-        y="GPU KV cache usage",
-        label="FCFS",
+        data=execute_result_dfs[\"FCFS\"],
+        x=execute_result_dfs[\"FCFS\"].index,
+        y=\"GPU KV cache usage\",
+        label=\"FCFS\",
     )
     sns.lineplot(
-        data=execute_result_dfs["SJF"],
-        x=execute_result_dfs["SJF"].index,
-        y="GPU KV cache usage",
-        label="SJF",
+        data=execute_result_dfs[\"SJF\"],
+        x=execute_result_dfs[\"SJF\"].index,
+        y=\"GPU KV cache usage\",
+        label=\"SJF\",
     )
-    plt.grid(alpha=0.5, linestyle="--")
+    plt.grid(alpha=0.5, linestyle=\"--\")
     # Subplot 6: KV Cache Efficiency
     start_index = 4
     plt.subplot(2, 3, 6)
     sns.lineplot(
-        data=execute_result_dfs["TFITTradeoff"][start_index:],
-        x=execute_result_dfs["TFITTradeoff"].index[start_index:],
-        y="Cache Efficiency",
-        label="TFIT",
+        data=execute_result_dfs[\"TFITTradeoff\"][start_index:],
+        x=execute_result_dfs[\"TFITTradeoff\"].index[start_index:],
+        y=\"Cache Efficiency\",
+        label=\"TFIT\",
     )
     sns.lineplot(
-        data=execute_result_dfs["FCFS"][start_index:],
-        x=execute_result_dfs["FCFS"].index[start_index:],
-        y="Cache Efficiency",
-        label="FCFS",
+        data=execute_result_dfs[\"FCFS\"][start_index:],
+        x=execute_result_dfs[\"FCFS\"].index[start_index:],
+        y=\"Cache Efficiency\",
+        label=\"FCFS\",
     )
     sns.lineplot(
-        data=execute_result_dfs["SJF"][start_index:],
-        x=execute_result_dfs["SJF"].index[start_index:],
-        y="Cache Efficiency",
-        label="SJF",
+        data=execute_result_dfs[\"SJF\"][start_index:],
+        x=execute_result_dfs[\"SJF\"].index[start_index:],
+        y=\"Cache Efficiency\",
+        label=\"SJF\",
     )
     print(execute_result_dfs["SJF"]["Swapped"].mean())
     print(execute_result_dfs["TFITTradeoff"]["Swapped"].mean())
     print(execute_result_dfs["FCFS"]["Swapped"].mean())
 
-    plt.title("GPU KV cache usage")
-    plt.grid(alpha=0.5, linestyle="--")
+    plt.title(\"GPU KV cache usage\")
+    plt.grid(alpha=0.5, linestyle=\"--\")
     plt.tight_layout()
     plt.gca()
-    return start_index,
+
+    # print(execute_result_dfs[\"FCFS\"][\"Running\"].mean())
+    # print(execute_result_dfs[\"TFITTradeoff\"][\"Running\"].mean())
+    """,
+    name="__"
+)
 
 
 @app.cell
@@ -691,7 +696,7 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "20240816"
+    _date = "20240821"
     _counters = [0]
     detailed_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
@@ -699,7 +704,7 @@ def __(base_dir, os):
     return detailed_result_dir_names,
 
 
-@app.cell(hide_code=True)
+@app.cell
 def __(detailed_result_dir_names, os, pd):
     detailed_result_dfs = {
         "SJF": pd.DataFrame(),
@@ -708,7 +713,8 @@ def __(detailed_result_dir_names, os, pd):
     }
     for _dir_name in detailed_result_dir_names:
         for _file in os.listdir(_dir_name):
-            if _file.endswith("_detailed.csv"):
+            print(_file)
+            if _file.endswith("_detailed.csv") and "20.0qps" in _file:
                 _detailed_result_df = pd.read_csv(os.path.join(_dir_name, _file))
                 last_row = _detailed_result_df.iloc[-1:, :]
                 if "sjf" in _file:
@@ -781,11 +787,6 @@ def __(detailed_mean_result, plt, sns):
     plt.legend(title="")
     plt.xticks(rotation=45)
     plt.show()
-    return
-
-
-@app.cell
-def __():
     return
 
 

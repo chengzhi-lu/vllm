@@ -179,6 +179,7 @@ class TFITTradeoff(Policy):
             if max_eos_token_pos > 0:
                 seq_group.priority_rate = (32000-max_eos_token_pos) / 32000
                 # seq_group.priority_rate = max_eos_token_pos / 32000
+                # seq_group.priority_rate = max_eos_token_pos / 32000
                 priority = (
                     seq_group.priority_rate
                     * seq_group.seq_len
@@ -209,8 +210,12 @@ class TFITTradeoff(Policy):
             seq_group.priority_rate = (32000 - priority_rate) / 32000
             # seq_group.priority_rate = max_eos_token_pos / 32000
             priority = (
-                seq_group.priority_rate * ( seq_group.seq_len+ seq_group.metrics.waiting_iter_nums*(1-pending_swapped_rate))
-            ) # long sequence has higher priority.
+                priority_rate*(1-pending_swapped_rate)
+                * ( seq_group.seq_len+ seq_group.metrics.waiting_iter_nums)
+                / seq_group.max_length
+            )
+        # else
+        #     priority = 1*decode_length/seq_group.max_length
         else:
             priority = (
                 avg_priority_rate
@@ -219,6 +224,22 @@ class TFITTradeoff(Policy):
                 / seq_group.max_length
                 # / seq_group.max_length
             )
+            # if priority_rate > 0:
+            #     seq_group.priority_rate = (32000 - priority_rate) / 32000
+            #     # seq_group.priority_rate = max_eos_token_pos / 32000
+            #     # seq_group.priority_rate = max_eos_token_pos / 32000
+            #     priority = (
+            #         seq_group.priority_rate * seq_group.seq_len
+            #         / seq_group.max_length
+            #     ) # long sequence has higher priority.
+            # else:
+            #     priority = (
+            #         avg_priority_rate*pending_swapped_rate
+            #         # * (decode_length+ seq_group.metrics.waiting_iter_nums*pending_swapped_rate)
+            #         * (decode_length + seq_group.metrics.waiting_iter_nums)
+            #         / seq_group.max_length
+            #     )
+
         return priority
 
     # def _get_waiting_priority(self, avg_priority_rate: float, seq_group: SequenceGroup, pending_swapped_rate: float):

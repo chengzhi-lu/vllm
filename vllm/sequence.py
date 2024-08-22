@@ -517,6 +517,8 @@ class SequenceGroup:
         self.priority_rate = -1000
         self.max_length = self.sampling_params.max_tokens 
         self.weighted:Tuple[float,float] = (0,0)
+        self.swap_out_moment = None
+        self.swap_in_moment = None
 
     @property
     def prompt(self) -> Optional[str]:

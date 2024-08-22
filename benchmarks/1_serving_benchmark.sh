@@ -20,18 +20,18 @@ result_dir="/root/v1/vllm/benchmarks/result"
 # scheduler_policy=(infer)
 # swap_policies=(partial)
 declare -a scheduler_swap_policies
-scheduler_swap_policies[0]="fcfs full"
-scheduler_swap_policies[1]="tfittradeoff full"
-scheduler_swap_policies[2]="sjf full"
+# scheduler_swap_policies[0]="fcfs full"
+scheduler_swap_policies[1]="tfittradeoff partial"
+# scheduler_swap_policies[2]="sjf full"
 # scheduler_swap_policies[3]="sjmlfq full"
 # scheduler_swap_policies[3]="infer partial"
 # scheduler_swap_policies[4]="inferpreempt full"
-# scheduler_swap_policies[5]="sjmlfq full"
+# scheduler_swap_policies[5]="sjmlfq full"fish
 
 preemption_mode="swap"
 gpu_memory_utilization=0.5 # 0.5, 0.7, 0.9
 max_num_seqs=128
-swap_space=32
+swap_space=64
 max_tokens=2048
 iter_theshold=15
 
@@ -63,7 +63,7 @@ for i in {0..0}; do
           # run benchmark and save the output to benchmark.log
           python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
             --dataset-name $dataset_name --request-rate $request_rate \
-            --num-prompts 500 --request-duration 20 --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
+            --num-prompts 500 --request-duration 600 --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
             --save-result --result-dir $result_dir \
             --metadata swap_space=$swap_space preemption_mode=$preemption_mode \
             scheduler_policy=$policy gpu_memory_utilization=$gpu_memory_utilization \
