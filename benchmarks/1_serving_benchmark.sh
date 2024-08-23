@@ -13,8 +13,8 @@ echo $COUNTER >$COUNTER_FILE
 # start vllm server
 model_name="meta-llama/Llama-2-13b-chat-hf"
 dataset_name="sharegpt"
-dataset_path="/root/v1/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
-result_dir="/root/v1/vllm/benchmarks/result"
+dataset_path="/root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
+result_dir="/root/vllm/benchmarks/result"
 # scheduler_policy=(fcfs)
 # swap_policies=(full)
 # scheduler_policy=(infer)
@@ -38,7 +38,7 @@ iter_theshold=15
 
 # request_rates[0]=0.5
 # request_rates[1]=1.0
-request_rates[2]=2.0
+request_rates[2]=4.0
 # request_rates[3]=5.0
 # request_rates[4]=10.0
 # request_rates[5]=20.0
@@ -46,7 +46,7 @@ request_rates[2]=2.0
 # request_rates=(2.0)
 swap_out_partial_rates=(0.5)
 waiting_iter_base=(0.1)
-gpu_devices=1
+gpu_devices=3
 for i in {0..0}; do
   for waiting_iter in "${waiting_iter_base[@]}"; do
     for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do
@@ -55,7 +55,9 @@ for i in {0..0}; do
           element=(${scheduler_swap_policy})
           policy=${element[0]}
           swap_policy=${element[1]}
-          CUDA_VISIBLE_DEVICES=$gpu_devices taskset -c 20-21 python3 -m vllm.entrypoints.openai.api_server \
+          # tmux new-session -s "api_server" -d bash start_server.sh $gpu_devices $model_name $swap_space $preemption_mode $policy $max_tokens $iter_theshold $max_num_seqs $swap_policy $swap_out_partial_rate $gpu_memory_utilization $waiting_iter
+
+          CUDA_VISIBLE_DEVICES=$gpu_devices taskset -c 10-11 python3 -m vllm.entrypoints.openai.api_server \
             --model $model_name --swap-space $swap_space --preemption-mode $preemption_mode --scheduler-policy $policy \
             --enable-chunked-prefill --max-num-batched-tokens $max_tokens --iter-threshold $iter_theshold --max-num-seqs $max_num_seqs --swap-out-tokens-policy $swap_policy --swap-out-partial-rate $swap_out_partial_rate --execution-budget $iter_theshold \
             --gpu-memory-utilization $gpu_memory_utilization --waiting-iter-base $waiting_iter --disable-log-requests >api_server_${policy}_${swap_policy}.log 2>&1 &
@@ -72,6 +74,7 @@ for i in {0..0}; do
             iter_theshold=$iter_theshold swap_out_partial_rate=$swap_out_partial_rate waiting_iter_base=$waiting_iter >>benchmark-${policy}.log 2>&1
           sleep 5
           kill $pid
+          # tmux kill-session -t "api_server"
           python3 parse_log.py --policy $policy --swap-policy $swap_policy --result-dir $result_dir \
             --execution-counter $COUNTER --request-rate $request_rate \
             --swap-out-partial-rate $swap_out_partial_rate --model $model_name
