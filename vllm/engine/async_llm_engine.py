@@ -279,7 +279,8 @@ class _AsyncLLMEngine(LLMEngine):
                 "handle output time: %.5f s, swap time: %.5f s, "
                 "total iteration number: %d, "
                 "swap out block num: %d, swap out seq num: %d, "
-                "swap in block num: %d, swap in seq num: %d, low efficient swap out ratio: %.5f, mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f", self.schedule_time,
+                "swap in block num: %d, swap in seq num: %d, low efficient swap out ratio: %.5f, mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f",
+                self.schedule_time,
                 self.execution_time, self.handle_output_time, self.swap_time,
                 self.total_count, self.scheduler.total_swap_out_blocks,
                 self.scheduler.total_swap_out_seqs,
@@ -294,7 +295,8 @@ class _AsyncLLMEngine(LLMEngine):
                 "handle output time: %.5f s, swap time: %.5f s, "
                 "total iteration number: %d, "
                 "swap out block num: %d, swap out seq num: %d, "
-                "swap in block num: %d, swap in seq num: %d, low efficient swap out ratio: %.5f, mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f", self.schedule_time,
+                "swap in block num: %d, swap in seq num: %d, low efficient swap out ratio: %.5f, mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f",
+                self.schedule_time,
                 self.execution_time, self.handle_output_time, self.swap_time,
                 self.total_count, self.scheduler.total_swap_out_blocks,
                 self.scheduler.total_swap_out_seqs,
