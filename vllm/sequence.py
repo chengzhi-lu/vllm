@@ -648,15 +648,15 @@ class SequenceGroup:
     def reset_waiting_iter_nums(self):
         self.metrics.waiting_iter_nums = 0
 
-    def update_execution_iter_nums(self):
-        self.execution_iters += 1
-        if self.execution_iters >= self.execution_budget:
-            self.execution_over_budget = True
-            self.execution_iters = 0
+    # def update_execution_iter_nums(self):
+    #     self.execution_iters += 1
+    #     if self.execution_iters >= self.execution_budget:
+    #         self.execution_over_budget = True
+    #         self.execution_iters = 0
 
-    def reset_execution_iter_nums(self):
-        self.execution_iters = 0
-        self.execution_over_budget = False
+    # def reset_execution_iter_nums(self):
+    #     self.execution_iters = 0
+    #     self.execution_over_budget = False
 
     def update_num_computed_tokens(self, num_new_computed_tokens: int):
         """Update number of tokens computed so far."""

@@ -403,6 +403,7 @@ class Scheduler:
         self.avg_block_size = 0.0
         self.has_finished_seqs = False
         self.total_running_block_size = 0
+        self.partial_swap_out_flag = self.scheduler_config.swap_out_tokens_policy == "partial"
 
     @property
     def lora_enabled(self) -> bool:
@@ -596,7 +597,7 @@ class Scheduler:
         
         budget.add_num_batched_tokens(seq_group.request_id, num_running_tokens)
         seq_group.reset_waiting_iter_nums()
-        seq_group.update_execution_iter_nums()
+        # seq_group.update_execution_iter_nums()
         # OPTIMIZATION:  Note that get_max_num_running_seqs is
         # expensive. For the default scheduling chase where
         # enable_chunking is False, num_seqs are updated before running
@@ -623,16 +624,6 @@ class Scheduler:
         recomputed_token_nums: int = 0
         preempted: Set[SequenceGroup] = set()
         swapped_out: Set[SequenceGroup] = set()
-        partial_swap_out_flag = self.scheduler_config.swap_out_tokens_policy == "partial"
-        iter_threshold = self.scheduler_config.iter_threshold
-        # now = time.time()
-        # if (self.iter_nums == iter_threshold or self.has_finished_seqs):
-        #     if self.scheduler_config.policy == "tfittradeoff":
-        #         running_queue = policy.sorted_by_priority(1, running_queue, -1)
-        #     else:
-        #         running_queue = policy.sort_by_priority(now, running_queue)
-        #     self.iter_nums = 0
-        #     self.has_finished_seqs = False
         
         if self.scheduler_config.policy == "tfittradeoff":
             running_queue = policy.sorted_by_priority(1, running_queue, -1)
@@ -681,7 +672,7 @@ class Scheduler:
             if not self._can_append_slots(seq_group):
                 # If there's no other sequence groups in the waiting queue, only
                 # swap out part of the tokens belong to current seq_group.
-                if partial_swap_out_flag:
+                if self.partial_swap_out_flag:
                     (seq_group_swapped_out_flag,
                      swapped_out_seq_groups) = self._swap_out_partial(
                          seq_group_request_id, seq_group, budget,
@@ -1459,15 +1450,12 @@ class Scheduler:
         leftover_swapped: Deque[SequenceGroup] = deque()
         while swapped_queue:
             seq_group: SequenceGroup = swapped_queue[0]
-            
-            if seq_group.execution_over_budget and self.scheduler_config.policy == "infer":
-                if seq_group.request_id == self.seq_group_for_preempted[
-                        0].request_id and seq_group.metrics.waiting_iter_nums > self.iter_nums:
-                    seq_group.reset_execution_iter_nums()
+            if self.scheduler_config.policy in ["infer", "tfittradeoff"] and seq_group.request_id == self.seq_group_for_preempted[
+                        0].request_id:
+                    # seq_group.reset_execution_iter_nums()
                     swapped_queue.popleft()
                     leftover_swapped.appendleft(seq_group)
-                continue
-            
+                    continue
             # If the sequence group cannot be swapped in, stop.
             is_prefill = seq_group.is_prefill()
             alloc_status = self.block_manager.can_swap_in(
@@ -1854,38 +1842,24 @@ class Scheduler:
         if self.scheduler_config.policy in ["infer", "tfittradeoff"]:
             remaining_running, running_scheduled, recomputed_token_nums = \
                 self._schedule_infer(self.running,
-                                    budget,
-                                    curr_loras,
-                                    policy,
-                                    enable_chunking=True)
-                
-            # remaining_running, running_scheduled, recomputed_token_nums = \
-            #     self._schedule_running_partial(self.running,
-            #                                       budget,
-            #                                       curr_loras,
-            #                                       policy,
-            #                                       enable_chunking=True)
-                
-            # Schedule swapped out requests.
-            # If preemption happens, it means we don't have space for swap-in.
-            
+                                                  budget,
+                                                  curr_loras,
+                                                  policy,
+                                                  enable_chunking=True)
+            if len(running_scheduled.preempted) + len(
+                    running_scheduled.swapped_out) == 0:
+                remaining_swapped, swapped_in, = self._schedule_swapped(
+                    self.swapped, budget, curr_loras, policy)
+
+            # Schedule new prefills.
             remaining_waiting, prefills = self._schedule_prefills(
-                self.waiting, budget, curr_loras, enable_chunking=True, pending_swapped_rate=1)
-            # filling the budget with swapped out requests
-            remaining_swapped, swapped_in, = self._schedule_swapped(
-                self.swapped, budget, curr_loras, policy, pending_swapped_rate=1)
-            
-            # if len(running_scheduled.preempted) + len(
-            #         running_scheduled.swapped_out) == 0:
-            #     remaining_swapped, swapped_in, = self._schedule_swapped(
-            #         self.swapped, budget, curr_loras, policy, pending_swapped_rate=pending_swapped_rate)
-                
+                self.waiting, budget, curr_loras, enable_chunking=True)
             # remaining_waiting, prefills = self._schedule_prefills(
-            #     self.waiting, budget, curr_loras, pending_swapped_rate=pending_swapped_rate, enable_chunking=True)
-            
-            # filling the budget with swapped out requests
-            
-        elif self.scheduler_config.policy in ["sjmlfq"]:
+            #     self.waiting, budget, curr_loras, enable_chunking=True)
+            # # filling the budget with swapped out requests
+            # remaining_swapped, swapped_in, = self._schedule_swapped(
+            #     self.swapped, budget, curr_loras, policy)
+        elif self.scheduler_config.policy in ["inferpreempt", "sjmlfq"]:
             (remaining_running, remaining_swapped, remaining_waiting,
              running_scheduled, swapped_in,
              prefills, recomputed_token_nums) = \
