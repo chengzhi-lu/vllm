@@ -467,7 +467,10 @@ class BlockSpaceManagerV1(BlockSpaceManager):
 
         # We want to append the token to the last physical block.
         last_block = block_table[-1]
-        assert last_block.device == Device.GPU
+        # if last_block.device == Device.CPU:
+            
+        
+        assert last_block.device == Device.GPU, f"{seq}"
         if last_block.ref_count == 1:
             # Not shared with other sequences. Appendable.
             if self.enable_caching:
@@ -630,7 +633,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             swapped_out_blocks_idx = 0
             swapping_out_blocks_idx = 0
             block_table_length = len(block_tables)
-            if swap_out_block_nums > 0:
+            if swap_out_block_nums > 0: # Partial Swapped
                 swapped_out_block_nums = seq.get_swapped_out_block_nums()
                 swapped_out_blocks_idx = swapped_out_block_nums
                 swapping_out_blocks_idx = min(
@@ -640,9 +643,10 @@ class BlockSpaceManagerV1(BlockSpaceManager):
                 # print(f"seq_group {seq_group.request_id} swapping out blocks {swapped_out_blocks_idx} to {swapping_out_blocks_idx}")
                 swapping_out_blocks = block_tables[
                     swapped_out_blocks_idx:swapping_out_blocks_idx]
-            else:
+            else: # Swapped
                 swapping_out_blocks = block_tables
                 seq.update_swapped_out_block_nums(block_table_length)
+                
             # block_device_table = self.block_device_tables[seq.seq_id]
             # swapping_out_blocks_set= set(swapping_out_blocks)
             # for block in block_tables:
@@ -650,6 +654,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             #         block_device_table[block.block_number] = Device.CPU
             #     else:
             #         block_device_table[block.block_number] = Device.GPU
+            
             swapped_out_blocks = self._swap_block_table(
                 swapping_out_blocks, self.gpu_allocator, self.cpu_allocator,
                 mapping)

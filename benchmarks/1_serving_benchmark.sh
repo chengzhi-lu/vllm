@@ -13,8 +13,8 @@ echo $COUNTER >$COUNTER_FILE
 # start vllm server
 model_name="meta-llama/Llama-2-13b-chat-hf"
 dataset_name="sharegpt"
-dataset_path="/root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
-result_dir="/root/vllm/benchmarks/result"
+dataset_path="/root/v1/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
+result_dir="/root/v1/vllm/benchmarks/result"
 # scheduler_policy=(fcfs)
 # swap_policies=(full)
 # scheduler_policy=(infer)
@@ -38,7 +38,7 @@ iter_theshold=15
 
 # request_rates[0]=0.5
 # request_rates[1]=1.0
-request_rates[2]=4.0
+request_rates[2]=2.0
 # request_rates[3]=5.0
 # request_rates[4]=10.0
 # request_rates[5]=20.0
@@ -46,7 +46,7 @@ request_rates[2]=4.0
 # request_rates=(2.0)
 swap_out_partial_rates=(0.5)
 waiting_iter_base=(0.1)
-gpu_devices=3
+gpu_devices=1
 for i in {0..0}; do
   for waiting_iter in "${waiting_iter_base[@]}"; do
     for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do
