@@ -742,47 +742,41 @@ class Scheduler:
                 # swap out the seq_group in the partial_swapped
                 print("No gpu space")
                 if self.partial_swapped:
+                    # victim_seq_group_request_id = list(
+                    #             self.partial_swapped.keys())[0]
+                    # left_victim_block_size, victim_seq_group = self.partial_swapped.pop(
+                    #     victim_seq_group_request_id)
+                    # swap_out_block_unit = ceil(
+                    #     victim_seq_group.total_token_block_size *
+                    #     self.partial_swapped_rate)
+                    # if left_victim_block_size <= required_block_size:
+                    #     swap_out_block_nums = left_victim_block_size
+                    #     required_block_size -= left_victim_block_size
+                    # else:
+                    #     swap_out_block_nums = max(
+                    #         ceil(required_block_size /
+                    #                 swap_out_block_unit) *
+                    #         swap_out_block_unit, 1)
+                    #     left_victim_block_size = left_victim_block_size - swap_out_block_nums
+                    #     if left_victim_block_size > 0:
+                    #         self.partial_swapped[
+                    #             victim_seq_group_request_id] = (
+                    #                 left_victim_block_size,
+                    #                 victim_seq_group)
+                    #     required_block_size = 0
+                    # seq_group_status = SequenceStatus.PARTIAL_SWAPPED
                     
-                    victim_seq_group_request_id = list(
-                                self.partial_swapped.keys())[0]
-                    left_victim_block_size, victim_seq_group = self.partial_swapped.pop(
-                        victim_seq_group_request_id)
-                    swap_out_block_unit = ceil(
-                        victim_seq_group.total_token_block_size *
-                        self.partial_swapped_rate)
-                    if left_victim_block_size <= required_block_size:
-                        swap_out_block_nums = left_victim_block_size
-                        required_block_size -= left_victim_block_size
-                    else:
-                        swap_out_block_nums = max(
-                            ceil(required_block_size /
-                                    swap_out_block_unit) *
-                            swap_out_block_unit, 1)
-                        left_victim_block_size = left_victim_block_size - swap_out_block_nums
-                        if left_victim_block_size > 0:
-                            self.partial_swapped[
-                                victim_seq_group_request_id] = (
-                                    left_victim_block_size,
-                                    victim_seq_group)
-                        required_block_size = 0
-                    seq_group_status = SequenceStatus.PARTIAL_SWAPPED
-                    
-                preempted_mode = self._preempt(
-                    victim_seq_group,
-                    blocks_to_swap_out,
-                    self.preemption_mode,
-                    swap_out_block_nums,
-                    seq_group_status=seq_group_status)
-                if preempted_mode == PreemptionMode.RECOMPUTE:
-                    preempted.add(victim_seq_group)
-                else:
-                    swapped_out.add(victim_seq_group)
-                    
-                    
-                    
-                    
-                    
-                    
+                # preempted_mode = self._preempt(
+                #     victim_seq_group,
+                #     blocks_to_swap_out,
+                #     self.preemption_mode,
+                #     swap_out_block_nums,
+                #     seq_group_status=seq_group_status)
+                # if preempted_mode == PreemptionMode.RECOMPUTE:
+                #     preempted.add(victim_seq_group)
+                # else:
+                #     swapped_out.add(victim_seq_group)
+
                     victim_seq_group_request_id, (victim_token_block_size, victim_seq_group) = self.partial_swapped.popitem()
                     print("victim_seq_group: ", victim_seq_group.get_seqs())
                     
