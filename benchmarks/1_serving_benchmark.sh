@@ -20,9 +20,9 @@ result_dir="/root/v1/vllm/benchmarks/result"
 # scheduler_policy=(infer)
 # swap_policies=(partial)
 declare -a scheduler_swap_policies
-scheduler_swap_policies[0]="fcfs full"
+# scheduler_swap_policies[0]="fcfs full"
 # scheduler_swap_policies[1]="tfittradeoff full"
-# scheduler_swap_policies[2]="tfittradeoff partial"
+scheduler_swap_policies[2]="tfittradeoff partial"
 # scheduler_swap_policies[2]="sjf full"
 # scheduler_swap_policies[3]="sjmlfq full"
 # scheduler_swap_policies[3]="infer partial"
@@ -46,7 +46,7 @@ request_rates[2]=2.0
 # request_rates=(2.0)
 swap_out_partial_rates=(0.5)
 waiting_iter_base=(0.1)
-gpu_devices=3
+gpu_devices=1
 for i in {0..0}; do
   for waiting_iter in "${waiting_iter_base[@]}"; do
     for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do

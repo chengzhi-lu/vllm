@@ -769,8 +769,12 @@ class Scheduler:
                             preempted.add(swap_out_seq_group)
                         else:
                             swapped_out.add(swap_out_seq_group)
-                            
-                        all_token_block_size -= swap_out_block_nums
+                        
+                        if swap_out_block_nums == -1:
+                            all_token_block_size -= swap_out_seq_group.total_token_block_size
+                        else:
+                            all_token_block_size -= swap_out_block_nums
+                        
                         # if seq_group_status == SequenceStatus.SWAPPED:
                         #     all_token_block_size -= swap_out_seq_group.total_token_block_size
                         # else:
@@ -780,13 +784,26 @@ class Scheduler:
                         #     # else:
                         #     #     _total_token_block_size += len(seq_group.get_seqs(status=SequenceStatus.PARTIAL_SWAPPED))
                         #     all_token_block_size -= _total_token_block_size
-                            
-                        self.total_swap_out_blocks += swap_out_block_nums
+                        
+                        if swap_out_block_nums == -1:
+                            self.total_swap_out_blocks += swap_out_seq_group.total_token_block_size
+                        else:
+                            self.total_swap_out_blocks += swap_out_block_nums
+                        
+                        # self.total_swap_out_blocks += swap_out_block_nums
                         self.total_swap_out_seqs += 1
                         
                     if seq_group_swapped_out_flag:
                         print(f"Current seq_group {seq_group.get_seqs()} is swapped or partially swapped, break")
                         break
+                        
+                    # if not seq_group_swapped_out_flag:
+                    #     self._append_seq_group(seq_group, blocks_to_copy,
+                    #                         num_running_tokens,
+                    #                         prefill_seq_groups,
+                    #                         decode_seq_groups, budget,
+                    #                         curr_loras, enable_chunking)
+                    
                     # if not seq_group_swapped_out_flag:
                     #     print("Current SQ hasn't been swapped out, check GPU space again")
                     #     continue
@@ -2150,7 +2167,7 @@ class Scheduler:
             )
         else:
             remaining_running, running_scheduled, recomputed_token_nums = \
-                    self._schedule_running(self.running,
+                    self._schedule_running_partial(self.running,
                                         budget,
                                         curr_loras,
                                         policy,
