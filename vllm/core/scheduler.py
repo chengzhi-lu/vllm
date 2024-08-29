@@ -1366,7 +1366,8 @@ class Scheduler:
         recomputed_token_nums: int = 0
         preempted: Set[SequenceGroup] = set()
         swapped_out: Set[SequenceGroup] = set()
-        partial_swapped_flag = self.scheduler_config.swap_out_tokens_policy == "partial"
+        # partial_swapped_flag = self.scheduler_config.swap_out_tokens_policy == "partial"
+        partial_swapped_flag = self.partial_swap_out_flag
         partial_swapped_rate = self.scheduler_config.swap_out_partial_rate
 
         # NOTE(woosuk): Preemption happens only when there is no available slot
@@ -1396,6 +1397,12 @@ class Scheduler:
                 num_running_seqs = seq_group.get_max_num_running_seqs()
                 budget.subtract_num_seqs(seq_group.request_id,
                                          num_running_seqs)
+                
+                if self.waiting:
+                    partial_swapped_flag = False
+                else:
+                    partial_swapped_flag = self.partial_swap_out_flag
+                
                 if running_queue:
                     # Preempt the lowest-priority sequence groups.
                     if not partial_swapped_flag:
@@ -2130,7 +2137,7 @@ class Scheduler:
         else:
             pending_swapped_rate = 0.0
         
-        if self.scheduler_config.policy in ["infer", "tfittradeoff"]:
+        if self.scheduler_config.policy in ["infer"]:
             remaining_running, running_scheduled, recomputed_token_nums = \
                 self._schedule_infer(self.running,
                                                   budget,
@@ -2167,12 +2174,12 @@ class Scheduler:
             )
         else:
             remaining_running, running_scheduled, recomputed_token_nums = \
-                    self._schedule_running_partial(self.running,
-                                        budget,
-                                        curr_loras,
-                                        policy,
-                                        # pending_swapped_rate=1,
-                                        enable_chunking=True)
+                self._schedule_running_partial(self.running,
+                                    budget,
+                                    curr_loras,
+                                    policy,
+                                    # pending_swapped_rate=1,
+                                    enable_chunking=True)
             # Schedule swapped out requests.
             # If preemption happens, it means we don't have space for swap-in.
             if len(running_scheduled.preempted) + len(

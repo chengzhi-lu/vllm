@@ -39,7 +39,7 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "20240823"
+    _date = "20240829"
     _counters = [0]
     e2e_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
@@ -368,6 +368,7 @@ def __(barplot, fig, pd, plt, selected_columns, selected_result):
     show_legend = True
 
     # line_plot(_long_df)
+    # print(_long_df)
     barplot(_long_df, 2)
     fig.tight_layout()
     plt.subplots_adjust(wspace=0.2, hspace=0.4)
@@ -503,7 +504,7 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "20240823"
+    _date = "20240829"
     _counters = [0]
     execute_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
@@ -712,7 +713,7 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "20240823"
+    _date = "20240829"
     _counters = [0]
     detailed_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
