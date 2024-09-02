@@ -279,7 +279,7 @@ class _AsyncLLMEngine(LLMEngine):
                 "handle output time: %.5f s, swap time: %.5f s, "
                 "total iteration number: %d, "
                 "swap out block num: %d, swap out seq num: %d, "
-                "swap in block num: %d, swap in seq num: %d, low efficient swap out ratio: %.5f, mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f",
+                "swap in block num: %d, swap in seq num: %d, low efficient swap out ratio: %.5f, mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f, gpu memory iter: %.5f, gpu computation iter: %.5f",
                 self.schedule_time,
                 self.execution_time, 
                 self.handle_output_time, 
@@ -291,14 +291,16 @@ class _AsyncLLMEngine(LLMEngine):
                 self.scheduler.total_swap_in_seqs, 
                 self.scheduler.total_low_eff_swap_out/self.scheduler.total_swap_in_seqs,
                 self.scheduler.total_low_eff_swap_out_diff/self.scheduler.total_swap_in_seqs,
-                self.scheduler.total_swap_out_waiting_time/self.scheduler.total_swap_in_seqs)
+                self.scheduler.total_swap_out_waiting_time/self.scheduler.total_swap_in_seqs,
+                self.scheduler.gpu_memory_iter,
+                self.scheduler.gpu_computation_iter)
         else:
             logger.info(
                 "Total schedule time: %.5f s, execution time: %.5f s, "
                 "handle output time: %.5f s, swap time: %.5f s, "
                 "total iteration number: %d, "
                 "swap out block num: %d, swap out seq num: %d, "
-                "swap in block num: %d, swap in seq num: %d, low efficient swap out ratio: %.5f, mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f",
+                "swap in block num: %d, swap in seq num: %d, low efficient swap out ratio: %.5f, mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f, gpu memory iter: %.5f, gpu computation iter: %.5f",
                 self.schedule_time,
                 self.execution_time, self.handle_output_time, self.swap_time,
                 self.total_count, self.scheduler.total_swap_out_blocks,
@@ -307,7 +309,9 @@ class _AsyncLLMEngine(LLMEngine):
                 self.scheduler.total_swap_in_seqs, 
                 0.0,
                 0.0,
-                0.0)
+                0.0,
+                self.scheduler.gpu_memory_iter,
+                self.scheduler.gpu_computation_iter)
         return request_outputs
 
     async def process_model_inputs_async(

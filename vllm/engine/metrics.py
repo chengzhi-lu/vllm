@@ -331,7 +331,6 @@ class StatLogger:
         """Called by LLMEngine.
            Logs to prometheus and tracked stats every iteration.
            Logs to Stdout every self.local_interval seconds."""
-
         # Log to prometheus.
         self._log_prometheus(stats)
 
@@ -352,7 +351,7 @@ class StatLogger:
             self._log_prometheus_interval(
                 prompt_throughput=prompt_throughput,
                 generation_throughput=generation_throughput)
-
+            
             # Log to stdout.
             logger.info(
                 "Avg prompt throughput: %.1f tokens/s, "

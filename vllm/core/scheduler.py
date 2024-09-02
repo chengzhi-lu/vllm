@@ -405,6 +405,10 @@ class Scheduler:
         self.total_running_block_size = 0
         self.partial_swap_out_flag = self.scheduler_config.swap_out_tokens_policy == "partial"
         self.partial_swapped_rate = self.scheduler_config.swap_out_partial_rate
+        
+        # Motivation:
+        self.gpu_memory_iter = 0
+        self.gpu_computation_iter = 0
 
     @property
     def lora_enabled(self) -> bool:
@@ -1353,6 +1357,7 @@ class Scheduler:
         curr_loras: Optional[Set[int]],
         policy: Policy,
         enable_chunking: bool = False,
+        pending_swapped_rate: float = 0.0,
     ) -> Tuple[deque, SchedulerRunningOutputs, int]:
         '''
         Schedule sequence groups that are running and do not use LoRa.
@@ -1368,6 +1373,7 @@ class Scheduler:
         swapped_out: Set[SequenceGroup] = set()
         # partial_swapped_flag = self.scheduler_config.swap_out_tokens_policy == "partial"
         partial_swapped_flag = self.partial_swap_out_flag
+        self.print_flag = False
         partial_swapped_rate = self.scheduler_config.swap_out_partial_rate
 
         # NOTE(woosuk): Preemption happens only when there is no available slot
@@ -1376,9 +1382,15 @@ class Scheduler:
         # groups to preempt.
         now = time.time()
         if self.scheduler_config.policy == "tfittradeoff":
-            running_queue = policy.sorted_by_priority(0, running_queue, -1)
+            running_queue = policy.sorted_by_priority(0, running_queue, pending_swapped_rate)
         else:
             running_queue = policy.sort_by_priority(now, running_queue)
+        
+        if len(self.waiting)!=0:
+            partial_swapped_flag = False
+        else:
+            partial_swapped_flag = self.partial_swap_out_flag
+        
         while running_queue:
             seq_group: SequenceGroup = running_queue[0]
             num_running_tokens = self._get_num_new_tokens(
@@ -1398,11 +1410,6 @@ class Scheduler:
                 budget.subtract_num_seqs(seq_group.request_id,
                                          num_running_seqs)
                 
-                if self.waiting:
-                    partial_swapped_flag = False
-                else:
-                    partial_swapped_flag = self.partial_swap_out_flag
-                
                 if running_queue:
                     # Preempt the lowest-priority sequence groups.
                     if not partial_swapped_flag:
@@ -1420,9 +1427,9 @@ class Scheduler:
                             swapped_out.add(victim_seq_group)
                     else:
                         # swap out part of the seq_group in the running_queue
+                        victim_seq_group = running_queue.pop()
+                        victim_seq_group_block_size = victim_seq_group.total_token_block_size
                         if len(self.partial_swapped) == 0:
-                            victim_seq_group = running_queue.pop()
-                            victim_seq_group_block_size = victim_seq_group.total_token_block_size
                             if victim_seq_group_block_size <= required_block_size:
                                 swap_out_block_nums = -1
                                 required_block_size -= victim_seq_group_block_size
@@ -1436,7 +1443,7 @@ class Scheduler:
                                          swap_out_block_unit) *
                                     swap_out_block_unit, 1)
                                 left_victim_block_size = victim_seq_group_block_size - swap_out_block_nums
-                                seq_group_status = SequenceStatus.PARTIAL_SWAPPED
+                                
                                 if left_victim_block_size > 0:
                                     victim_seq_group_request_id = victim_seq_group.request_id
                                     self.partial_swapped[
@@ -1444,19 +1451,24 @@ class Scheduler:
                                             left_victim_block_size,
                                             victim_seq_group)
                                     required_block_size = 0
+                                    seq_group_status = SequenceStatus.PARTIAL_SWAPPED
+                                else:
+                                    swap_out_block_nums = -1
+                                    required_block_size -= victim_seq_group_block_size
+                                    seq_group_status = SequenceStatus.SWAPPED
                         else:
                             victim_seq_group_request_id = list(
                                 self.partial_swapped.keys())[0]
                             left_victim_block_size, victim_seq_group = self.partial_swapped.pop(
                                 victim_seq_group_request_id)
-                            swap_out_block_unit = ceil(
-                                victim_seq_group.total_token_block_size *
-                                partial_swapped_rate)
                             if left_victim_block_size <= required_block_size:
                                 swap_out_block_nums = left_victim_block_size
                                 required_block_size -= left_victim_block_size
                                 seq_group_status = SequenceStatus.SWAPPED
                             else:
+                                swap_out_block_unit = ceil(
+                                victim_seq_group.total_token_block_size *
+                                partial_swapped_rate)
                                 swap_out_block_nums = max(
                                     ceil(required_block_size /
                                          swap_out_block_unit) *
@@ -1468,7 +1480,11 @@ class Scheduler:
                                             left_victim_block_size,
                                             victim_seq_group)
                                     required_block_size = 0
-                                seq_group_status = SequenceStatus.PARTIAL_SWAPPED
+                                    seq_group_status = SequenceStatus.PARTIAL_SWAPPED
+                                else:
+                                    swap_out_block_nums = -1
+                                    required_block_size -= victim_seq_group_block_size
+                                    seq_group_status = SequenceStatus.SWAPPED
                         preempted_mode = self._preempt(
                             victim_seq_group,
                             blocks_to_swap_out,
@@ -1678,7 +1694,8 @@ class Scheduler:
                     budget.add_num_seqs(seq_group.request_id, num_running_seqs)
                 if curr_loras is not None and seq_group.lora_int_id > 0:
                     curr_loras.add(seq_group.lora_int_id)
-
+        
+        
 
         return running_queue, SchedulerRunningOutputs(
             decode_seq_groups=decode_seq_groups,
@@ -1819,13 +1836,13 @@ class Scheduler:
             
             seq_group_request_id = seq_group.request_id
             if seq_group_request_id in self.partial_swapped:
-                left_block_size, _ = self.partial_swapped.pop(
+                _, _ = self.partial_swapped.pop(
                     seq_group_request_id)
-                if len(self.partial_swapped_values) > 0 and (
-                        left_block_size,
-                        seq_group_request_id) in self.partial_swapped_values:
-                    self.partial_swapped_values.remove(
-                        (left_block_size, seq_group_request_id))
+                # if len(self.partial_swapped_values) > 0 and (
+                #         left_block_size,
+                #         seq_group_request_id) in self.partial_swapped_values:
+                #     self.partial_swapped_values.remove(
+                #         (left_block_size, seq_group_request_id))
             self._append_slots(seq_group, blocks_to_copy)
             is_prefill = seq_group.is_prefill()
             if is_prefill:
@@ -2137,6 +2154,8 @@ class Scheduler:
         else:
             pending_swapped_rate = 0.0
         
+        pending_swapped_rate = -1
+        
         if self.scheduler_config.policy in ["infer"]:
             remaining_running, running_scheduled, recomputed_token_nums = \
                 self._schedule_infer(self.running,
@@ -2172,6 +2191,25 @@ class Scheduler:
                 policy=policy,
                 enable_chunking=True,
             )
+        elif self.scheduler_config.policy == "tfittradeoff":
+            remaining_running, running_scheduled, recomputed_token_nums = \
+                self._schedule_running_partial(self.running,
+                                    budget,
+                                    curr_loras,
+                                    policy,
+                                    # pending_swapped_rate=1,
+                                    enable_chunking=True,
+                                    pending_swapped_rate=-1)
+            # Schedule swapped out requests.
+            # If preemption happens, it means we don't have space for swap-in.
+            if len(running_scheduled.preempted) + len(
+                    running_scheduled.swapped_out) == 0:
+                remaining_swapped, swapped_in, = self._schedule_swapped(
+                    self.swapped, budget, curr_loras, policy, pending_swapped_rate=0.0)
+
+            # Schedule new prefills.
+            remaining_waiting, prefills = self._schedule_prefills(
+                self.waiting, budget, curr_loras, pending_swapped_rate=0.0, enable_chunking=True)
         else:
             remaining_running, running_scheduled, recomputed_token_nums = \
                 self._schedule_running_partial(self.running,
@@ -2216,12 +2254,48 @@ class Scheduler:
         self.swapped = remaining_swapped
         self.swapped.extend(running_scheduled.swapped_out)
         self.iter_nums += 1
-        return SchedulerOutputs(
-            scheduled_seq_groups=(prefills.seq_groups +
+        
+        # Motivation:
+        # 1) GPU Memory:
+        memory_existed = 0
+        memory_new_generated = 0
+        
+        scheduled_seq_groups = (prefills.seq_groups +
                                   running_scheduled.prefill_seq_groups +
                                   swapped_in.prefill_seq_groups +
                                   running_scheduled.decode_seq_groups +
-                                  swapped_in.decode_seq_groups),
+                                  swapped_in.decode_seq_groups)
+
+        for seq_group in [s.seq_group for s in scheduled_seq_groups]:
+            memory_existed += sum([seq.get_len() for seq in seq_group.get_seqs() if not seq.is_finished()])
+        
+        for seq_group in [s.seq_group for s in (running_scheduled.decode_seq_groups +
+                                  swapped_in.decode_seq_groups)]:
+            memory_new_generated += sum([1 for seq in seq_group.get_seqs() if not seq.is_finished()])
+                
+        memory_iter = memory_existed + memory_new_generated
+        
+        self.gpu_memory_iter = memory_iter
+        # Normalization
+        self.gpu_memory_iter /= (self.cache_config.block_size * self.cache_config.num_gpu_blocks)
+
+        
+        # 2) GPU computation:
+        
+        prefills_seq_groups = (prefills.seq_groups +
+                                  running_scheduled.prefill_seq_groups +
+                                  swapped_in.prefill_seq_groups)
+        computation_iter = 0
+        
+        for seq_group in [s.seq_group for s in prefills_seq_groups]:
+            computation_iter += sum([seq.get_len() for seq in seq_group.get_seqs() if not seq.is_finished()])
+            
+        computation_iter += memory_new_generated
+        
+        self.gpu_computation_iter = computation_iter
+        
+        return SchedulerOutputs(
+            scheduled_seq_groups=scheduled_seq_groups,
             num_prefill_groups=(len(prefills.seq_groups) +
                                 len(swapped_in.prefill_seq_groups) +
                                 len(running_scheduled.prefill_seq_groups)),
@@ -2291,8 +2365,7 @@ class Scheduler:
         # Create input data structures.
         seq_group_metadata_list: List[SequenceGroupMetadata] = []
 
-        for i, scheduled_seq_group in enumerate(
-                scheduler_outputs.scheduled_seq_groups):
+        for i, scheduled_seq_group in enumerate(scheduler_outputs.scheduled_seq_groups):
             seq_group = scheduled_seq_group.seq_group
             token_chunk_size = scheduled_seq_group.token_chunk_size
             seq_group.maybe_set_first_scheduled_time(now)

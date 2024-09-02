@@ -13,6 +13,7 @@ from rich import pretty
 
 pretty.install()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# print(BASE_DIR)
 
 
 def get_requests() -> Dict[int, Tuple[str, SamplingParams, int]]:
@@ -21,19 +22,23 @@ def get_requests() -> Dict[int, Tuple[str, SamplingParams, int]]:
         BASE_DIR, "seq_data", "selected_seq.json"
     )
     for p_len in saved_seq:
+        # print(3)
+        # print(p_len)
         prompt_len = int(p_len)
+        # print(prompt_len)
         prompt = saved_seq[p_len]
+        # print(3)
         init_seq[prompt_len] = (
             prompt,
             SamplingParams(
                 temperature=0.0,
                 logprobs=1,
-                min_tokens=5,
-                max_tokens=6,
+                min_tokens=1,
+                max_tokens=1,
             ),
             prompt_len,
         )
-
+        # print(3)
     return init_seq
 
 
@@ -90,22 +95,25 @@ def main(
 
     parser = EngineArgs.add_cli_args(parser)
     args: argparse.Namespace = parser.parse_args()
-    args.model = "meta-llama/Llama-2-13b-hf"
+    args.model = "meta-llama/Llama-2-13b-chat-hf"
     args.max_num_seqs = batch_size
     args.scheduler_policy = policy
     args.default_preemption_mode = default_preemption_mode
+    
+    seqs = get_requests()
+    
     # args.gpu_memory_utilization = 0.5
     if enable_chunk_prefill:
         args.enable_chunked_prefill = True
         args.max_num_batched_tokens = max_token_num
     try:
-        seqs = get_requests()
         engine = initialize_engine(args)
     except Exception as e:
         print(e)
+        
     add_new_request_notice = Queue()
     print(f"start strategy: {strategy}, prefill_mode: {prefill_mode}")
-    for token_num in range(4, max_token_num, 40):
+    for token_num in range(2040, max_token_num, 40):
         for repeat_time in range(5):
             prompts_queue = Queue()
             if strategy == "hybrid":
@@ -169,19 +177,20 @@ def skip_combination(df, batch_size, policy="fcfs", random_seed=10):
 if __name__ == "__main__":
     test_type = "diff_prefill_decode_compare_swap"
     rerun = True
+    # print(111)
     with mp.Manager() as manager:
         result_queue = manager.Queue()
-        max_token_nums = [1912]
-        batch_sizes = [1912]
+        max_token_nums = [2048]
+        batch_sizes = [2]
         total_iter_result, total_request_result = Utils.load_tmp_result(
             test_type, BASE_DIR
         )
         enable_chunk_prefill = True
         default_preemption_mode = "swap"
         default_policy = "fcfs"
-        strategies = ["full", "hybrid"]
+        strategies = ["full"]
         # If prefill mode is horizonal, the sequences length is equals to the token nums, otherwise, the batch size equals to the token nums  # noqa: E501
-        prefill_modes = ["horizonal", "vertical"]
+        prefill_modes = ["horizonal"]
         for strategy in strategies:
             for batch_size in batch_sizes:
                 for prefill_mode in prefill_modes:
@@ -213,6 +222,7 @@ if __name__ == "__main__":
                                     prefill_mode=prefill_mode,
                                 )
                                 executor.shutdown(wait=True)
+                                
                             while not result_queue.empty():
                                 item = result_queue.get()
                                 iter_result, request_result = (
@@ -225,6 +235,7 @@ if __name__ == "__main__":
                                 total_request_result = pd.concat(
                                     [total_request_result, request_result]
                                 )
+                                
                             if len(total_iter_result) > 0:
                                 Utils.save_tmp_result(
                                     total_iter_result,
@@ -232,9 +243,11 @@ if __name__ == "__main__":
                                     test_type,
                                     BASE_DIR,
                                 )
+                            # print(1)
                         except Exception as e:
                             print(e)
         if len(total_iter_result) > 0:
+            print(1)
             Utils.save_result(
                 total_iter_result,
                 total_request_result,

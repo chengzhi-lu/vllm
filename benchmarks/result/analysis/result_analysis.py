@@ -39,8 +39,8 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "20240829"
-    _counters = [0]
+    _date = "20240902"
+    _counters = [387]
     e2e_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
     ]
@@ -98,7 +98,7 @@ def __():
     def get_tp_ratio(df):
         print(df)
         min_result = df["output_throughput"].min()
-        df["output_throughput"] = df["output_throughput"] / min_result
+        df["output_throughput"] = df["output_throughput"] / 1
         return df
     return get_tp_ratio,
 
@@ -173,7 +173,7 @@ def e2e_result(
         handlelength=1.0,
         columnspacing=0.5,
     )
-    axes[0].set_ylim(0, 1.7)
+    axes[0].set_ylim(0, 2.0)
     axes[0].set_ylabel("Throughput (requests/s)")
     axes[0].set_xlabel("Request Rate (r/s)")
     axes[0].grid(linestyle="--", alpha=0.5, axis="y")
@@ -369,7 +369,7 @@ def __(barplot, fig, pd, plt, selected_columns, selected_result):
 
     # line_plot(_long_df)
     # print(_long_df)
-    barplot(_long_df, 2)
+    barplot(_long_df, 2)  # Need to change
     fig.tight_layout()
     plt.subplots_adjust(wspace=0.2, hspace=0.4)
 
@@ -504,12 +504,96 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "20240829"
-    _counters = [0]
+    _date = "20240902"
+    _counters = [399]
     execute_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
     ]
     return execute_result_dir_names,
+
+
+@app.cell
+def __(execute_result_dir_names, os, pd, plt, sns):
+    # For Motivation
+    execute_result_dfs_moti = {}
+    for _dir_name in execute_result_dir_names:
+        for _file in os.listdir(_dir_name):
+            if (
+                _file.endswith(".csv")
+                and "_detailed" in _file
+                and "2.0qps" in _file      # Need to change
+            ):
+                _detailed_result_df = pd.read_csv(os.path.join(_dir_name, _file))
+                _detailed_result_df["gpu memory iter"] = (
+                    _detailed_result_df["gpu memory iter"]
+                )
+                print((_detailed_result_df["gpu memory iter"]).mean())
+                print((_detailed_result_df["gpu computation iter"]).mean()/ 6900)
+                _detailed_result_df["gpu computation iter"] = (
+                    _detailed_result_df["gpu computation iter"]
+                    / 6900
+                )
+                if "sjf" in _file:
+                    execute_result_dfs_moti["SJF"] = _detailed_result_df
+                elif "fcfs" in _file:
+                    execute_result_dfs_moti["FCFS"] = _detailed_result_df
+                elif "tfittradeoff" in _file:
+                    execute_result_dfs_moti["TFITTradeoff"] = _detailed_result_df
+    print(execute_result_dfs_moti.keys())
+
+
+
+    # For Motivation:
+    plt.figure(figsize=(16, 6), dpi=150)
+    metric_labels_moti = ["gpu memory iter", "gpu computation iter"]
+    # print(execute_result_dfs_moti[""])
+    # metric_labels = ["Avg generation throughput", "Running", "Pending", "Swapped", "GPU KV cache usage", "Cache Efficiency"]
+    policies_moti = list(execute_result_dfs_moti.keys())
+
+    for metric_label_moti in metric_labels_moti:
+        plt.subplot(2, 3, metric_labels_moti.index(metric_label_moti)+1)
+        plt.title(metric_label_moti)
+        plt.grid(alpha=0.5, linestyle="--")
+        for policy_moti in policies_moti:
+            sns.lineplot(
+                data=execute_result_dfs_moti[policy_moti],
+                x=execute_result_dfs_moti[policy_moti].index,
+                y=metric_label_moti,
+                label=policy_moti,
+            )
+
+    plt.subplot(2, 3, len(metric_labels_moti)+1)
+    plt.title("Motivation")
+    plt.grid(alpha=0.5, linestyle="dashdot")
+
+    # Option 1: Draw all motivations
+    policy_moti = "FCFS" # TFITTradeoff, SJF, FCFS
+    sns.jointplot(
+        data=execute_result_dfs_moti[policy_moti],
+        x=metric_labels_moti[1],
+        y=metric_labels_moti[0],
+        label=policy_moti,
+    )
+
+    # Option 2: Draw single policy motivation
+    # for policy_moti in policies_moti:
+    # # policy_moti = "TFITTradeoff" # TFITTradeoff, SJF, FCFS
+    #     sns.scatterplot(
+    #         data=execute_result_dfs_moti[policy_moti],
+    #         x=metric_labels_moti[1],
+    #         y=metric_labels_moti[0],
+    #         label=policy_moti,
+    #     )
+
+    plt.tight_layout()
+    plt.gca()
+    return (
+        execute_result_dfs_moti,
+        metric_label_moti,
+        metric_labels_moti,
+        policies_moti,
+        policy_moti,
+    )
 
 
 @app.cell
@@ -521,11 +605,10 @@ def __(execute_result_dir_names, os, pd):
     }
     for _dir_name in execute_result_dir_names:
         for _file in os.listdir(_dir_name):
-            print(_file)
             if (
                 _file.endswith(".csv")
                 and "_detailed" not in _file
-                and "2.0qps" in _file
+                and "2.0qps" in _file      # Need to change
             ):
                 _detailed_result_df = pd.read_csv(os.path.join(_dir_name, _file))
                 _detailed_result_df["Cache Efficiency"] = (
@@ -533,6 +616,7 @@ def __(execute_result_dir_names, os, pd):
                     / _detailed_result_df["GPU KV cache usage"]
                 )
                 if "sjf" in _file:
+                    continue
                     execute_result_dfs["SJF"] = _detailed_result_df
                 elif "fcfs" in _file:
                     execute_result_dfs["FCFS"] = _detailed_result_df
@@ -546,7 +630,6 @@ def __(execute_result_dfs, plt, sns):
     plt.figure(figsize=(16, 6), dpi=150)
     # Subplot 1: Avg generation throughput
     metric_labels = ["Avg generation throughput", "Running", "Pending", "Swapped", "GPU KV cache usage", "Cache Efficiency"]
-    print(execute_result_dfs)
     policies = list(execute_result_dfs.keys())
 
     for metric_label in metric_labels:
@@ -713,7 +796,7 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "20240829"
+    _date = "20240830"
     _counters = [0]
     detailed_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
@@ -731,7 +814,7 @@ def __(detailed_result_dir_names, os, pd):
     for _dir_name in detailed_result_dir_names:
         for _file in os.listdir(_dir_name):
             print(_file)
-            if _file.endswith("_detailed.csv") and "20.0qps" in _file:
+            if _file.endswith("_detailed.csv") and "10.0qps" in _file: # need to change
                 _detailed_result_df = pd.read_csv(os.path.join(_dir_name, _file))
                 last_row = _detailed_result_df.iloc[-1:, :]
                 if "sjf" in _file:
@@ -783,16 +866,17 @@ def __(fcfs_mean, pd, sjf_mean, tfittradeoff_mean):
 
 
 @app.cell
-def __(detailed_mean_result, plt, sns):
+def __(add_num_annotation, detailed_mean_result, plt, sns):
     plt.figure(figsize=(12, 2.5), dpi=150)
-    sns.barplot(
+    ax = sns.barplot(
         data=detailed_mean_result[
             detailed_mean_result["metric"].isin(
                 [
-                    "Total schedule time",
-                    "execution time",
-                    "handle output time",
-                    "swap time",
+                    # "Total schedule time",
+                    # "execution time",
+                    # "handle output time",
+                    # "swap time",
+                    "total iteration number"
                 ]
             )
         ],
@@ -802,8 +886,14 @@ def __(detailed_mean_result, plt, sns):
     )
     # plt.yscale("log")
     plt.legend(title="")
+    add_num_annotation(ax)
     plt.xticks(rotation=45)
     plt.show()
+    return ax,
+
+
+@app.cell
+def __():
     return
 
 
