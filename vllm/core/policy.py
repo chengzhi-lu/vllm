@@ -324,7 +324,7 @@ class WaitingTimeFirst(Policy):
         return seq_group.metrics.waiting_iter_nums
 
 
-class ShortJobFirst(Policy):
+class LeastAttainedSvr(Policy):
 
     def get_priority(
         self,
@@ -356,7 +356,7 @@ class PolicyFactory:
         "utf": UncomputedTokensFirst,
         "random": Random,
         "wtf": WaitingTimeFirst,
-        "sjf": ShortJobFirst,
+        "las": LeastAttainedSvr,
         "ljf": LongJobFirst,
         "infer": TFTLatencyTrade,
         "sjmlfq": SkipJoinMLFQ,

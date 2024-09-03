@@ -40,7 +40,7 @@ def __(mo):
 @app.cell
 def __(base_dir, os):
     _date = "20240902"
-    _counters = [387]
+    _counters = [401]
     e2e_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
     ]
@@ -567,6 +567,14 @@ def __(execute_result_dir_names, os, pd, plt, sns):
     plt.grid(alpha=0.5, linestyle="dashdot")
 
     # Option 1: Draw all motivations
+    policy_moti = "SJF" # TFITTradeoff, SJF, FCFS
+    sns.jointplot(
+        data=execute_result_dfs_moti[policy_moti],
+        x=metric_labels_moti[1],
+        y=metric_labels_moti[0],
+        label=policy_moti,
+    )
+
     policy_moti = "FCFS" # TFITTradeoff, SJF, FCFS
     sns.jointplot(
         data=execute_result_dfs_moti[policy_moti],
@@ -576,14 +584,14 @@ def __(execute_result_dir_names, os, pd, plt, sns):
     )
 
     # Option 2: Draw single policy motivation
-    # for policy_moti in policies_moti:
-    # # policy_moti = "TFITTradeoff" # TFITTradeoff, SJF, FCFS
-    #     sns.scatterplot(
-    #         data=execute_result_dfs_moti[policy_moti],
-    #         x=metric_labels_moti[1],
-    #         y=metric_labels_moti[0],
-    #         label=policy_moti,
-    #     )
+    for policy_moti in policies_moti:
+    # policy_moti = "TFITTradeoff" # TFITTradeoff, SJF, FCFS
+        sns.jointplot(
+            data=execute_result_dfs_moti[policy_moti],
+            x=metric_labels_moti[1],
+            y=metric_labels_moti[0],
+            label=policy_moti,
+        )
 
     plt.tight_layout()
     plt.gca()

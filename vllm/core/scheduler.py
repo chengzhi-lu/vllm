@@ -1386,10 +1386,10 @@ class Scheduler:
         else:
             running_queue = policy.sort_by_priority(now, running_queue)
         
-        if len(self.waiting)!=0:
-            partial_swapped_flag = False
-        else:
-            partial_swapped_flag = self.partial_swap_out_flag
+        # if len(self.waiting)!=0:
+        #     partial_swapped_flag = False
+        # else:
+        #     partial_swapped_flag = self.partial_swap_out_flag
         
         while running_queue:
             seq_group: SequenceGroup = running_queue[0]
@@ -1765,6 +1765,7 @@ class Scheduler:
         leftover_swapped: Deque[SequenceGroup] = deque()
         while swapped_queue:
             seq_group: SequenceGroup = swapped_queue[0]
+            print("schedule current seq_group:", seq_group.get_seqs())
             if self.scheduler_config.policy in ["infer", "tfittradeoff"] and seq_group.request_id == self.seq_group_for_preempted[
                         0].request_id:
                     # seq_group.reset_execution_iter_nums()
@@ -1779,7 +1780,12 @@ class Scheduler:
             if alloc_status == AllocStatus.LATER:
                 for seq_group in swapped_queue:
                     seq_group.update_waiting_iter_nums()
-                break
+                if self.scheduler_config.policy == "tfittradeoff":
+                    swapped_queue.popleft()
+                    leftover_swapped.appendleft(seq_group)
+                    continue
+                else:
+                    break
                 # swapped_queue.popleft()
                 # leftover_swapped.appendleft(seq_group)
             elif alloc_status == AllocStatus.NEVER:
@@ -1816,7 +1822,12 @@ class Scheduler:
                     or not budget.can_schedule(num_new_tokens=num_new_tokens,
                                                num_new_seqs=num_new_seqs)):
                 seq_group.update_waiting_iter_nums()
-                break
+                if self.scheduler_config.policy == "tfittradeoff":
+                    swapped_queue.popleft()
+                    leftover_swapped.appendleft(seq_group)
+                    continue
+                else:
+                    break
 
             if lora_int_id > 0 and curr_loras is not None:
                 curr_loras.add(lora_int_id)
@@ -1967,7 +1978,12 @@ class Scheduler:
             # If the sequence group cannot be allocated, stop.
             can_allocate = self.block_manager.can_allocate(seq_group)
             if can_allocate == AllocStatus.LATER:
-                break
+                if self.scheduler_config.policy == "tfittradeoff":
+                    leftover_waiting_sequences.appendleft(seq_group)
+                    waiting_queue.popleft()
+                    continue
+                else:
+                    break
             elif can_allocate == AllocStatus.NEVER:
                 logger.warning(
                     "Input prompt (%d tokens) is too long"
@@ -1997,7 +2013,12 @@ class Scheduler:
             if (num_new_tokens == 0
                     or not budget.can_schedule(num_new_tokens=num_new_tokens,
                                                num_new_seqs=num_new_seqs)):
-                break
+                if self.scheduler_config.policy == "tfittradeoff":
+                    leftover_waiting_sequences.appendleft(seq_group)
+                    waiting_queue.popleft()
+                    continue
+                else:
+                    break
 
             # Can schedule this request.
             if curr_loras is not None and lora_int_id > 0:
@@ -2642,7 +2663,7 @@ class Scheduler:
             num_new_tokens += seq.get_num_new_tokens()
 
         assert num_new_tokens > 0, f"{seq_group.get_seqs()}, \
-                                    {seq_group.request_id}"  # [Sequence(seq_id=80, status=SWAPPED, num_blocks=4)]
+                                    {seq_group.request_id}"  
 
         # Chunk if a running request cannot fit in.
         # If number of seq > 1, it means it is doing beam search in a

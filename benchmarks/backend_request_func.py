@@ -228,9 +228,11 @@ async def async_request_openai_completions(
             "prompt": request_func_input.prompt,
             "temperature": 0.0,
             "best_of": request_func_input.best_of,
+            "min_tokens": request_func_input.output_len,
             "max_tokens": request_func_input.output_len,
             "stream": True,
         }
+        
         headers = {
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
         }
