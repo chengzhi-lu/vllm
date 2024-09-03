@@ -314,6 +314,7 @@ async def async_request_openai_chat_completions(
                 },
             ],
             "temperature": 0.0,
+            "min_tokens": request_func_input.output_len,
             "max_tokens": request_func_input.output_len,
             "stream": True,
         }

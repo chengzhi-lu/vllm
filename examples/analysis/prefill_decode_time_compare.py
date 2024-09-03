@@ -53,7 +53,7 @@ def create_init_prompts(
         selected_seqs = [seqs[1]] * init_prompt_nums
     elif prefill_mode == "horizonal":
         # create a batch whose size is 1 and each seq length is init_prompt_nums
-        selected_seqs = [seqs[init_prompt_nums]]
+        selected_seqs = [seqs[init_prompt_nums]] *3
     for i in range(len(selected_seqs)):
         prompts_queue.put(selected_seqs[i])
 
