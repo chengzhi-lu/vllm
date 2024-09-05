@@ -5,7 +5,7 @@ import time
 import traceback
 from dataclasses import dataclass, field
 from typing import List, Optional
-
+import fnmatch
 import aiohttp
 from tqdm.asyncio import tqdm
 
@@ -25,6 +25,7 @@ class RequestFuncInput:
 
 @dataclass
 class RequestFuncOutput:
+    prompt: str = ""
     generated_text: str = ""
     success: bool = False
     latency: float = 0.0
@@ -56,6 +57,7 @@ async def async_request_tgi(
             "parameters": params,
         }
         output = RequestFuncOutput()
+        output.prompt = request_func_input.prompt
         output.prompt_len = request_func_input.prompt_len
 
         ttft = 0.0
@@ -210,9 +212,15 @@ async def async_request_deepspeed_mii(
         if pbar:
             pbar.update(1)
         return output
-
+    
+def get_json_file():
+    for file_name in os.listdir('.'):
+        if fnmatch.fnmatch(file_name, '*.json'):
+            return file_name
+    return None
 
 async def async_request_openai_completions(
+    policy: str,
     request_func_input: RequestFuncInput,
     pbar: Optional[tqdm] = None,
 ) -> RequestFuncOutput:
@@ -220,24 +228,46 @@ async def async_request_openai_completions(
     assert api_url.endswith(
         "v1/completions"
     ), "OpenAI Completions API URL must end with 'v1/completions'."
+    
+    if policy == "sjf":
+        file_path = get_json_file()
+        if file_path:
+            with open(file_path, 'r', encoding="utf-8") as file:
+                data = json.load(file)
+            print(f"Loaded data from {file_path}")
+        else:
+            print("No JSON file found in the current directory.")
+        
 
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
         assert not request_func_input.use_beam_search
-        payload = {
-            "model": request_func_input.model,
-            "prompt": request_func_input.prompt,
-            "temperature": 0.0,
-            "best_of": request_func_input.best_of,
-            "min_tokens": request_func_input.output_len,
-            "max_tokens": request_func_input.output_len,
-            "stream": True,
-        }
+        if policy == "sjf":
+            payload = {
+                "model": request_func_input.model,
+                "prompt": request_func_input.prompt,
+                "temperature": 0.0,
+                "best_of": request_func_input.best_of,
+                "min_tokens": data[request_func_input.prompt],
+                "max_tokens": data[request_func_input.prompt],
+                "stream": True,
+            }
+        else:
+            payload = {
+                "model": request_func_input.model,
+                "prompt": request_func_input.prompt,
+                "temperature": 0.0,
+                "best_of": request_func_input.best_of,
+                "max_tokens": request_func_input.output_len,
+                "stream": True,
+            }
+            
         
         headers = {
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
         }
 
         output = RequestFuncOutput()
+        output.prompt = request_func_input.prompt
         output.prompt_len = request_func_input.prompt_len
 
         generated_text = ""

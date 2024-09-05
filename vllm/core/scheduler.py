@@ -1765,26 +1765,28 @@ class Scheduler:
         leftover_swapped: Deque[SequenceGroup] = deque()
         while swapped_queue:
             seq_group: SequenceGroup = swapped_queue[0]
-            print("schedule current seq_group:", seq_group.get_seqs())
-            if self.scheduler_config.policy in ["infer", "tfittradeoff"] and seq_group.request_id == self.seq_group_for_preempted[
-                        0].request_id:
-                    # seq_group.reset_execution_iter_nums()
-                    swapped_queue.popleft()
-                    leftover_swapped.appendleft(seq_group)
-                    continue
+            # print("schedule current seq_group:", seq_group.get_seqs())
+            # if self.scheduler_config.policy in ["infer", "tfittradeoff"] and seq_group.request_id == self.seq_group_for_preempted[
+            #             0].request_id:
+            if self.scheduler_config.policy in ["infer", "tfittradeoff"] and seq_group.request_id in self.partial_swapped:
+                # seq_group.reset_execution_iter_nums()
+                swapped_queue.popleft()
+                leftover_swapped.appendleft(seq_group)
+                continue
             # If the sequence group cannot be swapped in, stop.
             is_prefill = seq_group.is_prefill()
             alloc_status = self.block_manager.can_swap_in(
                 seq_group, self._get_num_lookahead_slots(is_prefill))
             
             if alloc_status == AllocStatus.LATER:
-                for seq_group in swapped_queue:
-                    seq_group.update_waiting_iter_nums()
                 if self.scheduler_config.policy == "tfittradeoff":
+                    seq_group.update_waiting_iter_nums()
                     swapped_queue.popleft()
                     leftover_swapped.appendleft(seq_group)
                     continue
                 else:
+                    for seq_group in swapped_queue:
+                        seq_group.update_waiting_iter_nums()
                     break
                 # swapped_queue.popleft()
                 # leftover_swapped.appendleft(seq_group)
@@ -1821,12 +1823,14 @@ class Scheduler:
             if (num_new_tokens == 0
                     or not budget.can_schedule(num_new_tokens=num_new_tokens,
                                                num_new_seqs=num_new_seqs)):
-                seq_group.update_waiting_iter_nums()
                 if self.scheduler_config.policy == "tfittradeoff":
+                    seq_group.update_waiting_iter_nums()
                     swapped_queue.popleft()
                     leftover_swapped.appendleft(seq_group)
                     continue
                 else:
+                    for seq_group in swapped_queue:
+                        seq_group.update_waiting_iter_nums()
                     break
 
             if lora_int_id > 0 and curr_loras is not None:
@@ -2200,7 +2204,7 @@ class Scheduler:
             # # filling the budget with swapped out requests
             # remaining_swapped, swapped_in, = self._schedule_swapped(
             #     self.swapped, budget, curr_loras, policy)
-        elif self.scheduler_config.policy in ["inferpreempt", "sjmlfq"]:
+        elif self.scheduler_config.policy in ["inferpreempt", "sjmlfq", "sjf"]:
             (remaining_running, remaining_swapped, remaining_waiting,
              running_scheduled, swapped_in,
              prefills, recomputed_token_nums) = \

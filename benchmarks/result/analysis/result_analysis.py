@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.7.20"
+__generated_with = "0.8.9"
 app = marimo.App(width="full")
 
 
@@ -39,8 +39,8 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "20240902"
-    _counters = [401]
+    _date = "20240904"
+    _counters = [451]
     e2e_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
     ]
@@ -191,7 +191,7 @@ def e2e_result(
     axes[1].set_ylabel("Throughput (Token/s)")
     axes[1].set_xlabel("Request Rate (r/s)")
     axes[1].grid(linestyle="--", alpha=0.5, axis="y")
-    plt.show()
+    plt.save()
     return axes, e2e_result, fig
 
 
@@ -247,11 +247,11 @@ def __(add_num_annotation, plt, sns):
         line_styles = ["-", "--", "-.", ":"]
         mark_styles = ["d", "o", "v"]
         colors = ["r", "g", "b", "y"]
-        show_legend = True
+        save_legend = True
         for _i, metric_type in enumerate(metric_types):
             _ax = _axes[_i // 2][_i % 2]
             if _i > 0:
-                show_legend = False
+                save_legend = False
             data = _long_df[(_long_df["metric_type"] == metric_type)]
 
             # 按 line_type 分组
@@ -294,18 +294,18 @@ def __(add_num_annotation, plt, sns):
 
         _long_df = _long_df[_long_df["request_rate"] == request_rate]
 
-        show_legend = True
+        save_legend = True
         for metric_type in metric_types:
             _i = metric_types.index(metric_type)
             if _i > 0:
-                show_legend = False
+                save_legend = False
             sns.barplot(
                 hue="scheduler_policy",
                 y="Ratio",
                 x="metric_name",
                 data=_long_df[_long_df["metric_type"] == metric_type],
                 ax=_ax[_i // 2][_i % 2],
-                legend=show_legend,
+                legend=save_legend,
             )
             _ax[_i // 2][_i % 2].set_xlabel(metric_type)
             _ax[_i // 2][_i % 2].set_ylabel("")
@@ -365,7 +365,7 @@ def __(barplot, fig, pd, plt, selected_columns, selected_result):
         )
     )
     # _long_df = _long_df[_long_df["metric_name"] == "P99"]
-    show_legend = True
+    save_legend = True
 
     # line_plot(_long_df)
     # print(_long_df)
@@ -373,8 +373,8 @@ def __(barplot, fig, pd, plt, selected_columns, selected_result):
     fig.tight_layout()
     plt.subplots_adjust(wspace=0.2, hspace=0.4)
 
-    plt.show()
-    return get_metric_ratio, show_legend
+    plt.save()
+    return get_metric_ratio, save_legend
 
 
 @app.cell
@@ -896,7 +896,7 @@ def __(add_num_annotation, detailed_mean_result, plt, sns):
     plt.legend(title="")
     add_num_annotation(ax)
     plt.xticks(rotation=45)
-    plt.show()
+    plt.save()
     return ax,
 
 

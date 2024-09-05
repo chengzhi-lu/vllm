@@ -343,10 +343,17 @@ async def benchmark(
             best_of=best_of,
             use_beam_search=use_beam_search,
         )
-        tasks.append(
-            asyncio.create_task(
-                request_func(request_func_input=request_func_input,
-                             pbar=pbar)))
+        if backend == "vllm":
+            tasks.append(
+                asyncio.create_task(
+                    request_func(args.scheduler_policy,
+                                request_func_input=request_func_input,
+                                pbar=pbar)))
+        else:
+            tasks.append(
+                asyncio.create_task(
+                    request_func(request_func_input=request_func_input,
+                                pbar=pbar)))
     outputs: List[RequestFuncOutput] = await asyncio.gather(*tasks)
     
     if not disable_tqdm:
@@ -425,7 +432,7 @@ async def benchmark(
         # "errors": [output.error for output in outputs],
         "latencies": [output.latency for output in outputs],
     }
-    return result
+    return result, outputs
 
 
 def check_health(api_url: str) -> bool:
@@ -512,7 +519,7 @@ def main(args: argparse.Namespace):
     else:
         raise ValueError(f"Unknown dataset: {args.dataset_name}")
 
-    benchmark_result = asyncio.run(
+    benchmark_result, outputs = asyncio.run(
         benchmark(
             backend=backend,
             api_url=api_url,
@@ -571,6 +578,21 @@ def main(args: argparse.Namespace):
             file_name = os.path.join(args.result_dir, dir_name, file_name)
         with open(file_name, "w") as outfile:
             json.dump(result_json, outfile)
+        
+        prompt_output_lens_json = {}
+        print(benchmark_result["output_lens"])
+        for i in range(len(outputs)):
+            prompt_output_lens_json[outputs[i].prompt] = benchmark_result["output_lens"][i]
+        prompt_output_lens_file_name = f"prompt_output_{backend}-{args.request_rate}qps-{base_model_id}-{seconds}-{args.scheduler_policy}.json"
+        
+        if args.result_dir:
+            print("result_dir:", args.result_dir)
+            prompt_output_lens_file_name = os.path.join(args.result_dir, dir_name, prompt_output_lens_file_name)
+        with open(prompt_output_lens_file_name, "w") as prompt_output_lens_file_name_outfile:
+            json.dump(prompt_output_lens_json, prompt_output_lens_file_name_outfile)
+
+
+
 
 
 if __name__ == "__main__":

@@ -324,6 +324,18 @@ class WaitingTimeFirst(Policy):
         return seq_group.metrics.waiting_iter_nums
 
 
+
+class ShortJobFirst(Policy):
+
+    def get_priority(
+        self,
+        now: float,
+        seq_group: SequenceGroup,
+    ) -> float:
+        total_output_lens = sum([seq.get_output_len() for seq in seq_group.get_seqs()])
+        priority = -(seq_group.max_length - total_output_lens)
+        return priority
+
 class LeastAttainedSvr(Policy):
 
     def get_priority(
@@ -356,6 +368,7 @@ class PolicyFactory:
         "utf": UncomputedTokensFirst,
         "random": Random,
         "wtf": WaitingTimeFirst,
+        "sjf": ShortJobFirst,
         "las": LeastAttainedSvr,
         "ljf": LongJobFirst,
         "infer": TFTLatencyTrade,
