@@ -1373,7 +1373,6 @@ class Scheduler:
         swapped_out: Set[SequenceGroup] = set()
         # partial_swapped_flag = self.scheduler_config.swap_out_tokens_policy == "partial"
         partial_swapped_flag = self.partial_swap_out_flag
-        self.print_flag = False
         partial_swapped_rate = self.scheduler_config.swap_out_partial_rate
 
         # NOTE(woosuk): Preemption happens only when there is no available slot
@@ -1427,9 +1426,11 @@ class Scheduler:
                             swapped_out.add(victim_seq_group)
                     else:
                         # swap out part of the seq_group in the running_queue
-                        victim_seq_group = running_queue.pop()
-                        victim_seq_group_block_size = victim_seq_group.total_token_block_size
+                        # victim_seq_group = running_queue.pop() # Debug
+                        # victim_seq_group_block_size = victim_seq_group.total_token_block_size
                         if len(self.partial_swapped) == 0:
+                            victim_seq_group = running_queue.pop() # Debug
+                            victim_seq_group_block_size = victim_seq_group.total_token_block_size
                             if victim_seq_group_block_size <= required_block_size:
                                 swap_out_block_nums = -1
                                 required_block_size -= victim_seq_group_block_size
@@ -1444,6 +1445,14 @@ class Scheduler:
                                     swap_out_block_unit, 1)
                                 left_victim_block_size = victim_seq_group_block_size - swap_out_block_nums
                                 
+                                # seq_group_status = SequenceStatus.PARTIAL_SWAPPED
+                                # if left_victim_block_size > 0:
+                                #     victim_seq_group_request_id = victim_seq_group.request_id
+                                #     self.partial_swapped[
+                                #         victim_seq_group_request_id] = (
+                                #             left_victim_block_size,
+                                #             victim_seq_group)
+                                #     required_block_size = 0
                                 if left_victim_block_size > 0:
                                     victim_seq_group_request_id = victim_seq_group.request_id
                                     self.partial_swapped[
@@ -1461,14 +1470,14 @@ class Scheduler:
                                 self.partial_swapped.keys())[0]
                             left_victim_block_size, victim_seq_group = self.partial_swapped.pop(
                                 victim_seq_group_request_id)
+                            swap_out_block_unit = ceil(
+                                victim_seq_group.total_token_block_size *
+                                partial_swapped_rate)
                             if left_victim_block_size <= required_block_size:
                                 swap_out_block_nums = left_victim_block_size
                                 required_block_size -= left_victim_block_size
                                 seq_group_status = SequenceStatus.SWAPPED
                             else:
-                                swap_out_block_unit = ceil(
-                                victim_seq_group.total_token_block_size *
-                                partial_swapped_rate)
                                 swap_out_block_nums = max(
                                     ceil(required_block_size /
                                          swap_out_block_unit) *
@@ -1480,11 +1489,35 @@ class Scheduler:
                                             left_victim_block_size,
                                             victim_seq_group)
                                     required_block_size = 0
-                                    seq_group_status = SequenceStatus.PARTIAL_SWAPPED
-                                else:
-                                    swap_out_block_nums = -1
-                                    required_block_size -= victim_seq_group_block_size
-                                    seq_group_status = SequenceStatus.SWAPPED
+                                seq_group_status = SequenceStatus.PARTIAL_SWAPPED
+                            # victim_seq_group_request_id = list(
+                            #     self.partial_swapped.keys())[0]
+                            # left_victim_block_size, victim_seq_group = self.partial_swapped.pop(
+                            #     victim_seq_group_request_id)
+                            # if left_victim_block_size <= required_block_size:
+                            #     swap_out_block_nums = left_victim_block_size
+                            #     required_block_size -= left_victim_block_size
+                            #     seq_group_status = SequenceStatus.SWAPPED
+                            # else:
+                            #     swap_out_block_unit = ceil(
+                            #     victim_seq_group.total_token_block_size *
+                            #     partial_swapped_rate)
+                            #     swap_out_block_nums = max(
+                            #         ceil(required_block_size /
+                            #              swap_out_block_unit) *
+                            #         swap_out_block_unit, 1)
+                            #     left_victim_block_size = left_victim_block_size - swap_out_block_nums
+                            #     if left_victim_block_size > 0:
+                            #         self.partial_swapped[
+                            #             victim_seq_group_request_id] = (
+                            #                 left_victim_block_size,
+                            #                 victim_seq_group)
+                            #         required_block_size = 0
+                            #         seq_group_status = SequenceStatus.PARTIAL_SWAPPED
+                            #     else:
+                            #         swap_out_block_nums = -1
+                            #         required_block_size -= victim_seq_group_block_size
+                            #         seq_group_status = SequenceStatus.SWAPPED
                         preempted_mode = self._preempt(
                             victim_seq_group,
                             blocks_to_swap_out,
@@ -1779,7 +1812,7 @@ class Scheduler:
                 seq_group, self._get_num_lookahead_slots(is_prefill))
             
             if alloc_status == AllocStatus.LATER:
-                if self.scheduler_config.policy == "tfittradeoff":
+                if self.scheduler_config.policy == "tfittradeoff": # Debug
                     seq_group.update_waiting_iter_nums()
                     swapped_queue.popleft()
                     leftover_swapped.appendleft(seq_group)
@@ -1823,7 +1856,7 @@ class Scheduler:
             if (num_new_tokens == 0
                     or not budget.can_schedule(num_new_tokens=num_new_tokens,
                                                num_new_seqs=num_new_seqs)):
-                if self.scheduler_config.policy == "tfittradeoff":
+                if self.scheduler_config.policy == "tfittradeoff": # Debug
                     seq_group.update_waiting_iter_nums()
                     swapped_queue.popleft()
                     leftover_swapped.appendleft(seq_group)
@@ -1956,7 +1989,6 @@ class Scheduler:
         
         while self._passed_delay(time.time()) and waiting_queue:
             seq_group = waiting_queue[0]
-
             waiting_seqs = seq_group.get_seqs(status=SequenceStatus.WAITING)
             assert len(waiting_seqs) == 1, (
                 "Waiting sequence group should have only one prompt "
@@ -1982,7 +2014,7 @@ class Scheduler:
             # If the sequence group cannot be allocated, stop.
             can_allocate = self.block_manager.can_allocate(seq_group)
             if can_allocate == AllocStatus.LATER:
-                if self.scheduler_config.policy == "tfittradeoff":
+                if self.scheduler_config.policy == "tfittradeoff": #  Debug
                     leftover_waiting_sequences.appendleft(seq_group)
                     waiting_queue.popleft()
                     continue
@@ -2017,7 +2049,7 @@ class Scheduler:
             if (num_new_tokens == 0
                     or not budget.can_schedule(num_new_tokens=num_new_tokens,
                                                num_new_seqs=num_new_seqs)):
-                if self.scheduler_config.policy == "tfittradeoff":
+                if self.scheduler_config.policy == "tfittradeoff": # Debug
                     leftover_waiting_sequences.appendleft(seq_group)
                     waiting_queue.popleft()
                     continue

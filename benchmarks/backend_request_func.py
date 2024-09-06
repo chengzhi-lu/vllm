@@ -229,7 +229,7 @@ async def async_request_openai_completions(
         "v1/completions"
     ), "OpenAI Completions API URL must end with 'v1/completions'."
     
-    if policy == "sjf":
+    if policy in ["sjf"]:
         file_path = get_json_file()
         if file_path:
             with open(file_path, 'r', encoding="utf-8") as file:
@@ -241,7 +241,7 @@ async def async_request_openai_completions(
 
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
         assert not request_func_input.use_beam_search
-        if policy == "sjf":
+        if policy in ["sjf"]:
             payload = {
                 "model": request_func_input.model,
                 "prompt": request_func_input.prompt,
