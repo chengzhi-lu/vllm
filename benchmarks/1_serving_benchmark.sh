@@ -11,10 +11,11 @@ COUNTER=$((COUNTER + 1))
 echo $COUNTER >$COUNTER_FILE
 
 # start vllm server
+pwd=`pwd`
 model_name="meta-llama/Llama-2-13b-chat-hf"
 dataset_name="sharegpt"
-dataset_path="/root/v1/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
-result_dir="/root/v1/vllm/benchmarks/result"
+dataset_path="${pwd}/../dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
+result_dir="${pwd}/../v1/vllm/benchmarks/result"
 # scheduler_policy=(fcfs)
 # swap_policies=(full)
 # scheduler_policy=(infer)
@@ -66,7 +67,7 @@ for i in {0..0}; do
           # run benchmark and save the output to benchmark.log
           python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
             --dataset-name $dataset_name --request-rate $request_rate \
-            --num-prompts 500 --request-duration 600 --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
+            --num-prompts 500 --request-duration 10 --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
             --save-result --result-dir $result_dir \
             --metadata swap_space=$swap_space preemption_mode=$preemption_mode \
             scheduler_policy=$policy gpu_memory_utilization=$gpu_memory_utilization \
