@@ -22,6 +22,7 @@ result_dir="/root/v1/vllm/benchmarks/result"
 declare -a scheduler_swap_policies
 scheduler_swap_policies[0]="tfittradeoff partial"
 # scheduler_swap_policies[1]="fcfs full"
+# scheduler_swap_policies[2]="las full"
 # scheduler_swap_policies[1]="tfittradeoff full"
 # scheduler_swap_policies[2]="sjf full"
 # scheduler_swap_policies[3]="sjmlfq full"
@@ -36,8 +37,8 @@ swap_space=64
 max_tokens=2048
 iter_theshold=15
 
-# request_rates[0]=0.5
-# request_rates[1]=1.0
+request_rates[0]=0.5
+request_rates[1]=1.0
 request_rates[2]=2.0
 # request_rates[3]=5.0
 # request_rates[4]=10.0
@@ -66,7 +67,7 @@ for i in {0..0}; do
           # run benchmark and save the output to benchmark.log
           python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
             --dataset-name $dataset_name --request-rate $request_rate \
-            --num-prompts 500 --request-duration 600 --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
+            --num-prompts 500 --request-duration 300 --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
             --save-result --result-dir $result_dir \
             --metadata swap_space=$swap_space preemption_mode=$preemption_mode \
             scheduler_policy=$policy gpu_memory_utilization=$gpu_memory_utilization \
