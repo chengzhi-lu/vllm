@@ -11,10 +11,11 @@ COUNTER=$((COUNTER + 1))
 echo $COUNTER >$COUNTER_FILE
 
 # start vllm server
+pwd=`pwd`
 model_name="meta-llama/Llama-2-13b-chat-hf"
 dataset_name="sharegpt"
-dataset_path="/root/v1/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
-result_dir="/root/v1/vllm/benchmarks/result"
+dataset_path="${pwd}/../dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
+result_dir="${pwd}/../v1/vllm/benchmarks/result"
 # scheduler_policy=(fcfs)
 # swap_policies=(full)
 # scheduler_policy=(infer)
