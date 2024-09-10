@@ -312,7 +312,7 @@ class _AsyncLLMEngine(LLMEngine):
                 "swap out block num: %d, swap out seq num: %d, "
                 "swap in block num: %d, swap in seq num: %d, low efficient swap out ratio: %.5f,"
                 "mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f, "
-                "gpu memory iter: %.5f, gpu computation iter: %.5f, sort time: %.5f"
+                "gpu memory iter: %.5f, gpu computation iter: %.5f, sort time: %.5f, "
                 "schedule running time: %.5f, schedule swapped time: %.5f, schedule prefill time: %.5f,"
                 "swap while time: %.5f, prefill while time: %.5f",
                 self.schedule_time,
