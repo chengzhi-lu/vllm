@@ -15,7 +15,7 @@ pwd=`pwd`
 model_name="meta-llama/Llama-2-13b-chat-hf"
 dataset_name="sharegpt"
 dataset_path="${pwd}/../dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
-result_dir="${pwd}/../v1/vllm/benchmarks/result"
+result_dir="/root/v1/vllm/benchmarks/result"
 # scheduler_policy=(fcfs)
 # swap_policies=(full)
 # scheduler_policy=(infer)
@@ -33,17 +33,19 @@ scheduler_swap_policies[0]="tfittradeoff partial"
 
 preemption_mode="swap"
 gpu_memory_utilization=0.5 # 0.5, 0.7, 0.9
-max_num_seqs=128
+max_num_seqs=128 
 swap_space=64
 max_tokens=2048
 iter_theshold=15
 
-request_rates[0]=0.5
-request_rates[1]=1.0
-request_rates[2]=2.0
+# request_rates[0]=0.5
+# request_rates[1]=1.0
+# request_rates[2]=2.0
 # request_rates[3]=5.0
-# request_rates[4]=10.0
+request_rates[4]=10.0
 # request_rates[5]=20.0
+# request_rates[5]=50.0
+# request_rates[5]=100.0
 
 # request_rates=(2.0)
 swap_out_partial_rates=(0.5)
