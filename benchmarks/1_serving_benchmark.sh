@@ -32,17 +32,17 @@ scheduler_swap_policies[0]="tfittradeoff partial"
 # scheduler_swap_policies[5]="sjmlfq full"fish
 
 preemption_mode="swap"
-gpu_memory_utilization=0.5 # 0.5, 0.7, 0.9
+gpu_memory_utilization=0.7 # 0.5, 0.7, 0.9
 max_num_seqs=128 
 swap_space=64
 max_tokens=2048
 iter_theshold=15
 
-# request_rates[0]=0.5
+request_rates[0]=0.5
 # request_rates[1]=1.0
 # request_rates[2]=2.0
 # request_rates[3]=5.0
-request_rates[4]=10.0
+# request_rates[4]=10.0
 # request_rates[5]=20.0
 # request_rates[5]=50.0
 # request_rates[5]=100.0
