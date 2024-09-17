@@ -32,6 +32,7 @@ import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from typing import AsyncGenerator, List, Optional, Tuple
+import fnmatch
 
 import numpy as np
 from backend_request_func import (ASYNC_REQUEST_FUNCS, RequestFuncInput,
@@ -201,18 +202,33 @@ async def get_request(
         await asyncio.sleep(interval)
         i+=1
 
+def get_json_file():
+    for file_name in os.listdir('.'):
+        if fnmatch.fnmatch(file_name, '*.json'):
+            return file_name
+    return None
+
 async def get_request_duration(
     input_requests: List[Tuple[str, int, int]],
     request_rate: float,
     request_duration: float
 ) -> AsyncGenerator[Tuple[str, int, int], None]:
     global count
+    file_path = get_json_file()
+    if file_path:
+        with open(file_path, 'r', encoding="utf-8") as file:
+            data = json.load(file)
+        # print(f"Loaded data from {file_path}")
+    else:
+        print("No JSON file found in the current directory.")
     # input_requests = iter(input_requests)
     st = time.time()
     count = 0
     while(time.time() - st < request_duration):
         # print(st)
         request = input_requests[random.randint(0, len(input_requests) - 1)]
+        while request[0] not in data:
+            request = input_requests[random.randint(0, len(input_requests) - 1)]
     # for request in input_requests:
         yield request
         if request_rate == float("inf") or request_rate == -1:

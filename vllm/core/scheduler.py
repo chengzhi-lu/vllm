@@ -2216,7 +2216,7 @@ class Scheduler:
             # # filling the budget with swapped out requests
             # remaining_swapped, swapped_in, = self._schedule_swapped(
             #     self.swapped, budget, curr_loras, policy)
-        elif self.scheduler_config.policy in ["inferpreempt", "sjmlfq", "sjf"]:
+        elif self.scheduler_config.policy in ["inferpreempt", "sjmlfq"]:
             (remaining_running, remaining_swapped, remaining_waiting,
              running_scheduled, swapped_in,
              prefills, recomputed_token_nums) = \

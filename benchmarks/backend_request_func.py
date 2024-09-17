@@ -234,7 +234,6 @@ async def async_request_openai_completions(
         if file_path:
             with open(file_path, 'r', encoding="utf-8") as file:
                 data = json.load(file)
-            print(f"Loaded data from {file_path}")
         else:
             print("No JSON file found in the current directory.")
         
