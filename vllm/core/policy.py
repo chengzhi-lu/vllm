@@ -75,10 +75,10 @@ class MLFQ(Policy):
 
 class SkipJoinMLFQ(Policy):
 
-    def __init__(self, quantum_ratio=2, starve_limit=1000):
+    def __init__(self, quantum_ratio=2, starve_limit=2):
         self.quantum_ratio = quantum_ratio  # Q_i/Q_{i-1}
         self.starve_limit = 5  # change to iter num
-        self.min_quantum = 1000  # quantum of Q_1
+        self.min_quantum = 2  # quantum of Q_1
 
     def get_highest_priority(self, first_iteration_time):
         priority_level = 1  # the highest priority
@@ -177,7 +177,7 @@ class TFITTradeoff(Policy):
                     default=-1,
                 )
             if max_eos_token_pos > 0:
-                seq_group.priority_rate = (32000-max_eos_token_pos) / 32000
+                seq_group.priority_rate = (32000-max_eos_token_pos) / 32000 # 32,768, 50432
                 # seq_group.priority_rate = max_eos_token_pos / 32000
                 # seq_group.priority_rate = max_eos_token_pos / 32000
                 priority = (

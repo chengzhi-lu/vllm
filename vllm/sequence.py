@@ -487,6 +487,7 @@ class SequenceGroup:
         pooling_params: Optional[PoolingParams] = None,
         encoder_seq: Optional[Sequence] = None,
         waiting_iter_base: float = 1,
+        vocab_size: int = 32000,
     ) -> None:
         self.request_id = request_id
         self.seqs_dict = {seq.seq_id: seq for seq in seqs}
@@ -519,6 +520,7 @@ class SequenceGroup:
         self.weighted:Tuple[float,float] = (0,0)
         self.swap_out_moment = None
         self.swap_in_moment = None
+        self.vocab_size=vocab_size
 
     @property
     def prompt(self) -> Optional[str]:

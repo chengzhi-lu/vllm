@@ -603,7 +603,7 @@ def main(args: argparse.Namespace):
         
         if args.result_dir:
             print("result_dir:", args.result_dir)
-            prompt_output_lens_file_name = os.path.join(args.result_dir, dir_name, prompt_output_lens_file_name)
+            prompt_output_lens_file_name = os.path.join(args.result_dir, dir_name,"prompt", prompt_output_lens_file_name)
         with open(prompt_output_lens_file_name, "w") as prompt_output_lens_file_name_outfile:
             json.dump(prompt_output_lens_json, prompt_output_lens_file_name_outfile)
 

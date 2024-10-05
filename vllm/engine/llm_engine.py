@@ -210,6 +210,7 @@ class LLMEngine:
         self.num_total_generation_tokens = 0
         self.stats = None
         self.et = 0.0
+        self.engine_start_time = time.time()
         if not self.model_config.skip_tokenizer_init:
             self.tokenizer = self._init_tokenizer()
             self.detokenizer = Detokenizer(self.tokenizer)
@@ -602,7 +603,7 @@ class LLMEngine:
             arrival_time=arrival_time,
             execution_budget=self.scheduler_config.execution_budget,
             sampling_params=sampling_params,
-            lora_request=lora_request)
+            lora_request=lora_request, vocab_size= self.model_config.get_vocab_size())
 
         return seq_group
 
@@ -623,7 +624,7 @@ class LLMEngine:
                                   arrival_time=arrival_time,
                                   lora_request=lora_request,
                                   pooling_params=pooling_params,
-                                  waiting_iter_base=self.scheduler_config.waiting_iter_base)
+                                  waiting_iter_base=self.scheduler_config.waiting_iter_base,vocab_size=self.model_config.get_vocab_size())
         return seq_group
 
     def abort_request(self, request_id: Union[str, Iterable[str]]) -> None:
@@ -711,6 +712,7 @@ class LLMEngine:
             if seq_group_meta.do_sample:
                 self.output_processor.process_outputs(seq_group, outputs)
 
+        
         # Free the finished sequence groups.
         self.scheduler.free_finished_seq_groups()
         additional_info = AdditionalInfo(

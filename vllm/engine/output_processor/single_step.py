@@ -70,6 +70,22 @@ class SingleStepOutputProcessor(SequenceGroupOutputProcessor):
                 seq_group.prompt_logprobs = [None]
             seq_group.prompt_logprobs.extend(prompt_logprobs)
 
+    def _stop(self, seq_group: SequenceGroup,) -> None:
+        parent_seqs = seq_group.get_seqs()
+        
+        for seq in parent_seqs:
+            # if seq_group.sampling_params.detokenize and self.detokenizer:
+            #     new_char_count = self.detokenizer.decode_sequence_inplace(
+            #         seq, seq_group.sampling_params)
+            # else:
+            new_char_count = 0
+            self.stop_checker.maybe_stop_sequence(
+                seq,
+                new_char_count,
+                seq_group.sampling_params,
+                lora_req=seq_group.lora_request,
+            )
+    
     def _process_sequence_group_outputs(self, seq_group: SequenceGroup,
                                         outputs: SequenceGroupOutput) -> None:
         # Process samples

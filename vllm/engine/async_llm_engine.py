@@ -222,14 +222,14 @@ class _AsyncLLMEngine(LLMEngine):
         """
         st = time.time()
         if self.et != 0:
-            logger.debug("interval time is:", st - self.et)
+            logger.debug("interval time is:", st - self.et)  
         seq_group_metadata_list, scheduler_outputs = self.scheduler.schedule()
         et = time.time()
         self.schedule_time += et - st
         self.total_count += 1
         # print("schedule time is:", et - st)
         st = time.time()
-        if not scheduler_outputs.is_empty():
+        if not scheduler_outputs.is_empty() and len(seq_group_metadata_list) > 0:
             # Execute the model.
             execute_model_req = ExecuteModelRequest(
                 seq_group_metadata_list=seq_group_metadata_list,
@@ -244,6 +244,7 @@ class _AsyncLLMEngine(LLMEngine):
             self.swap_time += output[0].swap_time
         else:
             output = []
+        
         et = time.time()
         self.execution_time += et - st
         self.total_iteration_time = self.execution_time - self.swap_time
@@ -258,12 +259,16 @@ class _AsyncLLMEngine(LLMEngine):
             num_waiting_to_running=scheduler_outputs.num_waiting_to_running,
             recomputed_token_nums=scheduler_outputs.recomputed_token_nums,
             num_preemption_iter=scheduler_outputs.preempted)
+        # else:
+            
+            # request_outputs = None
         self.et = time.time()
         self.handle_output_time += self.et - st
         # Log stats.
         self.do_log_stats(scheduler_outputs, output)
         self.scheduler.update_iter_time(self.total_iteration_time /
                                         self.total_count)
+            
         if not request_outputs:
             # Stop the execute model loop in parallel workers until there are
             # more requests to process. This avoids waiting indefinitely in
@@ -371,8 +376,6 @@ class _AsyncLLMEngine(LLMEngine):
                              "not enabled!")
         if arrival_time is None:
             arrival_time = time.time()
-        
-        # raise ValueError(f"Got requests parameters: {params}")``
 
         processed_inputs = await self.process_model_inputs_async(
             request_id=request_id, inputs=inputs, lora_request=lora_request)
@@ -428,7 +431,10 @@ class AsyncLLMEngine:
         self.engine_use_ray = engine_use_ray
         self.log_requests = log_requests
         self.max_log_len = max_log_len
+        self.background_loop_start_time = None
         self.engine = self._init_engine(*args, **kwargs)
+        self.engine_start_time = time.time()
+        
         self.et = 0.0
         self.background_loop: Optional[asyncio.Future] = None
         # We need to keep a reference to unshielded
@@ -440,7 +446,6 @@ class AsyncLLMEngine:
 
         # Lazy initialized fields
         self._request_tracker: RequestTracker
-
     @classmethod
     def from_engine_args(
         cls,
@@ -517,6 +522,7 @@ class AsyncLLMEngine:
             return self.engine.get_tokenizer()
 
     def start_background_loop(self) -> None:
+        self.engine.output_processor.stop_checker.ddl = time.time() + 600 # request-duration
         """Start the background loop."""
         if self.errored:
             raise AsyncEngineDeadError(
@@ -584,12 +590,19 @@ class AsyncLLMEngine:
         else:
             request_outputs = await self.engine.step_async()
 
-        # Put the outputs into the corresponding streams.
+        # if request_outputs != None:
+            # Put the outputs into the corresponding streams.
         for request_output in request_outputs:
             self._request_tracker.process_request_output(
                 request_output, verbose=self.log_requests)
-
+        if time.time()-self.engine_start_time > 600:
+            self.engine.scheduler.reach_ddl = True
         return len(request_outputs) > 0
+        # else:
+        #     # reach ddl:
+        #     return False
+
+        
 
     async def _engine_abort(self, request_ids: Iterable[str]):
         if self.engine_use_ray:
@@ -603,11 +616,13 @@ class AsyncLLMEngine:
             if not has_requests_in_progress:
                 logger.debug("Waiting for new requests...")
                 await self._request_tracker.wait_for_new_requests()
+                
                 logger.debug("Got new requests!")
 
             # Abort if iteration takes too long due to unrecoverable errors
             # (eg. NCCL timeouts).
             try:
+                logger.info(f"has_requests_in_progress: {has_requests_in_progress}")
                 has_requests_in_progress = await asyncio.wait_for(
                     self.engine_step(), ENGINE_ITERATION_TIMEOUT_S)
             except asyncio.TimeoutError as exc:
@@ -615,6 +630,9 @@ class AsyncLLMEngine:
                     "Engine iteration timed out. This should never happen!")
                 self.set_errored(exc)
                 raise
+            if self.engine.scheduler.reach_ddl:
+                self.set_errored(asyncio.exceptions.CancelledError)
+                return
             await asyncio.sleep(0)
 
     async def add_request(

@@ -516,7 +516,10 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         for seq in seq_group.get_seqs():
             if seq.is_finished():
                 continue
-            blocks.update(self.block_tables[seq.seq_id])
+            try: 
+                blocks.update(self.block_tables[seq.seq_id])
+            except:
+                print(seq, self.block_tables.keys())
         # Cross-attention blocks
         if seq_group.is_encoder_decoder():
             blocks.update(self.cross_block_tables[request_id])

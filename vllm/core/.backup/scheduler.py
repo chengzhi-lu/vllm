@@ -2179,189 +2179,15 @@ class Scheduler:
             max_num_seqs=self.scheduler_config.max_num_seqs,
         )
         curr_loras: Set[int] = set()
-        if not self.reach_ddl:
-            remaining_waiting, prefills = (self.waiting,
-                                        SchedulerPrefillOutputs.create_empty())
-            remaining_running, running_scheduled = (
-                self.running, SchedulerRunningOutputs.create_empty())
-            remaining_swapped, swapped_in = (
-                self.swapped, SchedulerSwappedInOutputs.create_empty())
-            policy = PolicyFactory.get_policy(
-                policy_name=self.scheduler_config.policy)
-            
-            
-            if len(self.swapped)+len(self.waiting) !=0:
-                pending_swapped_rate = len(self.waiting)/(len(self.swapped)+len(self.waiting))
-            else:
-                pending_swapped_rate = 0.0
-            
-            pending_swapped_rate = -1
-            
-            if self.scheduler_config.policy in ["infer"]:
-                remaining_running, running_scheduled, recomputed_token_nums = \
-                    self._schedule_infer(self.running,
-                                                    budget,
-                                                    curr_loras,
-                                                    policy,
-                                                    enable_chunking=True)
-                if len(running_scheduled.preempted) + len(
-                        running_scheduled.swapped_out) == 0:
-                    remaining_swapped, swapped_in, = self._schedule_swapped(
-                        self.swapped, budget, curr_loras, policy, pending_swapped_rate=pending_swapped_rate)
-                
-                remaining_waiting, prefills = self._schedule_prefills(
-                    self.waiting, budget, curr_loras, pending_swapped_rate=pending_swapped_rate, enable_chunking=True)
-                
-            
-                # Schedule new prefills.
-                
-                # remaining_waiting, prefills = self._schedule_prefills(
-                #     self.waiting, budget, curr_loras, enable_chunking=True)
-                # # filling the budget with swapped out requests
-                # remaining_swapped, swapped_in, = self._schedule_swapped(
-                #     self.swapped, budget, curr_loras, policy)
-            elif self.scheduler_config.policy in ["inferpreempt", "sjmlfq"]:
-                (remaining_running, remaining_swapped, remaining_waiting,
-                running_scheduled, swapped_in,
-                prefills, recomputed_token_nums) = \
-                    self._schedule_infer_preemption(
-                    running_queue=self.running,
-                    swapped_queue=self.swapped,
-                    waiting_queue=self.waiting,
-                    budget=budget,
-                    policy=policy,
-                    enable_chunking=True,
-                )
-            elif self.scheduler_config.policy == "tfittradeoff":
-                remaining_running, running_scheduled, recomputed_token_nums = \
-                    self._schedule_running_partial(self.running,
-                                        budget,
-                                        curr_loras,
-                                        policy,
-                                        # pending_swapped_rate=1,
-                                        enable_chunking=True,
-                                        pending_swapped_rate=-1)
-                # Schedule swapped out requests.
-                # If preemption happens, it means we don't have space for swap-in.
-                if len(running_scheduled.preempted) + len(
-                        running_scheduled.swapped_out) == 0:
-                    remaining_swapped, swapped_in, = self._schedule_swapped(
-                        self.swapped, budget, curr_loras, policy, pending_swapped_rate=0.0)
-
-                # Schedule new prefills.
-                remaining_waiting, prefills = self._schedule_prefills(
-                    self.waiting, budget, curr_loras, pending_swapped_rate=0.0, enable_chunking=True)
-            else:
-                remaining_running, running_scheduled, recomputed_token_nums = \
-                    self._schedule_running_partial(self.running,
-                                        budget,
-                                        curr_loras,
-                                        policy,
-                                        # pending_swapped_rate=1,
-                                        enable_chunking=True)
-                # Schedule swapped out requests.
-                # If preemption happens, it means we don't have space for swap-in.
-                if len(running_scheduled.preempted) + len(
-                        running_scheduled.swapped_out) == 0:
-                    remaining_swapped, swapped_in, = self._schedule_swapped(
-                        self.swapped, budget, curr_loras, policy, pending_swapped_rate=pending_swapped_rate)
-
-                # Schedule new prefills.
-                remaining_waiting, prefills = self._schedule_prefills(
-                    self.waiting, budget, curr_loras, pending_swapped_rate=pending_swapped_rate, enable_chunking=True)
-            # et = time.time()
-            # print(f"schedule chunked prefill time: {et - st}")
-
-            assert (budget.num_batched_tokens <=
-                    self.scheduler_config.max_num_batched_tokens)
-            assert budget.num_curr_seqs <= self.scheduler_config.max_num_seqs
-
-            # Update waiting requests.
-            self.waiting = remaining_waiting
-            self.waiting.extendleft(running_scheduled.preempted)
-            # Update new running requests.
-            self.running = remaining_running
-            self.running.extend([s.seq_group for s in prefills.seq_groups])
-            self.running.extend(
-                [s.seq_group for s in running_scheduled.decode_seq_groups])
-            self.running.extend(
-                [s.seq_group for s in running_scheduled.prefill_seq_groups])
-            self.running.extend(
-                [s.seq_group for s in swapped_in.decode_seq_groups])
-            self.running.extend(
-                [s.seq_group for s in swapped_in.prefill_seq_groups])
-            
-            # Update swapped requests.
-            self.swapped = remaining_swapped
-            self.swapped.extend(running_scheduled.swapped_out)
-            self.iter_nums += 1
-            
-            # Motivation:
-            # 1) GPU Memory:
-            memory_existed = 0
-            memory_new_generated = 0
-            
-            scheduled_seq_groups = (prefills.seq_groups +
-                                    running_scheduled.prefill_seq_groups +
-                                    swapped_in.prefill_seq_groups +
-                                    running_scheduled.decode_seq_groups +
-                                    swapped_in.decode_seq_groups)
-
-            for seq_group in [s.seq_group for s in scheduled_seq_groups]:
-                memory_existed += sum([seq.get_len() for seq in seq_group.get_seqs() if not seq.is_finished()])
-            
-            for seq_group in [s.seq_group for s in (running_scheduled.decode_seq_groups +
-                                    swapped_in.decode_seq_groups)]:
-                memory_new_generated += sum([1 for seq in seq_group.get_seqs() if not seq.is_finished()])
-                    
-            memory_iter = memory_existed + memory_new_generated
-            
-            self.gpu_memory_iter = memory_iter
-            # Normalization
-            self.gpu_memory_iter /= (self.cache_config.block_size * self.cache_config.num_gpu_blocks)
-
-            
-            # 2) GPU computation:
-            
-            prefills_seq_groups = (prefills.seq_groups +
-                                    running_scheduled.prefill_seq_groups +
-                                    swapped_in.prefill_seq_groups)
-            computation_iter = 0
-            
-            for seq_group in [s.seq_group for s in prefills_seq_groups]:
-                computation_iter += sum([seq.get_len() for seq in seq_group.get_seqs() if not seq.is_finished()])
-                
-            computation_iter += memory_new_generated
-            
-            self.gpu_computation_iter = computation_iter
-            
-            return SchedulerOutputs(
-                scheduled_seq_groups=scheduled_seq_groups,
-                num_prefill_groups=(len(prefills.seq_groups) +
-                                    len(swapped_in.prefill_seq_groups) +
-                                    len(running_scheduled.prefill_seq_groups)),
-                num_batched_tokens=budget.num_batched_tokens,
-                blocks_to_swap_in=swapped_in.blocks_to_swap_in,
-                blocks_to_swap_out=running_scheduled.blocks_to_swap_out,
-                blocks_to_copy=running_scheduled.blocks_to_copy +
-                swapped_in.blocks_to_copy,
-                ignored_seq_groups=prefills.ignored_seq_groups+swapped_in.infeasible_seq_groups,
-                num_lookahead_slots=running_scheduled.num_lookahead_slots,
-                running_queue_size=len(self.running),
-                preempted=(len(running_scheduled.preempted) +
-                        len(running_scheduled.swapped_out)),
-                num_running_to_waiting=len(running_scheduled.preempted),
-                num_waiting_to_running=len(running_scheduled.prefill_seq_groups),
-                recomputed_token_nums=recomputed_token_nums,
-            )
-        else:
-            ignored_seq_groups: List[SequenceGroup] = []
+        if self.reach_ddl:
+            scheduled_seq_groups: List[ScheduledSequenceGroup] = []
             for seq_group in (self.waiting + self.running + self.swapped):
                 for seq in seq_group.get_seqs():
                     seq.status = SequenceStatus.FINISHED_STOPPED
                 # num_running_tokens = self._get_num_new_tokens(
                 #     seq_group, SequenceStatus.RUNNING, True, budget)
-                ignored_seq_groups.append(seq_group) 
+                scheduled_seq_groups.append(ScheduledSequenceGroup(seq_group=seq_group,
+                                       token_chunk_size=None)) 
             self.waiting = deque()
             self.running = deque()
             self.swapped= deque()
@@ -2373,7 +2199,7 @@ class Scheduler:
                 blocks_to_swap_in=0,
                 blocks_to_swap_out=0,
                 blocks_to_copy=0,
-                ignored_seq_groups=ignored_seq_groups,
+                ignored_seq_groups=scheduled_seq_groups,
                 num_lookahead_slots=0,
                 running_queue_size=0,
                 preempted=0,
@@ -2381,6 +2207,181 @@ class Scheduler:
                 num_waiting_to_running=0,
                 recomputed_token_nums=0,
             )
+        remaining_waiting, prefills = (self.waiting,
+                                    SchedulerPrefillOutputs.create_empty())
+        remaining_running, running_scheduled = (
+            self.running, SchedulerRunningOutputs.create_empty())
+        remaining_swapped, swapped_in = (
+            self.swapped, SchedulerSwappedInOutputs.create_empty())
+        policy = PolicyFactory.get_policy(
+            policy_name=self.scheduler_config.policy)
+        
+        
+        if len(self.swapped)+len(self.waiting) !=0:
+            pending_swapped_rate = len(self.waiting)/(len(self.swapped)+len(self.waiting))
+        else:
+            pending_swapped_rate = 0.0
+        
+        pending_swapped_rate = -1
+        
+        if self.scheduler_config.policy in ["infer"]:
+            remaining_running, running_scheduled, recomputed_token_nums = \
+                self._schedule_infer(self.running,
+                                                budget,
+                                                curr_loras,
+                                                policy,
+                                                enable_chunking=True)
+            if len(running_scheduled.preempted) + len(
+                    running_scheduled.swapped_out) == 0:
+                remaining_swapped, swapped_in, = self._schedule_swapped(
+                    self.swapped, budget, curr_loras, policy, pending_swapped_rate=pending_swapped_rate)
+            
+            remaining_waiting, prefills = self._schedule_prefills(
+                self.waiting, budget, curr_loras, pending_swapped_rate=pending_swapped_rate, enable_chunking=True)
+            
+        
+            # Schedule new prefills.
+            
+            # remaining_waiting, prefills = self._schedule_prefills(
+            #     self.waiting, budget, curr_loras, enable_chunking=True)
+            # # filling the budget with swapped out requests
+            # remaining_swapped, swapped_in, = self._schedule_swapped(
+            #     self.swapped, budget, curr_loras, policy)
+        elif self.scheduler_config.policy in ["inferpreempt", "sjmlfq"]:
+            (remaining_running, remaining_swapped, remaining_waiting,
+            running_scheduled, swapped_in,
+            prefills, recomputed_token_nums) = \
+                self._schedule_infer_preemption(
+                running_queue=self.running,
+                swapped_queue=self.swapped,
+                waiting_queue=self.waiting,
+                budget=budget,
+                policy=policy,
+                enable_chunking=True,
+            )
+        elif self.scheduler_config.policy == "tfittradeoff":
+            remaining_running, running_scheduled, recomputed_token_nums = \
+                self._schedule_running_partial(self.running,
+                                    budget,
+                                    curr_loras,
+                                    policy,
+                                    # pending_swapped_rate=1,
+                                    enable_chunking=True,
+                                    pending_swapped_rate=-1)
+            # Schedule swapped out requests.
+            # If preemption happens, it means we don't have space for swap-in.
+            if len(running_scheduled.preempted) + len(
+                    running_scheduled.swapped_out) == 0:
+                remaining_swapped, swapped_in, = self._schedule_swapped(
+                    self.swapped, budget, curr_loras, policy, pending_swapped_rate=0.0)
+
+            # Schedule new prefills.
+            remaining_waiting, prefills = self._schedule_prefills(
+                self.waiting, budget, curr_loras, pending_swapped_rate=0.0, enable_chunking=True)
+        else:
+            remaining_running, running_scheduled, recomputed_token_nums = \
+                self._schedule_running_partial(self.running,
+                                    budget,
+                                    curr_loras,
+                                    policy,
+                                    # pending_swapped_rate=1,
+                                    enable_chunking=True)
+            # Schedule swapped out requests.
+            # If preemption happens, it means we don't have space for swap-in.
+            if len(running_scheduled.preempted) + len(
+                    running_scheduled.swapped_out) == 0:
+                remaining_swapped, swapped_in, = self._schedule_swapped(
+                    self.swapped, budget, curr_loras, policy, pending_swapped_rate=pending_swapped_rate)
+
+            # Schedule new prefills.
+            remaining_waiting, prefills = self._schedule_prefills(
+                self.waiting, budget, curr_loras, pending_swapped_rate=pending_swapped_rate, enable_chunking=True)
+        # et = time.time()
+        # print(f"schedule chunked prefill time: {et - st}")
+
+        assert (budget.num_batched_tokens <=
+                self.scheduler_config.max_num_batched_tokens)
+        assert budget.num_curr_seqs <= self.scheduler_config.max_num_seqs
+
+        # Update waiting requests.
+        self.waiting = remaining_waiting
+        self.waiting.extendleft(running_scheduled.preempted)
+        # Update new running requests.
+        self.running = remaining_running
+        self.running.extend([s.seq_group for s in prefills.seq_groups])
+        self.running.extend(
+            [s.seq_group for s in running_scheduled.decode_seq_groups])
+        self.running.extend(
+            [s.seq_group for s in running_scheduled.prefill_seq_groups])
+        self.running.extend(
+            [s.seq_group for s in swapped_in.decode_seq_groups])
+        self.running.extend(
+            [s.seq_group for s in swapped_in.prefill_seq_groups])
+        
+        # Update swapped requests.
+        self.swapped = remaining_swapped
+        self.swapped.extend(running_scheduled.swapped_out)
+        self.iter_nums += 1
+        
+        # Motivation:
+        # 1) GPU Memory:
+        memory_existed = 0
+        memory_new_generated = 0
+        
+        scheduled_seq_groups = (prefills.seq_groups +
+                                running_scheduled.prefill_seq_groups +
+                                swapped_in.prefill_seq_groups +
+                                running_scheduled.decode_seq_groups +
+                                swapped_in.decode_seq_groups)
+
+        for seq_group in [s.seq_group for s in scheduled_seq_groups]:
+            memory_existed += sum([seq.get_len() for seq in seq_group.get_seqs() if not seq.is_finished()])
+        
+        for seq_group in [s.seq_group for s in (running_scheduled.decode_seq_groups +
+                                swapped_in.decode_seq_groups)]:
+            memory_new_generated += sum([1 for seq in seq_group.get_seqs() if not seq.is_finished()])
+                
+        memory_iter = memory_existed + memory_new_generated
+        
+        self.gpu_memory_iter = memory_iter
+        # Normalization
+        self.gpu_memory_iter /= (self.cache_config.block_size * self.cache_config.num_gpu_blocks)
+
+        
+        # 2) GPU computation:
+        
+        prefills_seq_groups = (prefills.seq_groups +
+                                running_scheduled.prefill_seq_groups +
+                                swapped_in.prefill_seq_groups)
+        computation_iter = 0
+        
+        for seq_group in [s.seq_group for s in prefills_seq_groups]:
+            computation_iter += sum([seq.get_len() for seq in seq_group.get_seqs() if not seq.is_finished()])
+            
+        computation_iter += memory_new_generated
+        
+        self.gpu_computation_iter = computation_iter
+        
+        return SchedulerOutputs(
+            scheduled_seq_groups=scheduled_seq_groups,
+            num_prefill_groups=(len(prefills.seq_groups) +
+                                len(swapped_in.prefill_seq_groups) +
+                                len(running_scheduled.prefill_seq_groups)),
+            num_batched_tokens=budget.num_batched_tokens,
+            blocks_to_swap_in=swapped_in.blocks_to_swap_in,
+            blocks_to_swap_out=running_scheduled.blocks_to_swap_out,
+            blocks_to_copy=running_scheduled.blocks_to_copy +
+            swapped_in.blocks_to_copy,
+            ignored_seq_groups=prefills.ignored_seq_groups,
+            num_lookahead_slots=running_scheduled.num_lookahead_slots,
+            running_queue_size=len(self.running),
+            preempted=(len(running_scheduled.preempted) +
+                    len(running_scheduled.swapped_out)),
+            num_running_to_waiting=len(running_scheduled.preempted),
+            num_waiting_to_running=len(running_scheduled.prefill_seq_groups),
+            recomputed_token_nums=recomputed_token_nums,
+        )
+            
             
 
     def _schedule(self) -> SchedulerOutputs:
@@ -2430,7 +2431,8 @@ class Scheduler:
         # such as self.running, self.swapped, and self.waiting.
         scheduler_outputs = self._schedule()
         now = time.time()
-        # Create input data structures.
+        # if not self.reach_ddl:
+            # Create input data structures.
         seq_group_metadata_list: List[SequenceGroupMetadata] = []
 
         for i, scheduled_seq_group in enumerate(scheduler_outputs.scheduled_seq_groups):
