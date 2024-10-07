@@ -1,4 +1,5 @@
 import time
+import hashlib
 import numpy as np
 from typing import List, Dict
 from dataclasses import dataclass
@@ -97,7 +98,8 @@ class Utils:
         request_num_each_round = 0
         for request_output in request_outputs:
             request_num_each_round += 1
-            request_id = request_output.request_id
+            # request_id = request_output.request_id
+            request_md5 = hashlib.md5(request_output.prompt.encode('utf-8')).hexdigest()
             num_waiting_to_running = request_output.num_running_to_waiting
             num_running_to_waiting = request_output.num_waiting_to_running
             recomputed_token_nums = request_output.recomputed_token_nums
@@ -106,20 +108,20 @@ class Utils:
                 # prefill stage
                 prefill_token_nums += request_output.token_chunk_size
                 prefill_token_num_each_request.append(
-                    (request_id, request_output.token_chunk_size))
+                    (request_md5, request_output.token_chunk_size))
                 prefill_stage = True
             elif len(request_output.outputs[0].token_ids) == 1:
                 prefill_token_nums += request_output.token_chunk_size
                 prefill_token_num_each_request.append(
-                    (request_id, request_output.token_chunk_size))
+                    (request_md5, request_output.token_chunk_size))
                 decode_token_nums += 0
                 prefill_stage = True
             else:
                 decode_token_nums += 1
                 decode_stage = True
             if request_output.finished:
-                request_metrics[f"{request_id}"].request_end_time = time.time()
-                request_metrics[f"{request_id}"].decode_length = len(
+                request_metrics[f"{request_md5}"].request_end_time = time.time()
+                request_metrics[f"{request_md5}"].decode_length = len(
                     request_output.outputs[0].token_ids)
             wasted_block_sizes += request_output.wasted_block_size
             total_block_sizes += request_output.total_block_size
@@ -320,15 +322,15 @@ class Utils:
         request_metrics: Dict[str, RequestMetrics],
     ):
         for request_output in request_outputs:
-            request_metrics[
-                request_output.
-                request_id].request_end_time = request_output.metrics.finished_time
+            request_md5 = hashlib.md5(
+                request_output.prompt.encode('utf-8')).hexdigest()
+            request_metrics[request_md5].request_end_time = request_output.metrics.finished_time
             if request_output.finished:
-                request_metrics[request_output.request_id].request_latency = (
-                    request_metrics[request_output.request_id].request_end_time
-                    - (request_metrics[
-                        request_output.request_id].request_start_time))
+                request_metrics[request_md5].request_latency = (
+                    request_metrics[request_md5].request_end_time
+                    - (request_metrics[request_md5].request_start_time))
 
+    
     @staticmethod
     def process_requests(
         engine: LLMEngine,
@@ -372,8 +374,9 @@ class Utils:
                     engine.add_request(request_id, prompt, sampling_params)
                     all_requests.append(request_id)
                     st = time.time()
-                    request_metrics[request_id] = RequestMetrics(
-                        request_id=request_id,
+                    request_md5 =  hashlib.md5(prompt.encode('utf-8')).hexdigest()
+                    request_metrics[request_md5] = RequestMetrics(
+                        request_id=request_md5,
                         prompt_length=prompt_len,
                         decode_length=0,
                         request_start_time=st,
@@ -418,7 +421,7 @@ class Utils:
                     prefill_mode=prefill_mode,
                 )
                 iter_metrics.append(iter_metric)
-
+            
             request_result_metric = Utils.convert_request_metrics(
                 request_metrics)
             iter_result_metric = Utils.convert_iter_metrics(iter_metrics)

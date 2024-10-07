@@ -1220,6 +1220,7 @@ def _get_and_verify_max_len(
     for key in possible_keys:
         max_len = getattr(hf_config, key, None)
         if max_len is not None:
+            print(f"max len from {key}={max_len}")
             max_len_key = key if max_len < derived_max_model_len \
                 else max_len_key
             derived_max_model_len = min(derived_max_model_len, max_len)

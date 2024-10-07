@@ -805,7 +805,7 @@ class Scheduler:
                         self.total_swap_out_seqs += 1
                         
                     if seq_group_swapped_out_flag:
-                        print(f"Current seq_group {seq_group.get_seqs()} is swapped or partially swapped, break")
+                        # print(f"Current seq_group {seq_group.get_seqs()} is swapped or partially swapped, break")
                         break
                         
                     # if not seq_group_swapped_out_flag:

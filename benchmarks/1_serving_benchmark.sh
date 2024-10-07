@@ -24,9 +24,8 @@ result_dir="/root/v1/vllm/benchmarks/result"
 # scheduler_policy=(infer)
 # swap_policies=(partial)
 declare -a scheduler_swap_policies
-scheduler_swap_policies[0]="tfittradeoff partial"
-# scheduler_swap_policies[1]="fcfs full"
-# scheduler_swap_policies[2]="las full"
+# scheduler_swap_policies[0]="tfittradeoff partial"
+scheduler_swap_policies[1]="fcfs full"
 # scheduler_swap_policies[1]="tfittradeoff full"
 # scheduler_swap_policies[2]="sjf full"
 # scheduler_swap_policies[3]="sjmlfq full"
@@ -35,15 +34,15 @@ scheduler_swap_policies[0]="tfittradeoff partial"
 # scheduler_swap_policies[5]="sjmlfq full"fish
 
 preemption_mode="swap"
-gpu_memory_utilization=0.7 # 0.5, 0.7, 0.9
-max_num_seqs=128 
-swap_space=32
+gpu_memory_utilization=0.9 # 0.5, 0.7, 0.9
+max_num_seqs=512
+swap_space=64
 max_tokens=2048
 iter_theshold=15
 
 # request_rates[0]=0.5
 # request_rates[1]=1.0
-request_rates[2]=2.0
+# request_rates[2]=2.0
 # request_rates[3]=5.0
 # request_rates[4]=10.0
 # request_rates[5]=20.0
@@ -53,7 +52,7 @@ request_rates[2]=2.0
 # request_rates=(2.0)
 swap_out_partial_rates=(0.5)
 waiting_iter_base=(0.1)
-gpu_devices=3
+gpu_devices=0
 for i in {0..0}; do
   for waiting_iter in "${waiting_iter_base[@]}"; do
     for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do
@@ -64,7 +63,7 @@ for i in {0..0}; do
           swap_policy=${element[1]}
           # tmux new-session -s "api_server" -d bash start_server.sh $gpu_devices $model_name $swap_space $preemption_mode $policy $max_tokens $iter_theshold $max_num_seqs $swap_policy $swap_out_partial_rate $gpu_memory_utilization $waiting_iter
 
-          CUDA_VISIBLE_DEVICES=$gpu_devices taskset -c 20-21 python3 -m vllm.entrypoints.openai.api_server \
+          CUDA_VISIBLE_DEVICES=$gpu_devices taskset -c 23-24 python3 -m vllm.entrypoints.openai.api_server \
             --model $model_name --swap-space $swap_space --preemption-mode $preemption_mode --scheduler-policy $policy \
             --enable-chunked-prefill --max-num-batched-tokens $max_tokens --iter-threshold $iter_theshold --max-num-seqs $max_num_seqs --swap-out-tokens-policy $swap_policy --swap-out-partial-rate $swap_out_partial_rate --execution-budget $iter_theshold \
             --tensor-parallel-size 1 --gpu-memory-utilization $gpu_memory_utilization --disable-sliding-window --waiting-iter-base $waiting_iter --disable-log-requests >api_server_${policy}_${swap_policy}.log 2>&1 &

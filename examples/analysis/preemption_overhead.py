@@ -1,5 +1,5 @@
 import argparse
-from typing import List, Tuple, Dict
+from typing import Tuple, Dict
 from queue import Queue
 from vllm import EngineArgs, LLMEngine, SamplingParams
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
