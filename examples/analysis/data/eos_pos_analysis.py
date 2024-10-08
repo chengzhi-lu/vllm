@@ -186,7 +186,7 @@ def __(df_prob, pd):
     _start_values = range(1, 21)
     correlations = {}
     for _start in _start_values:
-        tmp_dfs = [_get_left_count(df_prob[col], _start) for col in df_prob]
+        tmp_dfs = [get_left_count(df_prob[col], _start) for col in df_prob]
         _true_pred = [
             (tmp_df.loc[:, "left_ratio"][0], tmp_df.loc[:, "estimation_length"][0])
             for tmp_df in tmp_dfs
@@ -198,7 +198,7 @@ def __(df_prob, pd):
             [x[1] for x in _true_pred],
         )
         if len(_true_length) > 1 and len(_pred_length) > 1:
-            (_corr, _) = _spearmanr(_true_length, _pred_length)
+            (_corr, _) = spearmanr(_true_length, _pred_length)
             correlations[_start] = _corr
         else:
             correlations[_start] = None
@@ -236,7 +236,7 @@ def __(df_prob, np, pd):
         for _start in _start_values:
             correlations[_n] = []
             tmp_dfs = [
-                _get_left_count(df_prob[col], _start, _n) for col in df_prob
+                get_left_count(df_prob[col], _start, _n) for col in df_prob
             ]
             for _i in range(0, len(df_prob)):
                 _true_pred = [
@@ -253,7 +253,7 @@ def __(df_prob, np, pd):
                     [x[1] for x in _true_pred],
                 )
                 if len(_true_length) > 1 and len(_pred_length) > 1:
-                    (_corr, _) = _spearmanr(_true_length, _pred_length)
+                    (_corr, _) = spearmanr(_true_length, _pred_length)
                     correlations[_n].append(_corr)
                 else:
                     correlations[_n].append(None)
@@ -298,7 +298,7 @@ def __(df_prob, pd):
     _start_values = range(2, 40)
     probs_correlations = {}
     for _start in _start_values:
-        tmp_dfs = [_get_left_count(df_prob[col], _start) for col in df_prob]
+        tmp_dfs = [get_left_count(df_prob[col], _start) for col in df_prob]
         _true_pred = [
             (tmp_df.loc[:, "left_ratio"][0], tmp_df.loc[:, "estimation_length"][0])
             for tmp_df in tmp_dfs
@@ -310,7 +310,7 @@ def __(df_prob, pd):
             [x[1] for x in _true_pred],
         )
         if len(_true_length) > 1 and len(_pred_length) > 1:
-            (_corr, _) = _spearmanr(_true_length, _pred_length)
+            (_corr, _) = spearmanr(_true_length, _pred_length)
             probs_correlations[_start] = _corr
         else:
             probs_correlations[_start] = None

@@ -145,7 +145,7 @@ def main(
     t.start()
     for _result in inference_backend(engine, input_queue=input_queue):
         eos_result.extend(_result)
-        if len(eos_result) % batch_size == 0:
+        if (len(eos_result) // batch_size) % 10 == 0:
             result_df = pd.DataFrame(
                 eos_result,
                 columns=[
@@ -156,9 +156,7 @@ def main(
                     "eos_token_rank",
                 ],
             )
-            print(result_df)
-            result_df.to_csv(os.path.join(BASE_DIR, f"{model_name}_{dataset_name}_eos_prob_result.csv"), index=False)
-            break
+            result_df.to_csv(os.path.join(BASE_DIR,"data","eos_result", f"{model_name}_{dataset_name}_eos_prob_result.csv"), index=False)
 
     # for input_seqs in track(seqs, description="Predicting eos position..."):
     #     for seq in input_seqs:
@@ -229,7 +227,7 @@ def main_test(
 
 if __name__ == "__main__":
     test_type = "infer_schedule_policy_test"
-    models = ["mistral"]
+    models = ["llama"]
     datasets = ["alpaca"]
     rerun = True
     max_token_nums = [4096]
