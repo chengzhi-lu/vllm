@@ -427,6 +427,7 @@ class AsyncLLMEngine:
                  log_requests: bool = True,
                  max_log_len: Optional[int] = None,
                  start_engine_loop: bool = True,
+                 max_serving_time: int=600,
                  **kwargs) -> None:
         self.worker_use_ray = worker_use_ray
         self.engine_use_ray = engine_use_ray
@@ -435,7 +436,7 @@ class AsyncLLMEngine:
         self.background_loop_start_time = None
         self.engine = self._init_engine(*args, **kwargs)
         self.engine_start_time = time.time()
-        
+        self.max_serving_time =max_serving_time 
         self.et = 0.0
         self.background_loop: Optional[asyncio.Future] = None
         # We need to keep a reference to unshielded
@@ -489,6 +490,7 @@ class AsyncLLMEngine:
             log_stats=not engine_args.disable_log_stats,
             max_log_len=engine_args.max_log_len,
             start_engine_loop=start_engine_loop,
+            max_serving_time=engine_args.max_serving_time,
             usage_context=usage_context,
         )
         return engine
@@ -596,7 +598,7 @@ class AsyncLLMEngine:
         for request_output in request_outputs:
             self._request_tracker.process_request_output(
                 request_output, verbose=self.log_requests)
-        if time.time()-self.engine_start_time > 600:
+        if time.time()-self.engine_start_time > self.max_serving_time:
             self.engine.scheduler.reach_ddl = True
         return len(request_outputs) > 0
         # else:
