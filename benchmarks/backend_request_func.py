@@ -229,7 +229,7 @@ async def async_request_openai_completions(
         "v1/completions"
     ), "OpenAI Completions API URL must end with 'v1/completions'."
     
-    if policy in ["sjf"]:
+    if policy in ["sjf",'tfittradeoff','fcfs']:
         file_path = get_json_file()
         if file_path:
             with open(file_path, 'r', encoding="utf-8") as file:

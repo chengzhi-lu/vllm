@@ -715,6 +715,7 @@ class LLMEngine:
         
         # Free the finished sequence groups.
         self.scheduler.free_finished_seq_groups()
+        self.has_finished_seq = self.scheduler.has_finished_seqs
         additional_info = AdditionalInfo(
             num_running_to_waiting=num_running_to_waiting,
             num_waiting_to_running=num_waiting_to_running,

@@ -247,6 +247,7 @@ class _AsyncLLMEngine(LLMEngine):
         
         et = time.time()
         self.execution_time += et - st
+        throughput_iter = self.scheduler.gpu_computation_iter / (et - st)
         self.total_iteration_time = self.execution_time - self.swap_time
         # print("execute time is:", et - st)
         st = time.time()

@@ -66,7 +66,7 @@ for i in {0..0}; do
           swap_policy=${element[1]}
           # tmux new-session -s "api_server" -d bash start_server.sh $gpu_devices $model_name $swap_space $preemption_mode $policy $max_tokens $iter_theshold $max_num_seqs $swap_policy $swap_out_partial_rate $gpu_memory_utilization $waiting_iter
 
-          CUDA_VISIBLE_DEVICES=$gpu_devices taskset -c 20-21 python3 -m vllm.entrypoints.openai.api_server \
+          CUDA_VISIBLE_DEVICES=$gpu_devices taskset -c 23-24 python3 -m vllm.entrypoints.openai.api_server \
             --model $model_name --swap-space $swap_space --preemption-mode $preemption_mode --scheduler-policy $policy \
             --enable-chunked-prefill --max-num-batched-tokens $max_tokens --iter-threshold $iter_theshold --max-num-seqs $max_num_seqs --swap-out-tokens-policy $swap_policy --swap-out-partial-rate $swap_out_partial_rate --execution-budget $iter_theshold \
             --tensor-parallel-size 1 --gpu-memory-utilization $gpu_memory_utilization --disable-sliding-window --waiting-iter-base $waiting_iter --disable-log-requests >api_server_${policy}_${swap_policy}.log 2>&1 &

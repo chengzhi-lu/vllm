@@ -102,7 +102,7 @@ def main(
     
     seqs = get_requests()
     
-    # args.gpu_memory_utilization = 0.5
+    args.gpu_memory_utilization = 0.95
     if enable_chunk_prefill:
         args.enable_chunked_prefill = True
         args.max_num_batched_tokens = max_token_num
