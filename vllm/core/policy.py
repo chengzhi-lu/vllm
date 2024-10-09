@@ -176,8 +176,14 @@ class TFITTradeoff(Policy):
                     (max(seq.get_eos_token_pos()) for seq in seq_group.seqs_dict.values()),
                     default=-1,
                 )
-            if max_eos_token_pos > 0:
-                seq_group.priority_rate = (32000-max_eos_token_pos) / 32000 # 32,768, 50432
+            min_eos_token_pos = min(
+                    (min(seq.get_eos_token_pos()) for seq in seq_group.seqs_dict.values()),
+                    default=-1,
+                )
+            
+            if min_eos_token_pos > 0:
+                # seq_group.priority_rate = (32000-max_eos_token_pos) / 32000 # 32,768, 50432
+                seq_group.priority_rate = (32000-min_eos_token_pos) / 32000 # 32,768, 50432
                 # seq_group.priority_rate = max_eos_token_pos / 32000
                 # seq_group.priority_rate = max_eos_token_pos / 32000
                 priority = (
@@ -198,10 +204,15 @@ class TFITTradeoff(Policy):
         return priority
 
     def _get_waiting_priority(self, avg_priority_rate: float, seq_group: SequenceGroup, pending_swapped_rate: float):
-        priority_rate = max(
-                (max(seq.get_eos_token_pos()) for seq in seq_group.seqs_dict.values()),
+        # priority_rate = max(
+        #         (max(seq.get_eos_token_pos()) for seq in seq_group.seqs_dict.values()),
+        #         default=-1,
+        #     )
+        priority_rate = min(
+                (min(seq.get_eos_token_pos()) for seq in seq_group.seqs_dict.values()),
                 default=-1,
             )
+        
         decode_length = sum(
             seq.get_output_len() for seq in seq_group.seqs_dict.values()
             
@@ -343,7 +354,9 @@ class LeastAttainedSvr(Policy):
         now: float,
         seq_group: SequenceGroup,
     ) -> float:
-        priority = -seq_group.seq_len
+        decode_length = sum(seq.get_output_len() for seq in seq_group.seqs_dict.values())
+        # priority = -seq_group.seq_len
+        priority = -decode_length
         return priority
 
 
