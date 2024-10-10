@@ -206,7 +206,7 @@ class TFITTradeoff(Policy):
         else:
             priority = (
                 avg_priority_rate
-                * (seq_group.seq_len+ seq_group.metrics.waiting_iter_nums*pending_swapped_rate)
+                * (seq_group.seq_len+ seq_group.metrics.waiting_iter_nums)*pending_swapped_rate
                 / seq_group.max_length
             )
         return priority
