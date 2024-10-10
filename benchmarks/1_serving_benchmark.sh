@@ -37,11 +37,11 @@ scheduler_swap_policies[1]="fcfs full"
 
 preemption_mode="swap"
 gpu_memory_utilization=0.7 # 0.5, 0.7, 0.9
-max_num_seqs=256 
+max_num_seqs=128
 swap_space=64
 max_tokens=2048
 iter_theshold=15
-max_serving_time=60
+max_serving_time=120
 # request_rates[0]=0.5
 # request_rates[1]=1.0
 # request_rates[2]=2.0

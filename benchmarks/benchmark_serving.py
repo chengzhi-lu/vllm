@@ -227,16 +227,16 @@ async def get_request_duration(
     while(time.time() - st < request_duration):
         # print(st)
         request = input_requests[random.randint(0, len(input_requests) - 1)]
-        while request[0] not in data:
-            request = input_requests[random.randint(0, len(input_requests) - 1)]
+        # while request[0] not in data:
+        #     request = input_requests[random.randint(0, len(input_requests) - 1)]
     # for request in input_requests:
         yield request
         if request_rate == float("inf") or request_rate == -1:
             # If the request rate is infinity, then we don't need to wait.
             continue
         # Sample the request interval from the exponential distribution.
-        interval = np.random.exponential(1.0 / request_rate)
         count += 1
+        interval = np.random.exponential(1.0 / request_rate)
         # The next request will be sent after the interval.
         await asyncio.sleep(interval)
 
@@ -603,6 +603,8 @@ def main(args: argparse.Namespace):
         
         if args.result_dir:
             print("result_dir:", args.result_dir)
+            if not os.path.exists(os.path.join(args.result_dir, dir_name,"prompt")):
+                os.makedirs(os.path.join(args.result_dir, dir_name,"prompt"))
             prompt_output_lens_file_name = os.path.join(args.result_dir, dir_name,"prompt", prompt_output_lens_file_name)
         with open(prompt_output_lens_file_name, "w") as prompt_output_lens_file_name_outfile:
             json.dump(prompt_output_lens_json, prompt_output_lens_file_name_outfile)
