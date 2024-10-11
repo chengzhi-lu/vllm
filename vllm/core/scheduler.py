@@ -2056,6 +2056,12 @@ class Scheduler:
             self.prev_prompt = True
             
         self.schedule_waiting_time += time.time() - now
+        
+        for scheduled_seq_group in seq_groups:
+            scheduled_seq_group.seq_group.reset_waiting_iter_nums()
+        
+        for seq_group in waiting_queue:
+            seq_group.update_waiting_iter_nums()
 
         return waiting_queue, SchedulerPrefillOutputs(
             seq_groups=seq_groups,

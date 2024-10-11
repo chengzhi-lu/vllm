@@ -557,14 +557,14 @@ class EngineArgs:
             'before the engine preempts it. The engine will preempt the sequence if the execution budget is exceeded.'
             'Also the execution budget is used to determine the maximum number of the waiting iterations before promoting into the running queue.'
         )
-        parser.add_argument(
-            "--max-serving-time",
-            type=int,
-            default=EngineArgs.max_serving_time,
-            help='The maximum serving time of a sequence in seconds. '
-            'If the sequence exceeds this time, the engine will '
-            'terminate.'
-        )
+        # parser.add_argument(
+        #     "--max-serving-time",
+        #     type=int,
+        #     default=EngineArgs.max_serving_time,
+        #     help='The maximum serving time of a sequence in seconds. '
+        #     'If the sequence exceeds this time, the engine will '
+        #     'terminate.'
+        # )
         parser.add_argument(
             "--iter-threshold",
             type=int,

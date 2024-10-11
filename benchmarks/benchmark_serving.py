@@ -227,8 +227,8 @@ async def get_request_duration(
     while(time.time() - st < request_duration):
         # print(st)
         request = input_requests[random.randint(0, len(input_requests) - 1)]
-        while request[0] not in data:
-            request = input_requests[random.randint(0, len(input_requests) - 1)]
+        # while request[0] not in data:
+        #     request = input_requests[random.randint(0, len(input_requests) - 1)]
     # for request in input_requests:
         yield request
         if request_rate == float("inf") or request_rate == -1:
