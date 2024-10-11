@@ -44,7 +44,7 @@ iter_theshold=15
 
 # request_rates[0]=0.5
 # request_rates[1]=1.0
-# request_rates[2]=2.0
+request_rates[2]=2.0
 # request_rates[3]=5.0
 # request_rates[4]=10.0
 # request_rates[5]=20.0
@@ -78,7 +78,7 @@ for i in {0..0}; do
             --num-prompts 500 --request-duration 500 --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
             --save-result --result-dir $result_dir \
             --metadata swap_space=$swap_space preemption_mode=$preemption_mode \
-            scheduler_policy=$policy gpu_memory_utilization=$gpu_memory_utilization \
+            scheduler_policy=$policy gpu_memory_utilization=$gpu_memory_utilization\
             max_num_seqs=$max_num_seqs max_tokens=$max_tokens swap_policy=$swap_policy \
             iter_theshold=$iter_theshold swap_out_partial_rate=$swap_out_partial_rate waiting_iter_base=$waiting_iter >>benchmark-${policy}.log 2>&1
           sleep 5

@@ -8,6 +8,7 @@ from typing import List, Optional
 import fnmatch
 import aiohttp
 from tqdm.asyncio import tqdm
+import asyncio
 
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=6 * 60 * 60)
 
@@ -141,6 +142,7 @@ async def async_request_trt_llm(
 
                         data = json.loads(chunk)
                         output.generated_text += data["text_output"]
+                        print(data['text_output'])
                         timestamp = time.perf_counter()
                         # First token
                         if ttft == 0.0:
@@ -365,6 +367,7 @@ async def async_request_openai_chat_completions(
                     async for chunk_bytes in response.content:
                         chunk_bytes = chunk_bytes.strip()
                         if not chunk_bytes:
+                            print(chunk_bytes)
                             continue
 
                         chunk = remove_prefix(chunk_bytes.decode("utf-8"),
@@ -395,6 +398,7 @@ async def async_request_openai_chat_completions(
                     output.success = True
                     output.latency = latency
                 else:
+                    print(response.reason)
                     output.error = response.reason or ""
                     output.success = False
         except Exception:

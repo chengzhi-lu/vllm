@@ -101,12 +101,12 @@ def sample_sharegpt_requests(
         prompt_len_list.append(prompt_len)
         output_len = len(completion_token_ids
                          ) if fixed_output_len is None else fixed_output_len
-        # if prompt_len < 0 or output_len < 100:
-        #     # Prune too short sequences.
-        #     continue
-        # if prompt_len > 1024 or prompt_len + output_len > 2048:
-        #     # Prune too long sequences.
-        #     continue
+        if prompt_len < 0 or output_len < 100:
+            # Prune too short sequences.
+            continue
+        if prompt_len > 1024 or prompt_len + output_len > 2048:
+            # Prune too long sequences.
+            continue
         filtered_dataset.append((prompt, prompt_len, output_len))
     import collections
     prompt_len_list=collections.Counter(prompt_len_list)
@@ -235,8 +235,8 @@ async def get_request_duration(
             # If the request rate is infinity, then we don't need to wait.
             continue
         # Sample the request interval from the exponential distribution.
-        interval = np.random.exponential(1.0 / request_rate)
         count += 1
+        interval = np.random.exponential(1.0 / request_rate)
         # The next request will be sent after the interval.
         await asyncio.sleep(interval)
 
@@ -596,13 +596,14 @@ def main(args: argparse.Namespace):
             json.dump(result_json, outfile)
         
         prompt_output_lens_json = {}
-        print(benchmark_result["output_lens"])
         for i in range(len(outputs)):
             prompt_output_lens_json[outputs[i].prompt] = benchmark_result["output_lens"][i]
         prompt_output_lens_file_name = f"prompt_output_{backend}-{args.request_rate}qps-{base_model_id}-{seconds}-{args.scheduler_policy}.json"
         
         if args.result_dir:
             print("result_dir:", args.result_dir)
+            if not os.path.exists(os.path.join(args.result_dir, dir_name,"prompt")):
+                os.makedirs(os.path.join(args.result_dir, dir_name,"prompt"))
             prompt_output_lens_file_name = os.path.join(args.result_dir, dir_name,"prompt", prompt_output_lens_file_name)
         with open(prompt_output_lens_file_name, "w") as prompt_output_lens_file_name_outfile:
             json.dump(prompt_output_lens_json, prompt_output_lens_file_name_outfile)
@@ -754,7 +755,12 @@ if __name__ == "__main__":
         default=float("inf"),
         help="the duration of sending requests(Seconds)",
     )
-
+    parser.add_argument(
+        "--max-serving-time",
+        type=int,
+        default=-1,
+        help="the maximum serving time(Seconds)",
+    )
     parser.add_argument("--scheduler-policy",
                         type=str,
                         default="fcfs",

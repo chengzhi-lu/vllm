@@ -13,7 +13,7 @@ echo $COUNTER >$COUNTER_FILE
 # start vllm server
 model_name="meta-llama/Llama-2-13b-chat-hf"
 dataset_name="sharegpt"
-dataset_path="/root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
+dataset_path="/root/v1/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
 result_dir="/root/vllm/benchmarks/result"
 # scheduler_policy=(fcfs)
 # swap_policies=(full)

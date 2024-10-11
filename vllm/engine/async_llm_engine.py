@@ -587,7 +587,7 @@ class AsyncLLMEngine:
 
         if finished_requests:
             await self._engine_abort(finished_requests)
-
+        
         if self.engine_use_ray:
             request_outputs = await self.engine.step.remote()  # type: ignore
         else:
@@ -625,18 +625,32 @@ class AsyncLLMEngine:
             # Abort if iteration takes too long due to unrecoverable errors
             # (eg. NCCL timeouts).
             try:
-                logger.info(f"has_requests_in_progress: {has_requests_in_progress}")
                 has_requests_in_progress = await asyncio.wait_for(
                     self.engine_step(), ENGINE_ITERATION_TIMEOUT_S)
-            except asyncio.TimeoutError as exc:
-                logger.error(
-                    "Engine iteration timed out. This should never happen!")
+                if self.engine.scheduler.reach_ddl:
+                    await self.graceful_shutdown()
+            except (asyncio.TimeoutError,asyncio.CancelledError) as exc:
+                if exc == asyncio.TimeoutError:
+                    logger.error(
+                        "Engine iteration timed out. This should never happen!")
+                elif exc == asyncio.CancelledError:
+                    logger.error("Engine iteration cancelled due to the max serving time reached.")
                 self.set_errored(exc)
-                raise
-            if self.engine.scheduler.reach_ddl:
-                self.set_errored(asyncio.exceptions.CancelledError)
-                return
+                raise exc
+            
             await asyncio.sleep(0)
+
+
+    async def graceful_shutdown(self):
+        if self.is_running:
+            self._background_loop_unshielded.cancel()
+            try:
+                await self.background_loop
+            except asyncio.CancelledError as e:
+                raise e
+            self.background_loop = None
+            self._background_loop_unshielded = None
+
 
     async def add_request(
         self,
