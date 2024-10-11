@@ -864,6 +864,7 @@ class AsyncEngineArgs(EngineArgs):
                             help='Max number of prompt characters or prompt '
                             'ID numbers being printed in log.'
                             '\n\nDefault: Unlimited')
+        # parser.add_argument("--max-serving-time", type=int, default=600, help="Max serving time in seconds")
         return parser
 
 
