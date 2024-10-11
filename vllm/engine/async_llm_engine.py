@@ -647,7 +647,7 @@ class AsyncLLMEngine:
             try:
                 await self.background_loop
             except asyncio.CancelledError as e:
-                raise e
+                pass
             self.background_loop = None
             self._background_loop_unshielded = None
 
