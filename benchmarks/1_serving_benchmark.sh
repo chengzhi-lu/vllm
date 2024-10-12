@@ -13,8 +13,8 @@ echo $COUNTER >$COUNTER_FILE
 # start vllm server
 pwd=`pwd`
 # model_name="meta-llama/Llama-2-70b-chat-hf"
-# model_name="meta-llama/Llama-2-13b-chat-hf"
-model_name="mistralai/Mistral-7B-Instruct-v0.1" # 32000
+model_name="meta-llama/Llama-2-13b-chat-hf"
+# model_name="mistralai/Mistral-7B-Instruct-v0.1" # 32000
 # model_name="EleutherAI/gpt-neox-20b"
 # model_name="facebook/opt-6.7b"
 dataset_name="sharegpt"
@@ -25,8 +25,8 @@ result_dir="${pwd}/result"
 # scheduler_policy=(infer)
 # swap_policies=(partial)
 declare -a scheduler_swap_policies
-# scheduler_swap_policies[0]="tfittradeoff partial"
-scheduler_swap_policies[1]="fcfs full"
+scheduler_swap_policies[0]="tfittradeoff partial"
+# scheduler_swap_policies[1]="fcfs full"
 # scheduler_swap_policies[2]="las full"
 # scheduler_swap_policies[1]="tfittradeoff full"
 # scheduler_swap_policies[2]="sjf full"
@@ -37,11 +37,11 @@ scheduler_swap_policies[1]="fcfs full"
 
 preemption_mode="swap"
 gpu_memory_utilization=0.7 # 0.5, 0.7, 0.9
-max_num_seqs=384
+max_num_seqs=128
 swap_space=64
 max_tokens=2048
 iter_theshold=15
-max_serving_time=500
+max_serving_time=30
 # request_rates[0]=0.5
 # request_rates[1]=1.0
 # request_rates[2]=2.0
@@ -55,7 +55,7 @@ request_rates[5]=20.0
 # request_rates=(2.0)
 swap_out_partial_rates=(0.5)
 waiting_iter_base=(0.1)
-gpu_devices=1
+gpu_devices=0
 for i in {0..0}; do
   for waiting_iter in "${waiting_iter_base[@]}"; do
     for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do

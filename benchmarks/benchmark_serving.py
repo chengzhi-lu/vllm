@@ -213,17 +213,15 @@ async def get_request_duration(
     request_rate: float,
     request_duration: float
 ) -> AsyncGenerator[Tuple[str, int, int], None]:
-    global count
-    file_path = get_json_file()
-    if file_path:
-        with open(file_path, 'r', encoding="utf-8") as file:
-            data = json.load(file)
-        # print(f"Loaded data from {file_path}")
-    else:
-        print("No JSON file found in the current directory.")
+    # file_path = get_json_file()
+    # if file_path:
+    #     with open(file_path, 'r', encoding="utf-8") as file:
+    #         data = json.load(file)
+    #     # print(f"Loaded data from {file_path}")
+    # else:
+    #     print("No JSON file found in the current directory.")
     # input_requests = iter(input_requests)
     st = time.time()
-    count = 0
     while(time.time() - st < request_duration):
         # print(st)
         request = input_requests[random.randint(0, len(input_requests) - 1)]
@@ -235,7 +233,6 @@ async def get_request_duration(
             # If the request rate is infinity, then we don't need to wait.
             continue
         # Sample the request interval from the exponential distribution.
-        count += 1
         interval = np.random.exponential(1.0 / request_rate)
         # The next request will be sent after the interval.
         await asyncio.sleep(interval)
@@ -282,6 +279,9 @@ def calculate_metrics(
             "All requests failed. This is likely due to a misconfiguration "
             "on the benchmark arguments.",
             stacklevel=2)
+    ttfts = [t for t in ttfts if t > 0]
+    tpots = [t for t in tpots if t > 0]
+    itls = [t for t in itls if t > 0]
     metrics = BenchmarkMetrics(
         completed=completed,
         total_input=total_input,
@@ -588,7 +588,6 @@ def main(args: argparse.Namespace):
         dir_name = f"{days}/{args.execution_counter}"
         file_name = f"{backend}-{args.request_rate}qps-{base_model_id}-{seconds}-{args.scheduler_policy}.json"  #noqa
         if args.result_dir:
-            print("result_dir:", args.result_dir)
             if not os.path.exists(os.path.join(args.result_dir, dir_name)):
                 os.makedirs(os.path.join(args.result_dir, dir_name))
             file_name = os.path.join(args.result_dir, dir_name, file_name)
@@ -601,7 +600,6 @@ def main(args: argparse.Namespace):
         prompt_output_lens_file_name = f"prompt_output_{backend}-{args.request_rate}qps-{base_model_id}-{seconds}-{args.scheduler_policy}.json"
         
         if args.result_dir:
-            print("result_dir:", args.result_dir)
             if not os.path.exists(os.path.join(args.result_dir, dir_name,"prompt")):
                 os.makedirs(os.path.join(args.result_dir, dir_name,"prompt"))
             prompt_output_lens_file_name = os.path.join(args.result_dir, dir_name,"prompt", prompt_output_lens_file_name)

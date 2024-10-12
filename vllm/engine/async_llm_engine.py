@@ -126,9 +126,8 @@ class RequestTracker:
                                verbose: bool = False) -> None:
         """Process a request output from the engine."""
         request_id = request_output.request_id
-
         self._request_streams[request_id].put(request_output)
-        if request_output.finished:
+        if request_output.finished or self.reach_ddl:
             if verbose:
                 logger.info("Finished request %s.", request_id)
             self.abort_request(request_id)
@@ -172,7 +171,7 @@ class RequestTracker:
                 request_id].finished:
             # The request has already finished or been aborted.
             return
-
+        logger.info("Request %s is being aborted.", request_id)
         self._request_streams[request_id].finish()
 
     def get_new_and_finished_requests(self) -> Tuple[List[Dict], Set[str]]:
@@ -220,6 +219,8 @@ class _AsyncLLMEngine(LLMEngine):
         and updates the scheduler with the model outputs. Finally, it decodes
         the sequences and returns the newly generated results.
         """
+        if self.scheduler.reach_ddl:
+            return []
         st = time.time()
         if self.et != 0:
             logger.debug("interval time is:", st - self.et)  
@@ -437,6 +438,7 @@ class AsyncLLMEngine:
         self.engine = self._init_engine(*args, **kwargs)
         self.engine_start_time = time.time()
         self.max_serving_time =max_serving_time 
+        self.all_request_abort= False
         self.et = 0.0
         self.background_loop: Optional[asyncio.Future] = None
         # We need to keep a reference to unshielded
@@ -564,10 +566,16 @@ class AsyncLLMEngine:
         """Kick the engine to process the waiting requests.
 
         Returns True if there are in-progress requests."""
-
+        
         new_requests, finished_requests = (
             self._request_tracker.get_new_and_finished_requests())
-
+        if self.engine.scheduler.reach_ddl:
+            new_requests_ids = [r["request_id"] for r in new_requests]
+            for request_id in set(new_requests_ids).union(finished_requests):
+                await self._engine_abort([request_id])
+                await self.abort(request_id)
+            # self.all_request_abort = True
+            return False
         for new_request in new_requests:
             # Add the request into the vLLM engine's waiting queue.
             # TODO: Maybe add add_request_batch to reduce Ray overhead
@@ -596,16 +604,23 @@ class AsyncLLMEngine:
         # if request_outputs != None:
             # Put the outputs into the corresponding streams.
         for request_output in request_outputs:
+            # if request_output.request_id not in self._request_tracker._request_streams:
+                # print(f"request_id {request_output.request_id} not in streams. finished_requests: {[r.request_id for r in finished_requests]}, new_requests: {[r.request_id for r in new_requests]}")
             self._request_tracker.process_request_output(
                 request_output, verbose=self.log_requests)
+            
         if time.time()-self.engine_start_time > self.max_serving_time:
             self.engine.scheduler.reach_ddl = True
+        if self.engine.scheduler.reach_ddl:
+            for request in self.engine.scheduler.waiting+self.engine.scheduler.running+self.engine.scheduler.swapped:
+                await self._engine_abort([request.request_id])
+                await self.abort(request.request_id)
+            self.all_request_abort = True
         return len(request_outputs) > 0
         # else:
         #     # reach ddl:
         #     return False
 
-        
 
     async def _engine_abort(self, request_ids: Iterable[str]):
         if self.engine_use_ray:
@@ -617,18 +632,18 @@ class AsyncLLMEngine:
         has_requests_in_progress = False
         while True:
             if not has_requests_in_progress:
-                logger.debug("Waiting for new requests...")
+                logger.info("Waiting for new requests...")
                 await self._request_tracker.wait_for_new_requests()
-                
-                logger.debug("Got new requests!")
-
+                logger.info("Got new requests!")
+            # if self.all_request_abort and self.engine.scheduler.reach_ddl:
+            #     await self.graceful_shutdown()
             # Abort if iteration takes too long due to unrecoverable errors
             # (eg. NCCL timeouts).
             try:
                 has_requests_in_progress = await asyncio.wait_for(
                     self.engine_step(), ENGINE_ITERATION_TIMEOUT_S)
-                if self.engine.scheduler.reach_ddl:
-                    await self.graceful_shutdown()
+                # if self.engine.scheduler.reach_ddl and self.all_request_abort:
+                    # await self.graceful_shutdown()
             except (asyncio.TimeoutError,asyncio.CancelledError) as exc:
                 if exc == asyncio.TimeoutError:
                     logger.error(
@@ -646,7 +661,7 @@ class AsyncLLMEngine:
             self._background_loop_unshielded.cancel()
             try:
                 await self.background_loop
-            except asyncio.CancelledError as e:
+            except asyncio.CancelledError:
                 pass
             self.background_loop = None
             self._background_loop_unshielded = None
@@ -790,6 +805,8 @@ class AsyncLLMEngine:
                 sampling_params,
                 lora_request=lora_request,
         ):
+            if self.engine.scheduler.reach_ddl:
+                break
             yield LLMEngine.validate_output(output, RequestOutput)
 
     async def encode(

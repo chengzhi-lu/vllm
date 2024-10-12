@@ -231,18 +231,18 @@ async def async_request_openai_completions(
         "v1/completions"
     ), "OpenAI Completions API URL must end with 'v1/completions'."
     
-    # if policy in ["sjf",'tfittradeoff','fcfs']:
-    #     file_path = get_json_file()
-    #     if file_path:
-    #         with open(file_path, 'r', encoding="utf-8") as file:
-    #             data = json.load(file)
-    #     else:
-    #         print("No JSON file found in the current directory.")
+        
         
 
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
         assert not request_func_input.use_beam_search
         if policy in ["sjf"]:
+            file_path = get_json_file()
+            if file_path:
+                with open(file_path, 'r', encoding="utf-8") as file:
+                    data = json.load(file)
+            else:
+                raise FileNotFoundError("JSON file not found for sjf")
             payload = {
                 "model": request_func_input.model,
                 "prompt": request_func_input.prompt,
