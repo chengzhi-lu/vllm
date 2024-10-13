@@ -262,7 +262,6 @@ def calculate_metrics(
                 tokenizer(outputs[i].generated_text,
                           add_special_tokens=False).input_ids)
             actual_output_lens.append(output_len)
-            # print(i)
             total_input += outputs[i].prompt_len
             if output_len > 1:
                 tpots.append(

@@ -7,7 +7,7 @@ from typing import Tuple
 from fastapi import Request
 
 from vllm.config import ModelConfig
-from vllm.engine.async_llm_engine import AsyncLLMEngine
+from vllm.engine.async_llm_engine import AsyncLLMEngine, ReachDDLException
 # yapf: disable
 from vllm.entrypoints.openai.protocol import (CompletionLogProbs,
                                               CompletionRequest,
@@ -280,6 +280,8 @@ class OpenAIServingCompletion(OpenAIServing):
                         usage=final_usage,
                     ).model_dump_json(exclude_unset=True)
                     yield f"data: {response_json}\n\n"
+        except ReachDDLException:
+            yield "data: [DONE]\n\n"
         except ValueError as e:
             # TODO: Use a vllm-specific Validation Error
             data = self.create_streaming_error_response(str(e))

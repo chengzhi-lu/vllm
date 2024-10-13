@@ -28,6 +28,8 @@ ENGINE_ITERATION_TIMEOUT_S = envs.VLLM_ENGINE_ITERATION_TIMEOUT_S
 class AsyncEngineDeadError(RuntimeError):
     pass
 
+class ReachDDLException(Exception):
+    pass
 
 def _log_task_completion(task: asyncio.Task,
                          error_callback: Callable[[Exception], None]) -> None:
@@ -127,10 +129,15 @@ class RequestTracker:
         """Process a request output from the engine."""
         request_id = request_output.request_id
         self._request_streams[request_id].put(request_output)
-        if request_output.finished or self.reach_ddl:
+        if request_output.finished:
             if verbose:
                 logger.info("Finished request %s.", request_id)
             self.abort_request(request_id)
+
+    def process_request_reach_ddl_output(self, request_id: str, output) -> None:
+        self._request_streams[request_id].put(output)
+        # self.abort_request(request_id)
+
 
     def process_exception(self,
                           request_id: str,
@@ -171,7 +178,6 @@ class RequestTracker:
                 request_id].finished:
             # The request has already finished or been aborted.
             return
-        logger.info("Request %s is being aborted.", request_id)
         self._request_streams[request_id].finish()
 
     def get_new_and_finished_requests(self) -> Tuple[List[Dict], Set[str]]:
@@ -573,9 +579,8 @@ class AsyncLLMEngine:
             new_requests_ids = [r["request_id"] for r in new_requests]
             for request_id in set(new_requests_ids).union(finished_requests):
                 await self._engine_abort([request_id])
-                await self.abort(request_id)
+                # await self.abort(request_id)
             # self.all_request_abort = True
-            return False
         for new_request in new_requests:
             # Add the request into the vLLM engine's waiting queue.
             # TODO: Maybe add add_request_batch to reduce Ray overhead
@@ -614,8 +619,7 @@ class AsyncLLMEngine:
         if self.engine.scheduler.reach_ddl:
             for request in self.engine.scheduler.waiting+self.engine.scheduler.running+self.engine.scheduler.swapped:
                 await self._engine_abort([request.request_id])
-                await self.abort(request.request_id)
-            self.all_request_abort = True
+                self._request_tracker.process_request_reach_ddl_output(request.request_id, [])
         return len(request_outputs) > 0
         # else:
         #     # reach ddl:
@@ -635,15 +639,15 @@ class AsyncLLMEngine:
                 logger.info("Waiting for new requests...")
                 await self._request_tracker.wait_for_new_requests()
                 logger.info("Got new requests!")
-            # if self.all_request_abort and self.engine.scheduler.reach_ddl:
-            #     await self.graceful_shutdown()
             # Abort if iteration takes too long due to unrecoverable errors
             # (eg. NCCL timeouts).
             try:
                 has_requests_in_progress = await asyncio.wait_for(
                     self.engine_step(), ENGINE_ITERATION_TIMEOUT_S)
-                # if self.engine.scheduler.reach_ddl and self.all_request_abort:
-                    # await self.graceful_shutdown()
+            #     if self.engine.scheduler.reach_ddl:
+            #         raise ReachDDLException("reach ddl")
+            # except ReachDDLException as e:
+            #     raise e
             except (asyncio.TimeoutError,asyncio.CancelledError) as exc:
                 if exc == asyncio.TimeoutError:
                     logger.error(
@@ -654,17 +658,6 @@ class AsyncLLMEngine:
                 raise exc
             
             await asyncio.sleep(0)
-
-
-    async def graceful_shutdown(self):
-        if self.is_running:
-            self._background_loop_unshielded.cancel()
-            try:
-                await self.background_loop
-            except asyncio.CancelledError:
-                pass
-            self.background_loop = None
-            self._background_loop_unshielded = None
 
 
     async def add_request(
@@ -805,9 +798,11 @@ class AsyncLLMEngine:
                 sampling_params,
                 lora_request=lora_request,
         ):
-            if self.engine.scheduler.reach_ddl:
-                break
+            if isinstance(output, list):
+                raise ReachDDLException("reach ddl")
             yield LLMEngine.validate_output(output, RequestOutput)
+
+            
 
     async def encode(
         self,
@@ -894,7 +889,8 @@ class AsyncLLMEngine:
         """Common logic to process requests with SamplingParams or
         PoolingParams."""
         arrival_time = time.time()
-
+        if self.engine.scheduler.reach_ddl:
+            raise ReachDDLException("Reach DDL")
         stream = await self.add_request(
             request_id,
             inputs,
