@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.8.15"
+__generated_with = "0.9.10"
 app = marimo.App(width="full")
 
 
@@ -108,14 +108,20 @@ def __(MultipleLocator, eos_prob_seq_len_corrs, plt, sns):
     plt.ylabel("Proportion", fontsize=12)
     ax_legend.set(ncols=4, frame_on=False, title="")
     plt.grid(alpha=0.3, linestyle="--")
-    plt.tight_layout(h_pad=0,pad=0.1)
-    plt.savefig("/root/vllm/examples/analysis/data/fig/seq_len_eos_rank_corr.pdf")
+    plt.tight_layout(h_pad=0, pad=0.1)
+    # plt.savefig("/root/vllm/examples/analysis/data/fig/seq_len_eos_rank_corr.pdf")
     plt.show()
     return ax, ax_legend
 
 
-@app.cell
-def __(eos_prob_rank_result_df, np, pd, plt, sns):
+@app.cell(disabled=True)
+def __(mo):
+    mo.md("""## test warm up window size""")
+    return
+
+
+@app.cell(disabled=True, hide_code=True)
+def __(eos_prob_rank_result_df, np, pd):
     def max_eos_prob_left_seq_len(row, i):
         if len(row) <= i:
             return pd.Series([-1, -1], index=["max_eos_prob", "left_seq_len"])
@@ -142,17 +148,23 @@ def __(eos_prob_rank_result_df, np, pd, plt, sns):
             .corr(method="spearman")
             .loc["max_eos_prob", "left_seq_len"]
         )
+    return corrs, eos_prob_left_seq_len, i, max_eos_prob_left_seq_len
+
+
+@app.cell(hide_code=True)
+def __(corrs, plt, sns):
     plt.figure(figsize=(4, 2.5), dpi=150)
+    print(corrs)
     sns.lineplot(corrs, hue="model_dataset")
     plt.xlabel("# of Iters")
     plt.ylabel("Corr. Seq Len vs. Prob")
     plt.grid(alpha=0.3, linestyle="--")
     plt.show()
     print(corrs)
-    return corrs, eos_prob_left_seq_len, i, max_eos_prob_left_seq_len
+    return
 
 
-@app.cell
+@app.cell(disabled=True, hide_code=True)
 def __(eos_prob_rank_result_df, np, pd):
     def eos_prob_predict_len(row, i):
         if len(row) <= i:
@@ -188,7 +200,7 @@ def __(eos_prob_rank_result_df, np, pd):
     return eos_pred_len_df, eos_prob_predict_len
 
 
-@app.cell
+@app.cell(disabled=True, hide_code=True)
 def __(eos_prob_rank_result_df):
     _tmp_eos_prob_rank_result_df = eos_prob_rank_result_df[
         eos_prob_rank_result_df["request_id"] == 0
@@ -201,31 +213,14 @@ def __(eos_prob_rank_result_df):
     return
 
 
-@app.cell
+@app.cell(disabled=True, hide_code=True)
 def __(eos_prob_rank_result_df):
     seq_output_len = (
         eos_prob_rank_result_df.groupby(["prompt_len"])
         .agg({"token_num": "mean"})
         .reset_index()
     )
-    return seq_output_len,
-
-
-@app.cell
-def __(seq_output_len):
-    seq_output_len
-    return
-
-
-@app.cell
-def __(seq_output_len):
-    seq_output_len.corr()
-    return
-
-
-@app.cell
-def __():
-    return
+    return (seq_output_len,)
 
 
 if __name__ == "__main__":
