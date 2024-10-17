@@ -469,69 +469,66 @@ async def get_request_duration_multiprocessing(input_requests,
     
     return outputs
 
-request_queue = multiprocessing.Queue()
-result_queue = multiprocessing.Queue()
-lock = multiprocessing.Lock()
-RESULTLEN = 0
 
-def process_requests(backend, args, pbar, request_func):
-    # tasks = []
-    while True:
-        request_func_input = request_queue.get()
-        if request_func_input is None:
-            break
-        
-        if backend == "vllm":
-            result = asyncio.run(
-                request_func(args.scheduler_policy, request_func_input=request_func_input, pbar=pbar)
-            )
-        else:
-            result = asyncio.run(
-                request_func(request_func_input=request_func_input, pbar=pbar)
-            )
-        
-        result_queue.put(result)
-    
-    
 # def process_requests(backend, args, pbar, request_func):
-#     async def handle_requests():
-#         tasks = []
-#         while True:
-#             request_func_input = request_queue.get()
-#             print(request_func_input)
-#             if request_func_input is None:
-#                 break
+#     # tasks = []
+#     while True:
+#         request_func_input = request_queue.get()
+#         if request_func_input is None:
+#             break
+        
+#         if backend == "vllm":
+#             result = asyncio.run(
+#                 request_func(args.scheduler_policy, request_func_input=request_func_input, pbar=pbar)
+#             )
+#         else:
+#             result = asyncio.run(
+#                 request_func(request_func_input=request_func_input, pbar=pbar)
+#             )
+        
+#         result_queue.put(result)
+    
+    
+def process_requests(backend, args, pbar, request_func):
+    async def handle_requests():
+        tasks = []
+        while True:
+            request_func_input = await asyncio.get_event_loop().run_in_executor(None, request_queue.get)
+            if request_func_input is None:
+                break
             
-# #         # if backend == "vllm":
-# #         #     result = asyncio.run(
-# #         #         request_func(args.scheduler_policy, request_func_input=request_func_input, pbar=pbar)
-# #         #     )
-# #         # else:
-# #         #     result = asyncio.run(
-# #         #         request_func(request_func_input=request_func_input, pbar=pbar)
-# #         #     )
+#         # if backend == "vllm":
+#         #     result = asyncio.run(
+#         #         request_func(args.scheduler_policy, request_func_input=request_func_input, pbar=pbar)
+#         #     )
+#         # else:
+#         #     result = asyncio.run(
+#         #         request_func(request_func_input=request_func_input, pbar=pbar)
+#         #     )
 
-#             if backend == "vllm":
-#                 tasks.append(
-#                     asyncio.create_task(
-#                         request_func(args.scheduler_policy,
-#                                      request_func_input=request_func_input,
-#                                      pbar=pbar)
-#                     )
-#                 )
-#             else:
-#                 tasks.append(
-#                     asyncio.create_task(
-#                         request_func(request_func_input=request_func_input,
-#                                      pbar=pbar)
-#                     )
-#                 )
+            if backend == "vllm":
+                tasks.append(
+                    asyncio.create_task(
+                        request_func(args.scheduler_policy,
+                                     request_func_input=request_func_input,
+                                     pbar=pbar)
+                    )
+                )
+            else:
+                tasks.append(
+                    asyncio.create_task(
+                        request_func(request_func_input=request_func_input,
+                                     pbar=pbar)
+                    )
+                )
 
-#         # Gather the results of all tasks
-#         outputs = await asyncio.gather(*tasks)
-#         result_queue.put(outputs)
+        # Gather the results of all tasks
+        outputs = await asyncio.gather(*tasks)
+        # result_queue.put(outputs)
+        await asyncio.get_event_loop().run_in_executor(None, result_queue.put, outputs)
 
-#     asyncio.run(handle_requests())
+
+    asyncio.run(handle_requests())
 
 async def generate_requests(input_requests, request_rate, request_duration, model_id, api_url, best_of, use_beam_search):
     async for request in get_request_duration(input_requests, request_rate, request_duration):
@@ -617,7 +614,7 @@ async def benchmark(
     # outputs: List[RequestFuncOutput] = await asyncio.gather(*tasks)
     # outputs: List[RequestFuncOutput] = []
     
-    num_workers = multiprocessing.cpu_count()
+    num_workers = 5
     workers = []
     
     # for _ in range(num_workers):
@@ -918,6 +915,11 @@ def main(args: argparse.Namespace):
 if __name__ == "__main__":
     st = time.time()
     count = 0
+    request_queue = multiprocessing.Queue()
+    result_queue = multiprocessing.Queue()
+    lock = multiprocessing.Lock()
+    RESULTLEN = 0
+
     parser = argparse.ArgumentParser(
         description="Benchmark the online serving throughput.")
     parser.add_argument(
