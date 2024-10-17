@@ -496,15 +496,6 @@ def process_requests(backend, args, pbar, request_func):
             request_func_input = await asyncio.get_event_loop().run_in_executor(None, request_queue.get)
             if request_func_input is None:
                 break
-            
-#         # if backend == "vllm":
-#         #     result = asyncio.run(
-#         #         request_func(args.scheduler_policy, request_func_input=request_func_input, pbar=pbar)
-#         #     )
-#         # else:
-#         #     result = asyncio.run(
-#         #         request_func(request_func_input=request_func_input, pbar=pbar)
-#         #     )
 
             if backend == "vllm":
                 tasks.append(
@@ -524,11 +515,11 @@ def process_requests(backend, args, pbar, request_func):
 
         # Gather the results of all tasks
         outputs = await asyncio.gather(*tasks)
-        # result_queue.put(outputs)
         await asyncio.get_event_loop().run_in_executor(None, result_queue.put, outputs)
-
-
-    asyncio.run(handle_requests())
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(handle_requests())
+    # asyncio.run(handle_requests())
 
 async def generate_requests(input_requests, request_rate, request_duration, model_id, api_url, best_of, use_beam_search):
     async for request in get_request_duration(input_requests, request_rate, request_duration):
@@ -647,12 +638,14 @@ async def benchmark(
             use_beam_search=use_beam_search,
         )
         request_queue.put(request_func_input)
+        # await asyncio.get_event_loop().run_in_executor(None, request_queue.put, request_func_input)
     # request_generator.join()
     
     # tasks = []
     total_outputs: List[RequestFuncOutput] = []
     
     for _ in range(num_workers):
+        # await asyncio.get_event_loop().run_in_executor(None, request_queue.put, None)
         request_queue.put(None)
         
     outputs: List[RequestFuncOutput] = []
@@ -660,8 +653,10 @@ async def benchmark(
 
     while True:
         try:
+            # result = await asyncio.get_event_loop().run_in_executor(None, result_queue.get, timeout=2)
             result = result_queue.get(timeout=2)
-            outputs.append(result)
+            for res in result:
+                outputs.append(res)
             # break
         except Exception as error:
             break
