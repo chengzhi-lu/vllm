@@ -288,7 +288,7 @@ class _AsyncLLMEngine(LLMEngine):
         # print(f"Total schedule time: {self.schedule_time}, execution time: {self.execution_time}, handle output time: {self.handle_output_time}, swap time: {self.swap_time}, total iteration number is: {self.total_count}")
         if self.scheduler.total_swap_in_seqs != 0:
             logger.info(
-                "Total schedule time: %.5f s, execution time: %.5f s, "
+                "Total time: %.5f s, Total schedule time: %.5f s, execution time: %.5f s, "
                 "handle output time: %.5f s, swap time: %.5f s, "
                 "total iteration number: %d, "
                 "swap out block num: %d, swap out seq num: %d, "
@@ -296,7 +296,7 @@ class _AsyncLLMEngine(LLMEngine):
                 "mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f, "
                 "gpu memory iter: %.5f, gpu computation iter: %.5f, sort time: %.5f, "
                 "schedule running time: %.5f, schedule swapped time: %.5f, schedule prefill time: %.5f,"
-                "swap while time: %.5f, prefill while time: %.5f",
+                "swap while time: %.5f, prefill while time: %.5f",self.schedule_time+self.execution_time+self.handle_output_time,
                 self.schedule_time,
                 self.execution_time, 
                 self.handle_output_time, 
@@ -319,7 +319,7 @@ class _AsyncLLMEngine(LLMEngine):
                 self.scheduler.prefill_while)
         else:
             logger.info(
-                "Total schedule time: %.5f s, execution time: %.5f s, "
+                "Total time: %.5f s, Total schedule time: %.5f s, execution time: %.5f s, "
                 "handle output time: %.5f s, swap time: %.5f s, "
                 "total iteration number: %d, "
                 "swap out block num: %d, swap out seq num: %d, "
@@ -327,7 +327,7 @@ class _AsyncLLMEngine(LLMEngine):
                 "mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f, "
                 "gpu memory iter: %.5f, gpu computation iter: %.5f, sort time: %.5f, "
                 "schedule running time: %.5f, schedule swapped time: %.5f, schedule prefill time: %.5f,"
-                "swap while time: %.5f, prefill while time: %.5f",
+                "swap while time: %.5f, prefill while time: %.5f",self.schedule_time+self.execution_time+self.handle_output_time,
                 self.schedule_time,
                 self.execution_time, self.handle_output_time, self.swap_time,
                 self.total_count, self.scheduler.total_swap_out_blocks,
