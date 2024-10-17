@@ -13,8 +13,8 @@ echo $COUNTER >$COUNTER_FILE
 # start vllm server
 pwd=`pwd`
 # model_name="meta-llama/Llama-2-70b-chat-hf"
-# model_name="meta-llama/Llama-2-13b-chat-hf"
-model_name="mistralai/Mistral-7B-Instruct-v0.1" # 32000
+model_name="meta-llama/Llama-2-13b-chat-hf"
+# model_name="mistralai/Mistral-7B-Instruct-v0.1" # 32000
 # model_name="EleutherAI/gpt-neox-20b"
 # model_name="facebook/opt-6.7b"
 dataset_name="sharegpt"
@@ -36,15 +36,15 @@ scheduler_swap_policies[0]="tfittradeoff partial"
 # scheduler_swap_policies[5]="sjmlfq full"fish
 
 preemption_mode="swap"
-gpu_memory_utilization=0.4 # 0.5, 0.7, 0.9
-max_num_seqs=256
+gpu_memory_utilization=0.9 # 0.5, 0.7, 0.9
+max_num_seqs=128
 swap_space=64
 max_tokens=2048
 iter_theshold=15
 max_serving_time=1000
-# request_rates[0]=0.5
+request_rates[0]=0.5
 # request_rates[1]=1.0
-request_rates[2]=50.0
+# request_rates[2]=50.0
 # request_rates[3]=10.0
 # request_rates[4]=20.0
 # request_rates[5]=50.0
@@ -73,7 +73,7 @@ for i in {0..0}; do
           pid=$! 
 
           # run benchmark and save the output to benchmark.log
-          taskset -c 84-95 python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
+          taskset -c 86-95 python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
             --dataset-name $dataset_name --request-rate $request_rate \
             --num-prompts 500 --request-duration $max_serving_time --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
             --save-result --result-dir $result_dir \

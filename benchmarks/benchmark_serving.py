@@ -605,7 +605,7 @@ async def benchmark(
     # outputs: List[RequestFuncOutput] = await asyncio.gather(*tasks)
     # outputs: List[RequestFuncOutput] = []
     
-    num_workers = 12
+    num_workers = 10
     workers = []
     
     # for _ in range(num_workers):
