@@ -37,7 +37,7 @@ scheduler_swap_policies[0]="tfittradeoff partial"
 
 preemption_mode="swap"
 gpu_memory_utilization=0.4 # 0.5, 0.7, 0.9
-max_num_seqs=32
+max_num_seqs=256
 swap_space=64
 max_tokens=2048
 iter_theshold=15
@@ -55,7 +55,7 @@ request_rates[2]=50.0
 # request_rates=(2.0)
 swap_out_partial_rates=(0.5)
 waiting_iter_base=(0.1)
-gpu_devices=0
+gpu_devices=1
 for i in {0..0}; do
   for waiting_iter in "${waiting_iter_base[@]}"; do
     for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do
@@ -73,7 +73,7 @@ for i in {0..0}; do
           pid=$! 
 
           # run benchmark and save the output to benchmark.log
-          taskset -c 90-95 python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
+          taskset -c 84-95 python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
             --dataset-name $dataset_name --request-rate $request_rate \
             --num-prompts 500 --request-duration $max_serving_time --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
             --save-result --result-dir $result_dir \
