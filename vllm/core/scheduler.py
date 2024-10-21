@@ -1432,7 +1432,7 @@ class Scheduler:
                         self.total_swap_out_seqs += 1
 
                         if preempted_mode == PreemptionMode.RECOMPUTE:
-                            preempted.add(victim_seq_group)s
+                            preempted.add(victim_seq_group)
                         else:
                             if len(victim_seq_group.get_seqs(status=SequenceStatus.WAITING)) != 0:
                                 raise ValueError("111 There should not be any wating seq in the swapped group")
