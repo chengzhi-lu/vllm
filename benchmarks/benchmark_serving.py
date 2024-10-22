@@ -30,6 +30,7 @@ import os
 import random
 import time
 import warnings
+import copy
 from dataclasses import dataclass
 from datetime import datetime
 from typing import AsyncGenerator, List, Optional, Tuple, Generator
@@ -269,22 +270,17 @@ def generate_request(input_requests: List[Tuple[str, int, int]]) -> Tuple[str, i
 async def get_request_duration(
     input_requests: List[Tuple[str, int, int]],
     request_rate: float,
-    request_duration: float
+    request_duration: float,
+    scheduler_policy: Optional[str],
 ) -> AsyncGenerator[Tuple[str, int, int], None]:
-    # file_path = get_json_file()
-    # if file_path:
-    #     with open(file_path, 'r', encoding="utf-8") as file:
-    #         data = json.load(file)
-    #     # print(f"Loaded data from {file_path}")
-    # else:
-    #     print("No JSON file found in the current directory.")
-    # input_requests = iter(input_requests)
     st = time.time()
     while(time.time() - st < request_duration):
         request = input_requests[random.randint(0, len(input_requests) - 1)]
-        # while request[0] not in data:
-        #     request = input_requests[random.randint(0, len(input_requests) - 1)]
-    # for request in input_requests:
+        
+        # if scheduler_policy=="sjf":
+        #     while request[0] not in data:
+        #         request = input_requests[random.randint(0, len(input_requests) - 1)]
+                
         yield request
         if request_rate == float("inf") or request_rate == -1:
             continue
@@ -415,59 +411,59 @@ async def process_multiple_requests(requests, model_id, api_url, best_of, use_be
     results = await asyncio.gather(*tasks)
     return results
 
-async def get_request_duration_multiprocessing(input_requests,
-                                         request_rate,
-                                         request_duration,
-                                         backend, args,
-                                         model_id,
-                                         api_url,
-                                         best_of,
-                                         use_beam_search,
-                                         pbar,
-                                         request_func) -> List[RequestFuncOutput]: 
-    outputs: List[RequestFuncOutput] = []
-    tasks = []
-    requests = []  # Collect requests in batches
+# async def get_request_duration_multiprocessing(input_requests,
+#                                          request_rate,
+#                                          request_duration,
+#                                          backend, args,
+#                                          model_id,
+#                                          api_url,
+#                                          best_of,
+#                                          use_beam_search,
+#                                          pbar,
+#                                          request_func) -> List[RequestFuncOutput]: 
+#     outputs: List[RequestFuncOutput] = []
+#     tasks = []
+#     requests = []  # Collect requests in batches
     
-    with ProcessPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
-        # Generate requests in batches and submit them to the process pool
-        async for request in get_request_duration(input_requests, request_rate, request_duration):
-            requests.append(request)
-            if len(requests) >= 5:  # Batch size can be tuned
-                task = executor.submit(
-                    run_event_loop_in_process,
-                    requests,
-                    model_id,
-                    api_url,
-                    best_of,
-                    use_beam_search,
-                    backend,
-                    request_func,
-                    pbar
-                )
-                tasks.append(task)
-                requests = []  # Clear batch after submission
+#     with ProcessPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+#         # Generate requests in batches and submit them to the process pool
+#         async for request in get_request_duration(input_requests, request_rate, request_duration):
+#             requests.append(request)
+#             if len(requests) >= 5:  # Batch size can be tuned
+#                 task = executor.submit(
+#                     run_event_loop_in_process,
+#                     requests,
+#                     model_id,
+#                     api_url,
+#                     best_of,
+#                     use_beam_search,
+#                     backend,
+#                     request_func,
+#                     pbar
+#                 )
+#                 tasks.append(task)
+#                 requests = []  # Clear batch after submission
         
-        # Submit any remaining requests
-        if requests:
-            task = executor.submit(
-                run_event_loop_in_process,
-                requests,
-                model_id,
-                api_url,
-                best_of,
-                use_beam_search,
-                backend,
-                request_func,
-                pbar
-            )
-            tasks.append(task)
+#         # Submit any remaining requests
+#         if requests:
+#             task = executor.submit(
+#                 run_event_loop_in_process,
+#                 requests,
+#                 model_id,
+#                 api_url,
+#                 best_of,
+#                 use_beam_search,
+#                 backend,
+#                 request_func,
+#                 pbar
+#             )
+#             tasks.append(task)
 
-        # Collect results from all the tasks
-        for task in tasks:
-            outputs.extend(task.result())  # Extend for multiple results
+#         # Collect results from all the tasks
+#         for task in tasks:
+#             outputs.extend(task.result())  # Extend for multiple results
     
-    return outputs
+#     return outputs
 
 
 # def process_requests(backend, args, pbar, request_func):
@@ -489,7 +485,7 @@ async def get_request_duration_multiprocessing(input_requests,
 #         result_queue.put(result)
     
     
-def process_requests(backend, args, pbar, request_func):
+def process_requests(backend, args, pbar, request_func, data1=None):
     async def handle_requests():
         tasks = []
         while True:
@@ -502,14 +498,16 @@ def process_requests(backend, args, pbar, request_func):
                     asyncio.create_task(
                         request_func(args.scheduler_policy,
                                      request_func_input=request_func_input,
-                                     pbar=pbar)
+                                     pbar=pbar,
+                                     data=data1)
                     )
                 )
             else:
                 tasks.append(
                     asyncio.create_task(
                         request_func(request_func_input=request_func_input,
-                                     pbar=pbar)
+                                     pbar=pbar,
+                                     data=data1)
                     )
                 )
 
@@ -521,22 +519,22 @@ def process_requests(backend, args, pbar, request_func):
     loop.run_until_complete(handle_requests())
     # asyncio.run(handle_requests())
 
-async def generate_requests(input_requests, request_rate, request_duration, model_id, api_url, best_of, use_beam_search):
-    async for request in get_request_duration(input_requests, request_rate, request_duration):
-        prompt, prompt_len, output_len = request
-        request_func_input = RequestFuncInput(
-            model=model_id,
-            prompt=prompt,
-            api_url=api_url,
-            prompt_len=prompt_len,
-            output_len=output_len,
-            best_of=best_of,
-            use_beam_search=use_beam_search,
-        )
-        request_queue.put(request_func_input)
+# async def generate_requests(input_requests, request_rate, request_duration, model_id, api_url, best_of, use_beam_search):
+#     async for request in get_request_duration(input_requests, request_rate, request_duration):
+#         prompt, prompt_len, output_len = request
+#         request_func_input = RequestFuncInput(
+#             model=model_id,
+#             prompt=prompt,
+#             api_url=api_url,
+#             prompt_len=prompt_len,
+#             output_len=output_len,
+#             best_of=best_of,
+#             use_beam_search=use_beam_search,
+#         )
+#         request_queue.put(request_func_input)
 
-def request_generator_process(input_requests, request_rate, request_duration, model_id, api_url, best_of, use_beam_search):
-    asyncio.run(generate_requests(input_requests, request_rate, request_duration, model_id, api_url, best_of, use_beam_search))
+# def request_generator_process(input_requests, request_rate, request_duration, model_id, api_url, best_of, use_beam_search):
+#     asyncio.run(generate_requests(input_requests, request_rate, request_duration, model_id, api_url, best_of, use_beam_search))
 
 async def benchmark(
     backend: str,
@@ -548,85 +546,31 @@ async def benchmark(
     use_beam_search: bool,
     request_rate: float,
     disable_tqdm: bool,
-    request_duration: float
+    request_duration: float,
+    scheduler_policy: Optional[str],
+    data,
 ):
     if backend in ASYNC_REQUEST_FUNCS:
         request_func = ASYNC_REQUEST_FUNCS.get(backend)
     else:
         raise ValueError(f"Unknown backend: {backend}")
 
-    # print("Starting initial single prompt test run...")
-    # test_prompt, test_prompt_len, test_output_len = input_requests[0]
-    # test_input = RequestFuncInput(
-    #     model=model_id,
-    #     prompt=test_prompt,
-    #     api_url=api_url,
-    #     prompt_len=test_prompt_len,
-    #     output_len=test_output_len,
-    #     best_of=best_of,
-    #     use_beam_search=use_beam_search,
-    # )
-    # test_output = await request_func(request_func_input=test_input)
-    # if not test_output.success:
-    #     raise ValueError(
-    #         "Initial test run failed - Please make sure benchmark arguments "
-    #         f"are correctly specified. Error: {test_output.error}")
-    # else:
-    #     print("Initial test run completed. Starting main benchmark run...")
-    # print(f"Traffic request rate: {request_rate}")
-
     pbar = None if disable_tqdm else tqdm(total=len(input_requests))
 
     benchmark_start_time = time.perf_counter()
     
-    # tasks = []
-    # async for request in get_request_duration(input_requests, request_rate, request_duration):
-    #     prompt, prompt_len, output_len = request
-    #     request_func_input = RequestFuncInput(
-    #         model=model_id,
-    #         prompt=prompt,
-    #         api_url=api_url,
-    #         prompt_len=prompt_len,
-    #         output_len=output_len,
-    #         best_of=best_of,
-    #         use_beam_search=use_beam_search,
-    #     )
-    #     if backend == "vllm":
-    #         tasks.append(
-    #             asyncio.create_task(
-    #                 request_func(args.scheduler_policy,
-    #                             request_func_input=request_func_input,
-    #                             pbar=pbar)))
-    #     else:
-    #         tasks.append(
-    #             asyncio.create_task(
-    #                 request_func(request_func_input=request_func_input,
-    #                             pbar=pbar)))
-    # outputs: List[RequestFuncOutput] = await asyncio.gather(*tasks)
-    # outputs: List[RequestFuncOutput] = []
-    
     num_workers = 10
     workers = []
-    
-    # for _ in range(num_workers):
-    # with ProcessPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
-    #     worker = executor.submit(process_requests, backend, args, pbar, request_func)
-    #     # worker = multiprocessing.Process(target=process_requests, args=(backend, args, pbar, request_func))
-    #     # worker.start()
-    #     workers.append(worker)
-    
-    # request_generator = multiprocessing.Process(
-    #     target=request_generator_process,
-    #     args=(request_queue, input_requests, request_rate, request_duration, model_id, api_url, best_of, use_beam_search)
-    # )
     for _ in range(num_workers):
-        worker = multiprocessing.Process(target=process_requests, args=(backend, args, pbar, request_func))
+        if scheduler_policy == "sjf":
+            data1 = copy.deepcopy(data)
+            worker = multiprocessing.Process(target=process_requests, args=(backend, args, pbar, request_func, data1))
+        else:
+            worker = multiprocessing.Process(target=process_requests, args=(backend, args, pbar, request_func))
         worker.start()
         workers.append(worker)
     
-    # request_generator.start()
-    
-    async for request in get_request_duration(input_requests, request_rate, request_duration):
+    async for request in get_request_duration(input_requests, request_rate, request_duration, scheduler_policy):
         prompt, prompt_len, output_len = request
         request_func_input = RequestFuncInput(
             model=model_id,
@@ -638,8 +582,7 @@ async def benchmark(
             use_beam_search=use_beam_search,
         )
         request_queue.put(request_func_input)
-        # await asyncio.get_event_loop().run_in_executor(None, request_queue.put, request_func_input)
-    # request_generator.join()
+
     
     # tasks = []
     total_outputs: List[RequestFuncOutput] = []
@@ -834,20 +777,51 @@ def main(args: argparse.Namespace):
 
     else:
         raise ValueError(f"Unknown dataset: {args.dataset_name}")
-
-    benchmark_result, outputs = asyncio.run(
-        benchmark(
-            backend=backend,
-            api_url=api_url,
-            model_id=model_id,
-            tokenizer=tokenizer,
-            input_requests=input_requests,
-            best_of=args.best_of,
-            use_beam_search=args.use_beam_search,
-            request_rate=args.request_rate,
-            disable_tqdm=args.disable_tqdm,
-            request_duration=args.request_duration
-        ))
+    
+    if args.scheduler_policy=="sjf":
+        data = None
+        file_path = get_json_file()
+        if file_path:
+            with open(file_path, 'r', encoding="utf-8") as file:
+                data = json.load(file)
+            # print(f"Loaded data from {file_path}")
+        else:
+            print("No JSON file found in the current directory.")
+            
+        if data != None:
+            input_requests = [req for req in input_requests if req[0] in data]
+    
+        benchmark_result, outputs = asyncio.run(
+            benchmark(
+                backend=backend,
+                api_url=api_url,
+                model_id=model_id,
+                tokenizer=tokenizer,
+                input_requests=input_requests,
+                best_of=args.best_of,
+                use_beam_search=args.use_beam_search,
+                request_rate=args.request_rate,
+                disable_tqdm=args.disable_tqdm,
+                request_duration=args.request_duration,
+                scheduler_policy=args.scheduler_policy,
+                data=data
+            ))
+    else:
+        benchmark_result, outputs = asyncio.run(
+            benchmark(
+                backend=backend,
+                api_url=api_url,
+                model_id=model_id,
+                tokenizer=tokenizer,
+                input_requests=input_requests,
+                best_of=args.best_of,
+                use_beam_search=args.use_beam_search,
+                request_rate=args.request_rate,
+                disable_tqdm=args.disable_tqdm,
+                request_duration=args.request_duration,
+                scheduler_policy=args.scheduler_policy,
+                data=None
+            ))
 
     # Save config and results to json
     if args.save_result:
@@ -905,7 +879,6 @@ def main(args: argparse.Namespace):
             prompt_output_lens_file_name = os.path.join(args.result_dir, dir_name,"prompt", prompt_output_lens_file_name)
         with open(prompt_output_lens_file_name, "w") as prompt_output_lens_file_name_outfile:
             json.dump(prompt_output_lens_json, prompt_output_lens_file_name_outfile)
-
 
 if __name__ == "__main__":
     st = time.time()

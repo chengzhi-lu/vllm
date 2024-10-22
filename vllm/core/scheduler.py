@@ -2675,9 +2675,10 @@ class Scheduler:
                 "total_num_cumulative_preemption=%d", seq_group.request_id,
                 preemption_mode, self.num_cumulative_preemption + 1)
         self.num_cumulative_preemption += 1
-
-        if preemption_mode == PreemptionMode.RECOMPUTE or not self.block_manager.can_swap_out(seq_group):
-            preemption_mode = PreemptionMode.RECOMPUTE
+            
+        
+        if preemption_mode == PreemptionMode.RECOMPUTE:
+            # preemption_mode = PreemptionMode.RECOMPUTE
             self._preempt_by_recompute(seq_group)
         elif preemption_mode == PreemptionMode.SWAP:
             self._preempt_by_swap(seq_group,

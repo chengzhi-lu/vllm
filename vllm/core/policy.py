@@ -256,7 +256,7 @@ class WaitingTimeFirst(Policy):
 
 
 
-class ShortJobFirst(Policy):
+class ShortRemainJobFirst(Policy):
 
     def get_priority(
         self,
@@ -265,6 +265,16 @@ class ShortJobFirst(Policy):
     ) -> float:
         total_output_lens = sum([seq.get_output_len() for seq in seq_group.get_seqs()])
         priority = -(seq_group.max_length - total_output_lens)
+        return priority
+    
+class ShortJobFirst(Policy):
+
+    def get_priority(
+        self,
+        now: float,
+        seq_group: SequenceGroup,
+    ) -> float:
+        priority = -seq_group.max_length
         return priority
 
 class LeastAttainedSvr(Policy):
