@@ -234,7 +234,7 @@ async def async_request_openai_completions(
     
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
         assert not request_func_input.use_beam_search
-        if policy in ["sjf"]:
+        if policy in ["srjf"]:
             payload = {
                 "model": request_func_input.model,
                 "prompt": request_func_input.prompt,

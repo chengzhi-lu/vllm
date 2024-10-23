@@ -276,11 +276,6 @@ async def get_request_duration(
     st = time.time()
     while(time.time() - st < request_duration):
         request = input_requests[random.randint(0, len(input_requests) - 1)]
-        
-        # if scheduler_policy=="sjf":
-        #     while request[0] not in data:
-        #         request = input_requests[random.randint(0, len(input_requests) - 1)]
-                
         yield request
         if request_rate == float("inf") or request_rate == -1:
             continue
@@ -561,10 +556,14 @@ async def benchmark(
     
     num_workers = 10
     workers = []
+    data_worker = []
     for _ in range(num_workers):
-        if scheduler_policy == "sjf":
-            data1 = copy.deepcopy(data)
-            worker = multiprocessing.Process(target=process_requests, args=(backend, args, pbar, request_func, data1))
+        data1 = copy.deepcopy(data)
+        data_worker.append(data1)
+        
+    for i in range(num_workers):
+        if scheduler_policy == "srjf":
+            worker = multiprocessing.Process(target=process_requests, args=(backend, args, pbar, request_func, data_worker[i]))
         else:
             worker = multiprocessing.Process(target=process_requests, args=(backend, args, pbar, request_func))
         worker.start()
@@ -778,7 +777,7 @@ def main(args: argparse.Namespace):
     else:
         raise ValueError(f"Unknown dataset: {args.dataset_name}")
     
-    if args.scheduler_policy=="sjf":
+    if args.scheduler_policy=="srjf":
         data = None
         file_path = get_json_file()
         if file_path:
