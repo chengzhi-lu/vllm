@@ -529,7 +529,7 @@ class EngineArgs:
             default="fcfs",
             help=
             "Scheduling policy. Can be 'fcfs', 'UncomputedTokensFirst (utf)',"
-            "'WaitingTimeFirst (wtf)','ShortJobFirst(sjf)', 'LeastAttainedService(las)' 'LongJobFirst (ljf)', "
+            "'WaitingTimeFirst (wtf)','ShortJobFirst(sjf)', 'ShortRemainJobFirst(srjf)', 'LeastAttainedService(las)' 'LongJobFirst (ljf)', "
             "'infer', or 'random', default is 'fcfs'",
         )
 

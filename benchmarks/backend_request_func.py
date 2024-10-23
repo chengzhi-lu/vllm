@@ -22,6 +22,7 @@ class RequestFuncInput:
     model: str
     best_of: int = 1
     use_beam_search: bool = False
+    min_tokens: int = None
 
 
 @dataclass
@@ -225,7 +226,6 @@ async def async_request_openai_completions(
     policy: str,
     request_func_input: RequestFuncInput,
     pbar: Optional[tqdm] = None,
-    data=None,
 ) -> RequestFuncOutput:
     api_url = request_func_input.api_url
     assert api_url.endswith(
@@ -234,14 +234,16 @@ async def async_request_openai_completions(
     
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
         assert not request_func_input.use_beam_search
-        if policy in ["srjf"]:
+        if policy in ["srjf", "sjf", "fcfs"]:
+            if request_func_input.min_tokens == None:
+                raise ValueError(f"For policy: {policy}, should specify min_tokens")
             payload = {
                 "model": request_func_input.model,
                 "prompt": request_func_input.prompt,
                 "temperature": 0.0,
                 "best_of": request_func_input.best_of,
-                "min_tokens": data[request_func_input.prompt],
-                "max_tokens": data[request_func_input.prompt],
+                "min_tokens": request_func_input.min_tokens,
+                "max_tokens": request_func_input.min_tokens,
                 "stream": True,
             }
         else:

@@ -312,6 +312,7 @@ class PolicyFactory:
         "random": Random,
         "wtf": WaitingTimeFirst,
         "sjf": ShortJobFirst,
+        "srjf": ShortRemainJobFirst,
         "las": LeastAttainedSvr,
         "ljf": LongJobFirst,
         "infer": TFTLatencyTrade,

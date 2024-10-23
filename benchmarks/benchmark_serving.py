@@ -478,13 +478,17 @@ async def process_multiple_requests(requests, model_id, api_url, best_of, use_be
 #             )
         
 #         result_queue.put(result)
-    
+
     
 def process_requests(backend, args, pbar, request_func, data1=None):
     async def handle_requests():
         tasks = []
         while True:
             request_func_input = await asyncio.get_event_loop().run_in_executor(None, request_queue.get)
+            # min_tokens = data1[request_func_input.prompt]
+            # if not request_func_input is None:
+            #     request_func_input.min_tokens = min_tokens
+            
             if request_func_input is None:
                 break
 
@@ -493,16 +497,14 @@ def process_requests(backend, args, pbar, request_func, data1=None):
                     asyncio.create_task(
                         request_func(args.scheduler_policy,
                                      request_func_input=request_func_input,
-                                     pbar=pbar,
-                                     data=data1)
+                                     pbar=pbar,)
                     )
                 )
             else:
                 tasks.append(
                     asyncio.create_task(
                         request_func(request_func_input=request_func_input,
-                                     pbar=pbar,
-                                     data=data1)
+                                     pbar=pbar,)
                     )
                 )
 
@@ -556,14 +558,14 @@ async def benchmark(
     
     num_workers = 10
     workers = []
-    data_worker = []
-    for _ in range(num_workers):
-        data1 = copy.deepcopy(data)
-        data_worker.append(data1)
+    # data_worker = []
+    # for _ in range(num_workers):
+    #     data1 = copy.deepcopy(data)
+    #     data_worker.append(data1)
         
     for i in range(num_workers):
-        if scheduler_policy == "srjf":
-            worker = multiprocessing.Process(target=process_requests, args=(backend, args, pbar, request_func, data_worker[i]))
+        if scheduler_policy in ["srjf", "sjf", "fcfs"]:
+            worker = multiprocessing.Process(target=process_requests, args=(backend, args, pbar, request_func))
         else:
             worker = multiprocessing.Process(target=process_requests, args=(backend, args, pbar, request_func))
         worker.start()
@@ -571,6 +573,7 @@ async def benchmark(
     
     async for request in get_request_duration(input_requests, request_rate, request_duration, scheduler_policy):
         prompt, prompt_len, output_len = request
+        min_tokens = copy.deepcopy(data[prompt])
         request_func_input = RequestFuncInput(
             model=model_id,
             prompt=prompt,
@@ -579,6 +582,7 @@ async def benchmark(
             output_len=output_len,
             best_of=best_of,
             use_beam_search=use_beam_search,
+            min_tokens=min_tokens,
         )
         request_queue.put(request_func_input)
 
@@ -777,7 +781,7 @@ def main(args: argparse.Namespace):
     else:
         raise ValueError(f"Unknown dataset: {args.dataset_name}")
     
-    if args.scheduler_policy=="srjf":
+    if args.scheduler_policy in ["srjf", "sjf", "fcfs"]:
         data = None
         file_path = get_json_file()
         if file_path:
@@ -786,8 +790,9 @@ def main(args: argparse.Namespace):
             # print(f"Loaded data from {file_path}")
         else:
             print("No JSON file found in the current directory.")
-            
+        
         if data != None:
+            data = {k:v for k, v in data.items() if v != 0}
             input_requests = [req for req in input_requests if req[0] in data]
     
         benchmark_result, outputs = asyncio.run(
@@ -1036,7 +1041,7 @@ if __name__ == "__main__":
     parser.add_argument("--scheduler-policy",
                         type=str,
                         default="fcfs",
-                        choices=["fcfs", "infer","sjmlfq", "inferpreempt","sjf","tfittradeoff", "las"],
+                        choices=["fcfs", "infer","sjmlfq", "inferpreempt","sjf", "srjf", "tfittradeoff", "las"],
                         help="Specify the scheduler policy.")
     parser.add_argument("--execution-counter",
                         type=int,

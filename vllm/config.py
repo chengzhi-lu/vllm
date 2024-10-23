@@ -728,7 +728,7 @@ class SchedulerConfig:
                 f"max_num_batched_tokens ({self.max_num_batched_tokens}) must "
                 "be greater than or equal to max_num_seqs "
                 f"({self.max_num_seqs}).")
-        if self.policy not in ["fcfs", "ljf", "las", "sjf", "utf", "random", "wtf","bff",'infer', 'sjmlfq', 'inferpreempt','tfittradeoff']:
+        if self.policy not in ["fcfs", "ljf", "las", "sjf", "srjf", "utf", "random", "wtf","bff",'infer', 'sjmlfq', 'inferpreempt','tfittradeoff']:
             raise NotImplementedError(
                 f"Scheduler policy {self.policy} is not implemented."
             )
