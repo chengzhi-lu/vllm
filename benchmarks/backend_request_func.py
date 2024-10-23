@@ -234,7 +234,7 @@ async def async_request_openai_completions(
     
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
         assert not request_func_input.use_beam_search
-        if policy in ["srjf", "sjf", "fcfs"]:
+        if policy in ["srjf", "sjf"]:
             if request_func_input.min_tokens == None:
                 raise ValueError(f"For policy: {policy}, should specify min_tokens")
             payload = {

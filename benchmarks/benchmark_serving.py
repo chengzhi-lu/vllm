@@ -500,6 +500,7 @@ def process_requests(backend, args, pbar, request_func, data1=None):
                                      pbar=pbar,)
                     )
                 )
+                
             else:
                 tasks.append(
                     asyncio.create_task(
@@ -564,7 +565,7 @@ async def benchmark(
     #     data_worker.append(data1)
         
     for i in range(num_workers):
-        if scheduler_policy in ["srjf", "sjf", "fcfs"]:
+        if scheduler_policy in ["srjf", "sjf"]:
             worker = multiprocessing.Process(target=process_requests, args=(backend, args, pbar, request_func))
         else:
             worker = multiprocessing.Process(target=process_requests, args=(backend, args, pbar, request_func))
@@ -573,7 +574,10 @@ async def benchmark(
     
     async for request in get_request_duration(input_requests, request_rate, request_duration, scheduler_policy):
         prompt, prompt_len, output_len = request
-        min_tokens = copy.deepcopy(data[prompt])
+        if scheduler_policy in ["srjf", "sjf"]:
+            min_tokens = copy.deepcopy(data[prompt])
+        else:
+            min_tokens = None
         request_func_input = RequestFuncInput(
             model=model_id,
             prompt=prompt,
@@ -781,7 +785,7 @@ def main(args: argparse.Namespace):
     else:
         raise ValueError(f"Unknown dataset: {args.dataset_name}")
     
-    if args.scheduler_policy in ["srjf", "sjf", "fcfs"]:
+    if args.scheduler_policy in ["srjf", "sjf"]:
         data = None
         file_path = get_json_file()
         if file_path:

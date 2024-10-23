@@ -25,12 +25,12 @@ result_dir="${pwd}/result"
 # scheduler_policy=(infer)
 # swap_policies=(partial)
 declare -a scheduler_swap_policies
-# scheduler_swap_policies[0]="tfittradeoff partial"
+scheduler_swap_policies[0]="tfittradeoff partial"
 # scheduler_swap_policies[1]="fcfs full"
 # scheduler_swap_policies[2]="las full"
 # scheduler_swap_policies[1]="tfittradeoff full"
 # scheduler_swap_policies[2]="sjf full"
-scheduler_swap_policies[2]="srjf full"
+# scheduler_swap_policies[2]="srjf full"
 # scheduler_swap_policies[3]="sjmlfq full"
 # scheduler_swap_policies[3]="infer partial"
 # scheduler_swap_policies[4]="inferpreempt full"
@@ -45,10 +45,10 @@ iter_theshold=15
 max_serving_time=1200
 # request_rates[0]=0.5
 # request_rates[1]=1.0
-request_rates[1]=5.0
+# request_rates[1]=5.0
 # request_rates[2]=10.0
 # request_rates[3]=10.0
-# request_rates[4]=20.0
+request_rates[4]=20.0
 # request_rates[5]=50.0
 # request_rates[5]=30.0
 # request_rates[5]=50.0
@@ -57,7 +57,7 @@ request_rates[1]=5.0
 # request_rates=(2.0)
 swap_out_partial_rates=(0.5)
 waiting_iter_base=(0.1)
-gpu_devices=0
+gpu_devices=1
 for i in {0..0}; do
   for waiting_iter in "${waiting_iter_base[@]}"; do
     for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do
