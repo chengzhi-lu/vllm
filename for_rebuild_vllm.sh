@@ -1,6 +1,6 @@
 #!/bin/bash
 
-for i in {1..3}
+for i in {1..2}
 do
     echo "start $i ..."
     bash rebuild_vllm.sh

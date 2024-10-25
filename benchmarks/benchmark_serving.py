@@ -406,89 +406,11 @@ async def process_multiple_requests(requests, model_id, api_url, best_of, use_be
     results = await asyncio.gather(*tasks)
     return results
 
-# async def get_request_duration_multiprocessing(input_requests,
-#                                          request_rate,
-#                                          request_duration,
-#                                          backend, args,
-#                                          model_id,
-#                                          api_url,
-#                                          best_of,
-#                                          use_beam_search,
-#                                          pbar,
-#                                          request_func) -> List[RequestFuncOutput]: 
-#     outputs: List[RequestFuncOutput] = []
-#     tasks = []
-#     requests = []  # Collect requests in batches
-    
-#     with ProcessPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
-#         # Generate requests in batches and submit them to the process pool
-#         async for request in get_request_duration(input_requests, request_rate, request_duration):
-#             requests.append(request)
-#             if len(requests) >= 5:  # Batch size can be tuned
-#                 task = executor.submit(
-#                     run_event_loop_in_process,
-#                     requests,
-#                     model_id,
-#                     api_url,
-#                     best_of,
-#                     use_beam_search,
-#                     backend,
-#                     request_func,
-#                     pbar
-#                 )
-#                 tasks.append(task)
-#                 requests = []  # Clear batch after submission
-        
-#         # Submit any remaining requests
-#         if requests:
-#             task = executor.submit(
-#                 run_event_loop_in_process,
-#                 requests,
-#                 model_id,
-#                 api_url,
-#                 best_of,
-#                 use_beam_search,
-#                 backend,
-#                 request_func,
-#                 pbar
-#             )
-#             tasks.append(task)
-
-#         # Collect results from all the tasks
-#         for task in tasks:
-#             outputs.extend(task.result())  # Extend for multiple results
-    
-#     return outputs
-
-
-# def process_requests(backend, args, pbar, request_func):
-#     # tasks = []
-#     while True:
-#         request_func_input = request_queue.get()
-#         if request_func_input is None:
-#             break
-        
-#         if backend == "vllm":
-#             result = asyncio.run(
-#                 request_func(args.scheduler_policy, request_func_input=request_func_input, pbar=pbar)
-#             )
-#         else:
-#             result = asyncio.run(
-#                 request_func(request_func_input=request_func_input, pbar=pbar)
-#             )
-        
-#         result_queue.put(result)
-
-    
 def process_requests(backend, args, pbar, request_func, data1=None):
     async def handle_requests():
         tasks = []
         while True:
             request_func_input = await asyncio.get_event_loop().run_in_executor(None, request_queue.get)
-            # min_tokens = data1[request_func_input.prompt]
-            # if not request_func_input is None:
-            #     request_func_input.min_tokens = min_tokens
-            
             if request_func_input is None:
                 break
 
@@ -517,23 +439,6 @@ def process_requests(backend, args, pbar, request_func, data1=None):
     loop.run_until_complete(handle_requests())
     # asyncio.run(handle_requests())
 
-# async def generate_requests(input_requests, request_rate, request_duration, model_id, api_url, best_of, use_beam_search):
-#     async for request in get_request_duration(input_requests, request_rate, request_duration):
-#         prompt, prompt_len, output_len = request
-#         request_func_input = RequestFuncInput(
-#             model=model_id,
-#             prompt=prompt,
-#             api_url=api_url,
-#             prompt_len=prompt_len,
-#             output_len=output_len,
-#             best_of=best_of,
-#             use_beam_search=use_beam_search,
-#         )
-#         request_queue.put(request_func_input)
-
-# def request_generator_process(input_requests, request_rate, request_duration, model_id, api_url, best_of, use_beam_search):
-#     asyncio.run(generate_requests(input_requests, request_rate, request_duration, model_id, api_url, best_of, use_beam_search))
-
 async def benchmark(
     backend: str,
     api_url: str,
@@ -557,18 +462,11 @@ async def benchmark(
 
     benchmark_start_time = time.perf_counter()
     
-    num_workers = 10
+    num_workers = 20
     workers = []
-    # data_worker = []
-    # for _ in range(num_workers):
-    #     data1 = copy.deepcopy(data)
-    #     data_worker.append(data1)
         
     for i in range(num_workers):
-        if scheduler_policy in ["srjf", "sjf"]:
-            worker = multiprocessing.Process(target=process_requests, args=(backend, args, pbar, request_func))
-        else:
-            worker = multiprocessing.Process(target=process_requests, args=(backend, args, pbar, request_func))
+        worker = multiprocessing.Process(target=process_requests, args=(backend, args, pbar, request_func))
         worker.start()
         workers.append(worker)
     
@@ -589,21 +487,14 @@ async def benchmark(
             min_tokens=min_tokens,
         )
         request_queue.put(request_func_input)
-
-    
-    # tasks = []
-    total_outputs: List[RequestFuncOutput] = []
     
     for _ in range(num_workers):
-        # await asyncio.get_event_loop().run_in_executor(None, request_queue.put, None)
         request_queue.put(None)
         
     outputs: List[RequestFuncOutput] = []
-    # with lock:
-
+    
     while True:
         try:
-            # result = await asyncio.get_event_loop().run_in_executor(None, result_queue.get, timeout=2)
             result = result_queue.get(timeout=2)
             for res in result:
                 outputs.append(res)
@@ -613,14 +504,6 @@ async def benchmark(
         
     for worker in workers:
         worker.join()
-    
-    
-    # outputs = total_outputs
-
-    # for worker in workers:
-    #     worker.join()
-    # for _ in range(num_workers):
-    #     request_queue.put(None)
         
     if not disable_tqdm:
         pbar.close()

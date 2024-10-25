@@ -25,8 +25,8 @@ result_dir="${pwd}/result"
 # scheduler_policy=(infer)
 # swap_policies=(partial)
 declare -a scheduler_swap_policies
-scheduler_swap_policies[0]="tfittradeoff partial"
-# scheduler_swap_policies[1]="fcfs full"
+# scheduler_swap_policies[0]="tfittradeoff partial"
+scheduler_swap_policies[1]="fcfs full"
 # scheduler_swap_policies[2]="las full"
 # scheduler_swap_policies[1]="tfittradeoff full"
 # scheduler_swap_policies[2]="sjf full"
@@ -45,7 +45,7 @@ iter_theshold=15
 max_serving_time=1200
 # request_rates[0]=0.5
 # request_rates[1]=1.0
-# request_rates[1]=5.0
+# request_rates[1]=2.0
 # request_rates[2]=10.0
 # request_rates[3]=10.0
 request_rates[4]=20.0
@@ -75,7 +75,7 @@ for i in {0..0}; do
           pid=$! 
 
           # run benchmark and save the output to benchmark.log
-          taskset -c 86-95 python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
+          taskset -c 20-39 python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
             --dataset-name $dataset_name --request-rate $request_rate \
             --num-prompts 500 --request-duration $max_serving_time --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
             --save-result --result-dir $result_dir \
