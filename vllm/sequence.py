@@ -264,6 +264,7 @@ class Sequence:
         self.swapped_out_block_nums: int = 0
 
         self.eos_prob_estimation_window = 5
+        self.min_eos_rank = -1
         self.default_eos_token_prob = -1000.0
 
     @property
@@ -294,6 +295,11 @@ class Sequence:
         else:
             return self.eos_token_prob_pos
 
+    def update_min_eos_token_rank(self,eos_token_rank):
+        if self.min_eos_rank == -1:
+            self.min_eos_rank = eos_token_rank
+        else:
+            self.min_eos_rank = min(self.min_eos_rank, eos_token_rank)
 
     def update_swapped_out_block_nums(self, swap_out_block_nums: int):
         self.swapped_out_block_nums += swap_out_block_nums
@@ -370,6 +376,7 @@ class Sequence:
                 Logprob(0,-1)).rank
             self.eos_token_prob.append(eos_token_prob)
             self.eos_token_prob_pos.append(eos_token_prob_pos)
+            self.update_min_eos_token_rank(eos_token_prob_pos)
 
         else:
             self.eos_token_prob.append(self.default_eos_token_prob)

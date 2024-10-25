@@ -295,8 +295,6 @@ def calculate_metrics(
     tpots = []
     ttfts = []
     latencies = []
-    print("length of the input_requests: ", len(input_requests))
-    print("length of the outputs: ", len(outputs))
     for i in range(len(outputs)):
         if outputs[i].success:
             # We use the tokenizer to count the number of output tokens for all
@@ -557,7 +555,7 @@ async def benchmark(
 
     benchmark_start_time = time.perf_counter()
     
-    num_workers = 10
+    num_workers = 20
     workers = []
     # data_worker = []
     # for _ in range(num_workers):

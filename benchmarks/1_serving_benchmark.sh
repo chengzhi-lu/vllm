@@ -26,7 +26,7 @@ result_dir="${pwd}/result"
 # swap_policies=(partial)
 declare -a scheduler_swap_policies
 scheduler_swap_policies[0]="tfittradeoff partial"
-# scheduler_swap_policies[1]="fcfs full"
+scheduler_swap_policies[1]="fcfs full"
 # scheduler_swap_policies[2]="las full"
 # scheduler_swap_policies[1]="tfittradeoff full"
 # scheduler_swap_policies[2]="sjf full"
@@ -42,13 +42,14 @@ max_num_seqs=384
 swap_space=64
 max_tokens=2048
 iter_theshold=15
-max_serving_time=1200
-# request_rates[0]=0.5
-# request_rates[1]=1.0
-# request_rates[1]=5.0
+max_serving_time=120
+request_rates[0]=0.5
+request_rates[1]=1.0
+request_rates[2]=2.0
+request_rates[3]=5.0
 # request_rates[2]=10.0
-# request_rates[3]=10.0
-request_rates[4]=20.0
+request_rates[4]=10.0
+request_rates[5]=20.0
 # request_rates[5]=50.0
 # request_rates[5]=30.0
 # request_rates[5]=50.0
@@ -57,7 +58,7 @@ request_rates[4]=20.0
 # request_rates=(2.0)
 swap_out_partial_rates=(0.5)
 waiting_iter_base=(0.1)
-gpu_devices=1
+gpu_devices=3
 for i in {0..0}; do
   for waiting_iter in "${waiting_iter_base[@]}"; do
     for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do
@@ -68,14 +69,14 @@ for i in {0..0}; do
           swap_policy=${element[1]}
           # tmux new-session -s "api_server" -d bash start_server.sh $gpu_devices $model_name $swap_space $preemption_mode $policy $max_tokens $iter_theshold $max_num_seqs $swap_policy $swap_out_partial_rate $gpu_memory_utilization $waiting_iter
 
-          CUDA_VISIBLE_DEVICES=$gpu_devices taskset -c 40-41 python3 -m vllm.entrypoints.openai.api_server \
+          CUDA_VISIBLE_DEVICES=$gpu_devices taskset -c 21-22 python3 -m vllm.entrypoints.openai.api_server \
             --model $model_name --swap-space $swap_space --preemption-mode $preemption_mode --scheduler-policy $policy \
             --enable-chunked-prefill --max-num-batched-tokens $max_tokens --iter-threshold $iter_theshold --max-num-seqs $max_num_seqs --swap-out-tokens-policy $swap_policy --swap-out-partial-rate $swap_out_partial_rate --execution-budget $iter_theshold \
             --tensor-parallel-size 1 --gpu-memory-utilization $gpu_memory_utilization --disable-sliding-window --waiting-iter-base $waiting_iter --disable-log-requests --max-serving-time $max_serving_time >api_server_${policy}_${swap_policy}.log 2>&1 &
           pid=$! 
 
           # run benchmark and save the output to benchmark.log
-          taskset -c 86-95 python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
+          taskset -c 50-70 python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
             --dataset-name $dataset_name --request-rate $request_rate \
             --num-prompts 500 --request-duration $max_serving_time --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
             --save-result --result-dir $result_dir \
