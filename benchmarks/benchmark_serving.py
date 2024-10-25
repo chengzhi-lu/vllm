@@ -295,8 +295,6 @@ def calculate_metrics(
     tpots = []
     ttfts = []
     latencies = []
-    print("length of the input_requests: ", len(input_requests))
-    print("length of the outputs: ", len(outputs))
     for i in range(len(outputs)):
         if outputs[i].success:
             # We use the tokenizer to count the number of output tokens for all

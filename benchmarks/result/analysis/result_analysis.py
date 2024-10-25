@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.9.6"
+__generated_with = "0.7.12"
 app = marimo.App(width="full")
 
 
@@ -39,12 +39,12 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "20241011"
-    _counters = [1447]
+    date = "20241024"
+    counters = [1522]
     e2e_result_dir_names = [
-        os.path.join(base_dir, _date, str(counter)) for counter in _counters
+        os.path.join(base_dir, date, str(counter)) for counter in counters
     ]
-    return (e2e_result_dir_names,)
+    return counters, date, e2e_result_dir_names
 
 
 @app.cell
@@ -96,7 +96,7 @@ def __():
                 textcoords="offset points",
                 rotation=rotation,
             )
-    return (add_num_annotation,)
+    return add_num_annotation,
 
 
 @app.cell
@@ -106,7 +106,7 @@ def __():
         min_result = df["output_throughput"].min()
         df["output_throughput"] = df["output_throughput"] / 1
         return df
-    return (get_tp_ratio,)
+    return get_tp_ratio,
 
 
 @app.cell
@@ -150,7 +150,7 @@ def e2e_result(
             group_keys=False,
         )
         .apply(lambda row: get_tp_ratio(row))
-        .drop(columns=["swap_policies", "request_rates"])
+        .drop(columns=["swap_policies"])
         .reset_index()
     )
     sns.set_style(style="whitegrid")
@@ -356,21 +356,16 @@ def __(barplot, fig, pd, plt, selected_columns, selected_result):
         var_name="Metric",
         value_name="Value",
     )
-    _long_df = (
-        _long_df.groupby(
-            ["Metric", "request_rate"],
-            group_keys=False,
-        )
-        .apply(lambda row: get_metric_ratio(row))
-        .drop(columns=["Metric", "request_rate"])
-        .reset_index()
-    )
-    print(_long_df)
+    _long_df = _long_df.groupby(
+        ["Metric", "request_rate"],
+        group_keys=False,
+    ).apply(lambda row: get_metric_ratio(row))
     _long_df[["metric_name", "metric_type"]] = _long_df["Metric"].apply(
         lambda row: pd.Series(
             [row.split("_", 2)[0].capitalize(), row.split("_", 2)[1].upper()]
         )
     )
+    print(_long_df["Ratio"].max())
     # _long_df = _long_df[_long_df["metric_name"] == "P99"]
     show_legend = True
 
@@ -422,7 +417,7 @@ def __(e2e_result_dfs, np, pd):
             inplace=True,
         )
         request_level_result = pd.concat([request_level_result, _tmp_df], axis=0)
-    return (request_level_result,)
+    return request_level_result,
 
 
 @app.cell
@@ -461,7 +456,7 @@ def __(plt, request_level_result, sns):
     plt.legend(title="")
     plt.grid(alpha=0.3, linestyle="--")
     plt.ylabel("P99 ITL")
-    return (get_p99_ratio,)
+    return get_p99_ratio,
 
 
 @app.cell
@@ -500,7 +495,7 @@ def __(plt, request_level_result, sns):
     plt.legend(title="")
     plt.grid(alpha=0.3, linestyle="--")
     plt.ylabel("Median TTFT")
-    return (get_max_mean_ttft_ratio,)
+    return get_max_mean_ttft_ratio,
 
 
 @app.cell(hide_code=True)
@@ -510,13 +505,11 @@ def __(mo):
 
 
 @app.cell
-def __(base_dir, os):
-    _date = "results"
-    _counters = [512]
+def __(base_dir, counters, date, os):
     execute_result_dir_names = [
-        os.path.join(base_dir, _date, str(counter)) for counter in _counters
+        os.path.join(base_dir, date, str(counter)) for counter in counters
     ]
-    return (execute_result_dir_names,)
+    return execute_result_dir_names,
 
 
 @app.cell
@@ -642,7 +635,7 @@ def __(execute_result_dir_names, os, pd):
                     execute_result_dfs["FCFS"] = _detailed_result_df
                 elif "tfittradeoff" in _file:
                     execute_result_dfs["TFITTradeoff"] = _detailed_result_df
-    return (execute_result_dfs,)
+    return execute_result_dfs,
 
 
 @app.cell
@@ -658,7 +651,7 @@ def __(base_dir, os):
     detailed_result_dir_names = [
         os.path.join(base_dir, _date, str(counter)) for counter in _counters
     ]
-    return (detailed_result_dir_names,)
+    return detailed_result_dir_names,
 
 
 @app.cell
@@ -723,7 +716,7 @@ def __(detailed_result_dfs, plt, sns):
     plt.tight_layout(pad=0, w_pad=0.1, h_pad=0.1)
     plt.savefig("100_qps.pdf")
     plt.show()
-    return (jointplot_ax,)
+    return jointplot_ax,
 
 
 @app.cell
@@ -822,7 +815,7 @@ def __(plt, sns):
         perf_per_tier.set_yscale("log")
         gpu_resource_per_iter.set_yscale("log")
         plt.show()
-    return (plot_perf_gpu_resource_line,)
+    return plot_perf_gpu_resource_line,
 
 
 @app.cell
@@ -880,7 +873,7 @@ def __(plt, request_rate_gpu_resource, sns):
     plot_perf_gpu_resource_heatmap(
         request_rate_gpu_resource, "throughput iter", 0.1
     )
-    return (plot_perf_gpu_resource_heatmap,)
+    return plot_perf_gpu_resource_heatmap,
 
 
 @app.cell(disabled=True, hide_code=True)
@@ -909,7 +902,7 @@ def __():
 
 
 @app.cell
-def __(add_num_annotation, detailed_result_dfs, plt, sns):
+def __(detailed_result_dfs, plt, sns):
     detailed_mean_result = (
         detailed_result_dfs.groupby(["schedule_policy"])
         .max()
@@ -935,3 +928,8 @@ def __(add_num_annotation, detailed_result_dfs, plt, sns):
     )
     # plt.yscale("log")
     plt.legend(title="")
+    return ax, detailed_mean_result
+
+
+if __name__ == "__main__":
+    app.run()

@@ -47,8 +47,8 @@ max_serving_time=1200
 # request_rates[1]=1.0
 # request_rates[1]=2.0
 # request_rates[2]=10.0
-# request_rates[3]=10.0
-request_rates[4]=20.0
+request_rates[4]=10.0
+request_rates[5]=20.0
 # request_rates[5]=50.0
 # request_rates[5]=30.0
 # request_rates[5]=50.0
@@ -57,7 +57,7 @@ request_rates[4]=20.0
 # request_rates=(2.0)
 swap_out_partial_rates=(0.5)
 waiting_iter_base=(0.1)
-gpu_devices=1
+gpu_devices=3
 for i in {0..0}; do
   for waiting_iter in "${waiting_iter_base[@]}"; do
     for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do
@@ -68,7 +68,7 @@ for i in {0..0}; do
           swap_policy=${element[1]}
           # tmux new-session -s "api_server" -d bash start_server.sh $gpu_devices $model_name $swap_space $preemption_mode $policy $max_tokens $iter_theshold $max_num_seqs $swap_policy $swap_out_partial_rate $gpu_memory_utilization $waiting_iter
 
-          CUDA_VISIBLE_DEVICES=$gpu_devices taskset -c 40-41 python3 -m vllm.entrypoints.openai.api_server \
+          CUDA_VISIBLE_DEVICES=$gpu_devices taskset -c 21-22 python3 -m vllm.entrypoints.openai.api_server \
             --model $model_name --swap-space $swap_space --preemption-mode $preemption_mode --scheduler-policy $policy \
             --enable-chunked-prefill --max-num-batched-tokens $max_tokens --iter-threshold $iter_theshold --max-num-seqs $max_num_seqs --swap-out-tokens-policy $swap_policy --swap-out-partial-rate $swap_out_partial_rate --execution-budget $iter_theshold \
             --tensor-parallel-size 1 --gpu-memory-utilization $gpu_memory_utilization --disable-sliding-window --waiting-iter-base $waiting_iter --disable-log-requests --max-serving-time $max_serving_time >api_server_${policy}_${swap_policy}.log 2>&1 &

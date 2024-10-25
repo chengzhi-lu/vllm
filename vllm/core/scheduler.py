@@ -1422,12 +1422,12 @@ class Scheduler:
                     # Preempt the lowest-priority sequence groups.
                     if not partial_swapped_flag:
                         victim_seq_group = running_queue.pop()
-                        print(f"victim seq_group seq status: ", victim_seq_group.get_seqs())
+                        # print(f"victim seq_group seq status: ", victim_seq_group.get_seqs())
 
                         preempted_mode = self._preempt(victim_seq_group,
                                                        blocks_to_swap_out,
                                                        self.preemption_mode)
-                        print(f"victim seq_group seq status: after _preempt(), {preempted_mode}", victim_seq_group.get_seqs())
+                        # print(f"victim seq_group seq status: after _preempt(), {preempted_mode}", victim_seq_group.get_seqs())
                         self.total_swap_out_blocks += victim_seq_group.total_token_block_size
                         self.total_swap_out_seqs += 1
 
