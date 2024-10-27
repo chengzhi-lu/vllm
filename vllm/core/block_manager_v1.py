@@ -360,7 +360,6 @@ class BlockSpaceManagerV1(BlockSpaceManager):
 
     def can_append_slots(self,
                          seq_group: SequenceGroup,
-                         pre_allocated_slots_num: int = 0,
                          num_lookahead_slots: int = 0) -> bool:
         assert (num_lookahead_slots == 0
                 ), "lookahead allocation not supported in BlockSpaceManagerV1"
@@ -368,8 +367,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         # Simple heuristic: If there is at least one free block
         # for each sequence, we can append.
         num_free_gpu_blocks = self.gpu_allocator.get_num_free_blocks()
-        num_seqs = seq_group.num_seqs(
-            status=SequenceStatus.RUNNING) + pre_allocated_slots_num
+        num_seqs = seq_group.num_seqs(status=SequenceStatus.RUNNING)
 
         return num_seqs <= num_free_gpu_blocks
 
@@ -468,8 +466,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         # We want to append the token to the last physical block.
         last_block = block_table[-1]
         # if last_block.device == Device.CPU:
-            
-        
+
         assert last_block.device == Device.GPU, f"{seq}"
         if last_block.ref_count == 1:
             # Not shared with other sequences. Appendable.
@@ -633,20 +630,19 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             swapped_out_blocks_idx = 0
             swapping_out_blocks_idx = 0
             block_table_length = len(block_tables)
-            if swap_out_block_nums > 0: # Partial Swapped
+            if swap_out_block_nums > 0:  # Partial Swapped
                 swapped_out_block_nums = seq.get_swapped_out_block_nums()
                 swapped_out_blocks_idx = swapped_out_block_nums
                 swapping_out_blocks_idx = min(
                     swapped_out_block_nums + swap_out_block_nums,
                     block_table_length)
                 seq.update_swapped_out_block_nums(swap_out_block_nums)
-                # print(f"seq_group {seq_group.request_id} swapping out blocks {swapped_out_blocks_idx} to {swapping_out_blocks_idx}")
                 swapping_out_blocks = block_tables[
                     swapped_out_blocks_idx:swapping_out_blocks_idx]
-            else: # Swapped
+            else:  # Swapped
                 swapping_out_blocks = block_tables
                 seq.update_swapped_out_block_nums(block_table_length)
-                
+
             # block_device_table = self.block_device_tables[seq.seq_id]
             # swapping_out_blocks_set= set(swapping_out_blocks)
             # for block in block_tables:
@@ -654,7 +650,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             #         block_device_table[block.block_number] = Device.CPU
             #     else:
             #         block_device_table[block.block_number] = Device.GPU
-            
+
             swapped_out_blocks = self._swap_block_table(
                 swapping_out_blocks, self.gpu_allocator, self.cpu_allocator,
                 mapping)

@@ -390,7 +390,7 @@ class Scheduler:
         self.partial_swapped: Dict[str, Tuple[int, SequenceGroup]] = {}
 
         self.partial_swapped_values: List[Tuple[int, str]] = []
-        self.seq_group_for_preempted: Tuple[SequenceGroup, int] = ()
+        self.seq_group_for_preempted: Tuple[SequenceGroup, int] = (None, 0)
 
         self.total_swap_out_blocks = 0
         self.total_swap_in_blocks = 0
@@ -492,97 +492,6 @@ class Scheduler:
             (left_block_size, seq_group_reqeust_id))
         return (left_block_size, seq_group)
 
-    # def _swap_out_partial_v1(
-    #         self, seq_group_request_id: str, seq_group: SequenceGroup,
-    #         budget: SchedulingBudget,
-    #         num_running_tokens: int) -> Tuple[bool, Dict[SequenceGroup, int]]:
-    #     """Swap out the sequence group in the partial swapped to CPU.
-
-    #     Args:
-    #         seq_group: The sequence group to swap out.
-    #         budget: The scheduling budget.
-    #         block_size: The size of the block to swap out.
-    #     Returns:
-    #         A tuple of (is_swap_out,
-    #                     swapped_out_seq_groups,
-    #                     swap_out_block_nums).
-    #         is_swap_out: True if the sequence group is swapped out,
-    #                     False otherwise.
-    #     """
-    #     swapped_out_seq_groups: Dict[SequenceGroup, int] = {}
-    #     seq_group_token_num = num_running_tokens
-    #     # if len(self.waiting) > 0:
-    #     #     # swap out all blocks for the prefill request
-    #     #     budget.subtract_num_batched_tokens(seq_group_request_id,
-    #     #                                        seq_group_token_num)
-    #     #     swapped_out_seq_groups[seq_group] = -1 # swap out the whole seq_group
-    #     #     return True, swapped_out_seq_groups
-    #     swap_out_rate = self.scheduler_config.swap_out_partial_rate
-
-    #     # Swap out a partial block.
-    #     seq_group_block_size = seq_group.total_token_block_size
-    #     block_unit = max(int(seq_group_block_size * swap_out_rate), 1)
-    #     if len(self.partial_swapped) == 0:
-    #         # swap out part of the current seq_group for decode request
-    #         swap_out_block_num = block_unit
-    #         budget.subtract_num_batched_tokens(seq_group_request_id,
-    #                                            seq_group_token_num)
-    #         r_bs = seq_group_block_size - swap_out_block_num
-    #         if r_bs > 0:
-    #             self._insert_seq_group_into_partial_swapped(
-    #                 r_bs, seq_group_request_id, seq_group)
-    #         swapped_out_seq_groups[seq_group] = swap_out_block_num
-    #         return True, swapped_out_seq_groups
-    #     else:
-    #         # swap out left part of the sequence group in the
-    #         # partial_swapped queue prior to the current seq_group
-    #         partial_swapped_values = self.partial_swapped_values
-    #         partial_swapped_values.sort(key=lambda x: x[0])
-    #         partial_swapped_bn, partial_swapped_sgs = map(
-    #             list, zip(*partial_swapped_values))
-    #         selected_swapped_sg_index = self.min_numbers_sum_at_least(
-    #             partial_swapped_bn, seq_group_block_size)
-    #         if selected_swapped_sg_index == -1:
-    #             # swap out part of the current seq_group for decode request due to the lack of free blocks from partial_swapped queue
-    #             block_unit = max(int(seq_group_block_size * swap_out_rate), 1)
-    #             swap_out_block_num = block_unit
-    #             budget.subtract_num_batched_tokens(seq_group_request_id,
-    #                                                seq_group_token_num)
-    #             r_bs = seq_group_block_size - swap_out_block_num
-    #             self._insert_seq_group_into_partial_swapped(
-    #                 r_bs, seq_group_request_id, seq_group)
-    #             # return seq_group as the swap out seq group
-    #             swapped_out_seq_groups[seq_group] = swap_out_block_num
-    #             return True, swapped_out_seq_groups
-    #         else:
-    #             total_swap_block = 0
-    #             last_swap_block = 0
-    #             selected_partial_swapped_sg = partial_swapped_sgs[:
-    #                                                               selected_swapped_sg_index]
-    #             for selected_seq_group in selected_partial_swapped_sg:
-    #                 r_bs,  partial_swapped_sg = \
-    #                     self._get_seq_group_from_partial_swapped(selected_seq_group)
-    #                 last_swap_block = total_swap_block
-    #                 total_swap_block += r_bs
-    #                 if total_swap_block > seq_group_block_size:
-    #                     block_unit = max(
-    #                         ceil(partial_swapped_sg.total_token_block_size *
-    #                              swap_out_rate), 1)
-    #                     swap_out_block_size = ceil(
-    #                         (seq_group_block_size - last_swap_block) /
-    #                         block_unit) * block_unit
-    #                     left_block_size = r_bs - swap_out_block_size
-    #                     if left_block_size > 0:
-    #                         self._insert_seq_group_into_partial_swapped(
-    #                             left_block_size, selected_seq_group,
-    #                             partial_swapped_sg)
-    #                     if swap_out_block_size > 0:
-    #                         swapped_out_seq_groups[
-    #                             partial_swapped_sg] = swap_out_block_size
-    #                 else:
-    #                     swapped_out_seq_groups[partial_swapped_sg] = r_bs
-    #             return False, swapped_out_seq_groups
-
     def _swap_out_partial(
             self, seq_group_request_id: str, seq_group: SequenceGroup,
             budget: SchedulingBudget,
@@ -636,7 +545,8 @@ class Scheduler:
             selected_swapped_sg_index = self.min_numbers_sum_at_least(
                 partial_swapped_bn, seq_group_block_size)
             if selected_swapped_sg_index == -1:
-                # swap out part of the current seq_group for decode request due to the lack of free blocks from partial_swapped queue
+                # swap out part of the current seq_group for decode request
+                # due to the lack of free blocks from partial_swapped queue
                 block_unit = max(int(seq_group_block_size * swap_out_rate), 1)
                 swap_out_block_num = block_unit
                 budget.subtract_num_batched_tokens(seq_group_request_id,
@@ -700,7 +610,7 @@ class Scheduler:
                                        token_chunk_size=1))
 
         if self.seq_group_for_preempted == (
-        ) or total_block_size > self.seq_group_for_preempted[1]:
+                None, 0) or total_block_size > self.seq_group_for_preempted[1]:
             self.seq_group_for_preempted = (seq_group, total_block_size)
 
         budget.add_num_batched_tokens(seq_group.request_id, num_running_tokens)
@@ -738,9 +648,8 @@ class Scheduler:
         else:
             running_queue = policy.sort_by_priority(time.time(), running_queue)
 
-        all_token_block_size = sum([
-            part[0] for part in self.partial_swapped.values()
-        ])  
+        all_token_block_size = sum(
+            [part[0] for part in self.partial_swapped.values()])
 
         while running_queue:
             seq_group: SequenceGroup = running_queue[0]
@@ -836,6 +745,7 @@ class Scheduler:
             blocks_to_copy=blocks_to_copy,
             num_lookahead_slots=self._get_num_lookahead_slots(
                 is_prefill=False)), recomputed_token_nums
+
     def _schedule_infer_preemption(
         self,
         running_queue: Deque[SequenceGroup],
@@ -924,7 +834,8 @@ class Scheduler:
             seq_group.priority_rate for seq_group in running_queue
             if seq_group.priority_rate > 0
         ]
-        avg_priorities = np.median(priorities) if len(priorities) > 0 else 1
+        avg_priorities = float(
+            np.median(priorities) if len(priorities) > 0 else 1)
         if self.total_running_block_size + len(
                 running_queue) > gpu_block_capacity:
             # only sort when the running block size is larger than the gpu block capacity
@@ -1225,6 +1136,12 @@ class Scheduler:
                         self.total_swap_out_seqs += 1
 
                         if preempted_mode == PreemptionMode.RECOMPUTE:
+                            if len(
+                                    victim_seq_group.get_seqs(
+                                        status=SequenceStatus.RUNNING)) != 0:
+                                raise ValueError(
+                                    "111 There should not be any wating seq in the swapped group"
+                                )
                             preempted.add(victim_seq_group)
                         else:
                             if len(
@@ -1299,9 +1216,22 @@ class Scheduler:
                             swap_out_block_nums,
                             seq_group_status=seq_group_status)
 
+                        print(f"seq_group_status: {seq_group_status}")
                         if preempted_mode == PreemptionMode.RECOMPUTE:
+                            if len(
+                                    victim_seq_group.get_seqs(
+                                        status=SequenceStatus.WAITING)) != 0:
+                                raise ValueError(
+                                    "222 There should not be any wating seq in the swapped group"
+                                )
                             preempted.add(victim_seq_group)
                         else:
+                            if len(
+                                    victim_seq_group.get_seqs(
+                                        status=SequenceStatus.WAITING)) != 0:
+                                raise ValueError(
+                                    "222 There should not be any wating seq in the swapped group"
+                                )
                             swapped_out.add(victim_seq_group)
                 else:
                     # No other sequence groups can be preempted.
@@ -1335,8 +1265,20 @@ class Scheduler:
                             seq_group_status=seq_group_status)
 
                         if preempted_mode == PreemptionMode.RECOMPUTE:
+                            if len(
+                                    victim_seq_group.get_seqs(
+                                        status=SequenceStatus.WAITING)) != 0:
+                                raise ValueError(
+                                    "444 There should not be any wating seq in the swapped group"
+                                )
                             preempted.add(victim_seq_group)
                         else:
+                            if len(
+                                    victim_seq_group.get_seqs(
+                                        status=SequenceStatus.WAITING)) != 0:
+                                raise ValueError(
+                                    "444 There should not be any wating seq in the swapped group"
+                                )
                             swapped_out.add(victim_seq_group)
                     break
             else:
@@ -1442,8 +1384,7 @@ class Scheduler:
                                                        self.preemption_mode)
                     else:
                         preempted_mode = self._preempt(victim_seq_group,
-                                                       blocks_to_swap_out,
-                                                       None)
+                                                       blocks_to_swap_out)
 
                     if preempted_mode == PreemptionMode.RECOMPUTE:
                         preempted.append(victim_seq_group)
@@ -1556,7 +1497,8 @@ class Scheduler:
                 seq_group.priority_rate for seq_group in swapped_queue
                 if seq_group.priority_rate > 0
             ]
-            avg_priorities = np.mean(priorities) if len(priorities) > 0 else 1
+            avg_priorities = float(
+                np.mean(priorities) if len(priorities) > 0 else 1)
             # swapped_queue = policy.sorted_by_priority(avg_priorities,
             #                                           swapped_queue, 1)
             swapped_queue = policy.sorted_by_priority(
@@ -1644,7 +1586,7 @@ class Scheduler:
                 self.total_low_eff_swap_out_diff += seq_group.seq_len - \
                                 seq_group.metrics.waiting_iter_nums
 
-            if seq_group.swap_out_moment != None:
+            if seq_group.swap_out_moment is not None:
                 self.total_swap_out_waiting_time += time.time() - \
                                 seq_group.swap_out_moment
 
@@ -1656,11 +1598,7 @@ class Scheduler:
             seq_group_request_id = seq_group.request_id
             if seq_group_request_id in self.partial_swapped:
                 _, _ = self.partial_swapped.pop(seq_group_request_id)
-                # if len(self.partial_swapped_values) > 0 and (
-                #         left_block_size,
-                #         seq_group_request_id) in self.partial_swapped_values:
-                #     self.partial_swapped_values.remove(
-                #         (left_block_size, seq_group_request_id))
+
             self._append_slots(seq_group, blocks_to_copy)
             is_prefill = seq_group.is_prefill()
             if is_prefill:
@@ -1746,11 +1684,11 @@ class Scheduler:
         if policy is not None:
             if self.scheduler_config.policy == "tfittradeoff":
                 priorities = [
-                    seq_group.priority for seq_group in waiting_queue
+                    seq_group.priority for seq_group in self.running 
                     if seq_group.priority > 0
                 ]
-                avg_priorities = np.mean(
-                    priorities) if len(priorities) > 0 else 1
+                avg_priorities = float(
+                    np.mean(priorities) if len(priorities) > 0 else 1)
                 waiting_queue = policy.sorted_by_priority(
                     avg_priorities, waiting_queue, pending_swapped_rate)
             else:
@@ -1764,8 +1702,8 @@ class Scheduler:
             seq_group = waiting_queue[0]
             waiting_seqs = seq_group.get_seqs(status=SequenceStatus.WAITING)
             assert len(waiting_seqs) == 1, (
-                "Waiting sequence group should have only one prompt "
-                "sequence.")
+                "Waiting sequence group should have only one prompt ",
+                f"sequence {seq_group.request_id}, but got {[s.status for s in seq_group.get_seqs()]}")
             num_new_tokens = self._get_num_new_tokens(seq_group,
                                                       SequenceStatus.WAITING,
                                                       enable_chunking, budget)
@@ -1835,7 +1773,7 @@ class Scheduler:
             waiting_queue.popleft()
             self._allocate_and_set_running(seq_group)
 
-            if seq_group.swap_out_moment != None:
+            if seq_group.swap_out_moment is not None:
                 self.total_swap_out_waiting_time += time.time(
                 ) - seq_group.swap_out_moment
 
@@ -1895,7 +1833,7 @@ class Scheduler:
         # If any requests are swapped, prioritized swapped requests.
         if not self.swapped:
             remaining_waiting, prefills = self._schedule_prefills(
-                self.waiting, budget, curr_loras, enable_chunking=False)
+                self.waiting, budget, curr_loras, -1, enable_chunking=False)
 
         policy = PolicyFactory.get_policy(policy_name="fcfs")
         # Don't schedule decodes if prefills are scheduled.
@@ -1914,7 +1852,7 @@ class Scheduler:
             if len(running_scheduled.preempted) + len(
                     running_scheduled.swapped_out) == 0:
                 remaining_swapped, swapped_in = self._schedule_swapped(
-                    self.swapped, budget, curr_loras, policy)
+                    self.swapped, budget, curr_loras, policy, -1)
 
         assert (budget.num_batched_tokens <=
                 self.scheduler_config.max_num_batched_tokens)
@@ -2046,7 +1984,6 @@ class Scheduler:
                                         budget,
                                         curr_loras,
                                         policy,
-                                        # pending_swapped_rate=1,
                                         enable_chunking=True,
                                         pending_swapped_rate=-1)
                 # Schedule swapped out requests.
@@ -2205,9 +2142,9 @@ class Scheduler:
                 scheduled_seq_groups=[],
                 num_prefill_groups=0,
                 num_batched_tokens=budget.num_batched_tokens,
-                blocks_to_swap_in=0,
-                blocks_to_swap_out=0,
-                blocks_to_copy=0,
+                blocks_to_swap_in=[],
+                blocks_to_swap_out=[],
+                blocks_to_copy=[],
                 ignored_seq_groups=ignored_seq_groups,
                 num_lookahead_slots=0,
                 running_queue_size=0,
@@ -2224,9 +2161,7 @@ class Scheduler:
         else:
             return self._schedule_default()
 
-    def _can_append_slots(self,
-                          seq_group: SequenceGroup,
-                          pre_allocated_slots_num: int = 0) -> bool:
+    def _can_append_slots(self, seq_group: SequenceGroup) -> bool:
         """Determine whether or not we have enough space in the KV cache to
         continue generation of the sequence group.
         """
@@ -2242,7 +2177,6 @@ class Scheduler:
 
         return self.block_manager.can_append_slots(
             seq_group=seq_group,
-            pre_allocated_slots_num=pre_allocated_slots_num,
             num_lookahead_slots=self._get_num_lookahead_slots(is_prefill),
         )
 
@@ -2409,11 +2343,6 @@ class Scheduler:
             else:
                 preemption_mode = PreemptionMode.RECOMPUTE
 
-        # blocks = self.block_manager._get_physical_blocks(seq_group)
-        # # print(self.block_manager.can_swap_out(seq_group))
-        # if len(blocks) > self.block_manager.cpu_allocator.get_num_free_blocks() - self.block_manager.num_total_cpu_blocks * 0.3:
-        #     preemption_mode = PreemptionMode.RECOMPUTE
-
         if (self.num_cumulative_preemption % 50 == 0
                 and self.num_cumulative_preemption > 0):
             logger.debug(
@@ -2424,6 +2353,12 @@ class Scheduler:
                 "total_num_cumulative_preemption=%d", seq_group.request_id,
                 preemption_mode, self.num_cumulative_preemption + 1)
         self.num_cumulative_preemption += 1
+        seq_groups_status = [seq.status for seq in seq_group.get_seqs()]
+        if SequenceStatus.PARTIAL_SWAPPED in seq_groups_status or seq_group_status == SequenceStatus.PARTIAL_SWAPPED:
+            preemption_mode = PreemptionMode.SWAP
+        else:
+            if self.scheduler_config.policy == "tfittradeoff" and random.uniform(0, 1) < 0.2:
+                preemption_mode = PreemptionMode.RECOMPUTE 
 
         if preemption_mode == PreemptionMode.RECOMPUTE:
             # preemption_mode = PreemptionMode.RECOMPUTE
@@ -2439,6 +2374,8 @@ class Scheduler:
         self,
         seq_group: SequenceGroup,
     ) -> None:
+
+        print([seq.status for seq in seq_group.seqs_dict.values()])
         seqs = seq_group.get_seqs(status=SequenceStatus.RUNNING)
         # assert len(seqs) == 1
         for seq in seqs:

@@ -90,10 +90,6 @@ class SkipJoinMLFQ(Policy):
     def get_priority(self, now: float, seq_group: SequenceGroup) -> float:
         input_length = len(seq_group.prompt_token_ids)
 
-        # first_token_time = seq_group.metrics.first_token_time # Obtain the first_iteration_time for each job
-        arrival_time = seq_group.metrics.arrival_time
-
-        # Assign priority based on first iteration time
         if not seq_group.current_priority:  # Have been assigned with a priority?
             seq_group.current_priority = self.get_highest_priority(
                 input_length)
@@ -188,7 +184,7 @@ class TFITTradeoff(Policy):
                 seq_group.max_length)
         else:
             priority = (
-                -(seq_group.seq_len - seq_group.metrics.waiting_iter_nums) /
+                -avg_priority_rate*(seq_group.seq_len - seq_group.metrics.waiting_iter_nums) /
                 seq_group.max_length)
         return priority
 

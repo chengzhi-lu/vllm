@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.9.10"
+__generated_with = "0.9.14"
 app = marimo.App(width="full")
 
 
@@ -36,8 +36,8 @@ def __():
 @app.cell
 def __(base_dir, os):
     # _date = "20240918"
-    date = "20241025"
-    counters = [1545]
+    date = "20241027"
+    counters = [1598]
     selected_qps = 10
     e2e_result_dir_names = [
         os.path.join(base_dir, date, str(counter)) for counter in counters
@@ -76,7 +76,6 @@ def __(e2e_result_dir_names, json, os, pd, replace_name):
 
 @app.cell(hide_code=True)
 def __():
-
     def add_num_annotation(ax, rotation=0, fontsize=10):
         for _p in ax.patches:
             if _p.get_height() == 0:
@@ -91,25 +90,21 @@ def __():
                 rotation=rotation,
                 fontsize=fontsize,
             )
-
-    return (add_num_annotation, )
+    return (add_num_annotation,)
 
 
 @app.cell(hide_code=True)
 def __():
-
     def get_tp_ratio(df):
         print(df)
         min_result = df["output_throughput"].min()
         df["output_throughput"] = df["output_throughput"] / 1
         return df
-
-    return (get_tp_ratio, )
+    return (get_tp_ratio,)
 
 
 @app.cell(hide_code=True)
 def __():
-
     def e2e_result(
         add_num_annotation,
         e2e_result_dfs,
@@ -128,23 +123,34 @@ def __():
         for _df_name in e2e_result_dfs:
             _tmp_df = e2e_result_dfs[_df_name]
             e2e_result["scheduling_policies"].append(
-                _tmp_df["scheduler_policy"].iloc[0])
+                _tmp_df["scheduler_policy"].iloc[0]
+            )
             e2e_result["swap_policies"].append(_tmp_df["swap_policy"].iloc[0])
             e2e_result["request_throughput"].append(
-                _tmp_df["request_throughput"].mean())
+                _tmp_df["request_throughput"].mean()
+            )
             e2e_result["request_rates"].append(_tmp_df["request_rate"].iloc[0])
             e2e_result["output_throughput"].append(
-                _tmp_df["output_throughput"].mean())
+                _tmp_df["output_throughput"].mean()
+            )
 
         _result_df = pd.DataFrame(e2e_result)
 
-        _result_df = (_result_df.groupby(
-            ["scheduling_policies", "swap_policies",
-             "request_rates"]).mean().reset_index())
-        _result_df = (_result_df.groupby(
-            ["swap_policies", "request_rates"],
-            group_keys=False,
-        ).apply(lambda row: get_tp_ratio(row)).reset_index())
+        _result_df = (
+            _result_df.groupby(
+                ["scheduling_policies", "swap_policies", "request_rates"]
+            )
+            .mean()
+            .reset_index()
+        )
+        _result_df = (
+            _result_df.groupby(
+                ["swap_policies", "request_rates"],
+                group_keys=False,
+            )
+            .apply(lambda row: get_tp_ratio(row))
+            .reset_index()
+        )
         sns.set_style(style="whitegrid")
         sns.set_palette("deep")
         fig, axes = plt.subplots(
@@ -189,8 +195,7 @@ def __():
         axes[1].set_xlabel("Request Rate (r/s)")
         axes[1].grid(linestyle="--", alpha=0.5, axis="y")
         plt.show()
-
-    return (e2e_result, )
+    return (e2e_result,)
 
 
 @app.cell(hide_code=True)
@@ -229,21 +234,19 @@ def __(e2e_result_dfs):
 
 @app.cell(hide_code=True)
 def __(add_num_annotation, plt, sns):
-
     def line_plot(_long_df):
-        (_fig, _axes) = plt.subplots(figsize=(4 * 2, 2 * 2),
-                                     dpi=150,
-                                     nrows=2,
-                                     ncols=2)
+        (_fig, _axes) = plt.subplots(
+            figsize=(4 * 2, 2 * 2), dpi=150, nrows=2, ncols=2
+        )
         _long_df = _long_df[_long_df["metric_name"] != "Median"]
         metric_types = _long_df["metric_type"].unique().tolist()
         metric_names = _long_df["metric_name"].unique().tolist()
         scheduler_policies = _long_df["scheduler_policy"].unique().tolist()
-        _long_df["line_type"] = _long_df[[
-            "scheduler_policy", "metric_name"
-        ]].apply(
-            lambda row: row["scheduler_policy"] + " " + row["metric_name"],
-            axis=1)
+        _long_df["line_type"] = _long_df[
+            ["scheduler_policy", "metric_name"]
+        ].apply(
+            lambda row: row["scheduler_policy"] + " " + row["metric_name"], axis=1
+        )
         line_styles = ["-", "--", "-.", ":"]
         mark_styles = ["d", "o", "v"]
         colors = ["r", "g", "b", "y"]
@@ -284,11 +287,11 @@ def __(add_num_annotation, plt, sns):
             columnspacing=0.5,
         )
 
+
     def barplot(_long_df, request_rate):
-        (_fig, _ax) = plt.subplots(figsize=(6 * 2, 1.5 * 2),
-                                   dpi=150,
-                                   nrows=2,
-                                   ncols=2)
+        (_fig, _ax) = plt.subplots(
+            figsize=(6 * 2, 1.5 * 2), dpi=150, nrows=2, ncols=2
+        )
         metric_types = _long_df["metric_type"].unique().tolist()
         metric_names = _long_df["metric_name"].unique().tolist()
 
@@ -316,8 +319,8 @@ def __(add_num_annotation, plt, sns):
             _ax[_i // 2][_i % 2].set_ylabel("")
             _ax[_i // 2][_i % 2].set_ylim(
                 0,
-                _long_df[_long_df["metric_type"] == metric_type]
-                ["Ratio"].max() * 1.5,
+                _long_df[_long_df["metric_type"] == metric_type]["Ratio"].max()
+                * 1.5,
             )
             add_num_annotation(_ax[_i // 2][_i % 2], rotation=0)
             _ax[_i // 2][_i % 2].grid(linestyle="--", alpha=0.5, axis="y")
@@ -330,40 +333,46 @@ def __(add_num_annotation, plt, sns):
                 handlelength=1.0,
                 columnspacing=0.5,
             )
-
     return barplot, line_plot
 
 
 @app.cell(hide_code=True)
 def __(line_plot, pd, plt, selected_columns, selected_result):
-
     def get_metric_ratio(df):
         min_result = df["Value"].min()
         df["Ratio"] = df["Value"] / min_result
         return df
 
+
     _result_df = pd.DataFrame(selected_result)
-    _result_df = (_result_df.groupby(
-        ["scheduler_policy", "swap_policy",
-         "request_rate"]).mean().reset_index())
-    _long_df = _result_df[["scheduler_policy", "swap_policy", "request_rate"] +
-                          selected_columns]
+    _result_df = (
+        _result_df.groupby(["scheduler_policy", "swap_policy", "request_rate"])
+        .mean()
+        .reset_index()
+    )
+    _long_df = _result_df[
+        ["scheduler_policy", "swap_policy", "request_rate"] + selected_columns
+    ]
     _long_df = _long_df.melt(
         id_vars=["scheduler_policy", "swap_policy", "request_rate"],
         value_vars=selected_columns,
         var_name="Metric",
         value_name="Value",
     )
-    long_df = (_long_df.groupby(
-        ["Metric", "request_rate"],
-        group_keys=False,
-    ).apply(lambda row: get_metric_ratio(row)).reset_index())
+    long_df = (
+        _long_df.groupby(
+            ["Metric", "request_rate"],
+            group_keys=False,
+        )
+        .apply(lambda row: get_metric_ratio(row))
+        .reset_index()
+    )
 
-    long_df[[
-        "metric_name", "metric_type"
-    ]] = _long_df["Metric"].apply(lambda row: pd.Series(
-        [row.split("_", 2)[0].capitalize(),
-         row.split("_", 2)[1].upper()]))
+    long_df[["metric_name", "metric_type"]] = _long_df["Metric"].apply(
+        lambda row: pd.Series(
+            [row.split("_", 2)[0].capitalize(), row.split("_", 2)[1].upper()]
+        )
+    )
     # _long_df = _long_df[_long_df["metric_name"] == "P99"]
     save_legend = True
 
@@ -380,12 +389,10 @@ def __(line_plot, pd, plt, selected_columns, selected_result):
 
 @app.cell(hide_code=True)
 def __(add_num_annotation, plt, sns):
-
     def bar_plot_1(_long_df, required_metric_name):
-        (_fig, _ax) = plt.subplots(figsize=(4 * 2, 2 * 2),
-                                   dpi=150,
-                                   nrows=2,
-                                   ncols=2)
+        (_fig, _ax) = plt.subplots(
+            figsize=(4 * 2, 2 * 2), dpi=150, nrows=2, ncols=2
+        )
 
         for metric_name in _long_df["metric_name"].unique().tolist():
             if required_metric_name != metric_name:
@@ -431,21 +438,29 @@ def __(add_num_annotation, plt, sns):
             else:
                 _ax[_i // 2][_i % 2].legend().remove()
 
-    def bar_plot_2(_long_df, required_metric_name_list,
-                   required_metric_type_list):
-        (_fig, _ax) = plt.subplots(figsize=(4 * 2, 2 * 2),
-                                   dpi=150,
-                                   nrows=2,
-                                   ncols=2)
+
+    def bar_plot_2(_long_df, required_metric_name_list, required_metric_type_list):
+        (_fig, _ax) = plt.subplots(
+            figsize=(4 * 2, 2 * 2), dpi=150, nrows=2, ncols=2
+        )
         _long_df = _long_df[
-            ((_long_df["metric_name"] == required_metric_name_list[0])
-             & (_long_df["metric_type"] == required_metric_type_list[0]))
-            | ((_long_df["metric_name"] == required_metric_name_list[0])
-               & (_long_df["metric_type"] == required_metric_type_list[1]))
-            | ((_long_df["metric_name"] == required_metric_name_list[1])
-               & (_long_df["metric_type"] == required_metric_type_list[0]))
-            | ((_long_df["metric_name"] == required_metric_name_list[1])
-               & (_long_df["metric_type"] == required_metric_type_list[1]))]
+            (
+                (_long_df["metric_name"] == required_metric_name_list[0])
+                & (_long_df["metric_type"] == required_metric_type_list[0])
+            )
+            | (
+                (_long_df["metric_name"] == required_metric_name_list[0])
+                & (_long_df["metric_type"] == required_metric_type_list[1])
+            )
+            | (
+                (_long_df["metric_name"] == required_metric_name_list[1])
+                & (_long_df["metric_type"] == required_metric_type_list[0])
+            )
+            | (
+                (_long_df["metric_name"] == required_metric_name_list[1])
+                & (_long_df["metric_type"] == required_metric_type_list[1])
+            )
+        ]
         metric_types = _long_df["metric_type"].unique().tolist()
         metric_names = _long_df["metric_name"].unique().tolist()
         scheduler_policies = _long_df["scheduler_policy"].unique().tolist()
@@ -460,8 +475,10 @@ def __(add_num_annotation, plt, sns):
             if _i > 0:
                 save_legend = False
 
-            data = _long_df[(_long_df["metric_type"] == metric_type)
-                            & (_long_df["metric_name"] == metric_name)]
+            data = _long_df[
+                (_long_df["metric_type"] == metric_type)
+                & (_long_df["metric_name"] == metric_name)
+            ]
             ax = sns.barplot(
                 x="request_rate",
                 y="Ratio",
@@ -474,8 +491,9 @@ def __(add_num_annotation, plt, sns):
             ax.spines["right"].set_visible(False)
 
             _ax[_i // 2][_i % 2].set_xlabel("Request Rate")
-            _ax[_i // 2][_i % 2].set_ylabel(metrics[_i][0] + " " +
-                                            metrics[_i][1] + " Ratio")
+            _ax[_i // 2][_i % 2].set_ylabel(
+                metrics[_i][0] + " " + metrics[_i][1] + " Ratio"
+            )
 
             add_num_annotation(_ax[_i // 2][_i % 2], rotation=60, fontsize=7)
 
@@ -492,7 +510,6 @@ def __(add_num_annotation, plt, sns):
                 )
             else:
                 _ax[_i // 2][_i % 2].legend().remove()
-
     return bar_plot_1, bar_plot_2
 
 
@@ -500,7 +517,7 @@ def __(add_num_annotation, plt, sns):
 def __(bar_plot_2, long_df, plt):
     required_metric_name = "P99"
     # bar_plot_1(_long_df, required_metric_name=required_metric_name)
-    required_metric_name_list = ["Mean", "P99"]
+    required_metric_name_list = ["Median", "P99"]
     required_metric_type_list = ["TTFT", "TPOT"]
     bar_plot_2(long_df, required_metric_name_list, required_metric_type_list)
     plt.subplots_adjust(wspace=0.2, hspace=0.6)
@@ -519,7 +536,8 @@ def __(e2e_result_dfs, np, pd):
     for _df_name in e2e_result_dfs:
         _tmp_df = e2e_result_dfs[_df_name].copy()
         _tmp_df["request_level_p99_itls"] = _tmp_df["itls"].apply(
-            lambda row: 0 if len(row) == 0 else np.percentile(row, 99))
+            lambda row: 0 if len(row) == 0 else np.percentile(row, 99)
+        )
         _tmp_df.drop(
             columns=[
                 "model_id",
@@ -543,32 +561,38 @@ def __(e2e_result_dfs, np, pd):
             ],
             inplace=True,
         )
-        request_level_result = pd.concat([request_level_result, _tmp_df],
-                                         axis=0)
-    return (request_level_result, )
+        request_level_result = pd.concat([request_level_result, _tmp_df], axis=0)
+    return (request_level_result,)
 
 
 @app.cell(hide_code=True)
 def __(request_level_result):
-
     def get_p99_ratio(df):
         min_result = df["itls_p99"].min()
         df["itls_p99"] = df["itls_p99"] / min_result
         return df
 
-    request_level_itls_p99_max = (request_level_result.groupby(
-        ["scheduler_policy", "request_rate"]).apply(
+
+    request_level_itls_p99_max = (
+        request_level_result.groupby(["scheduler_policy", "request_rate"])
+        .apply(
             lambda _df: _df["request_level_p99_itls"].quantile(0.99),
             include_groups=False,
-        ).reset_index())
+        )
+        .reset_index()
+    )
     request_level_itls_p99_max.columns = [
         "scheduler_policy",
         "request_rate",
         "itls_p99",
     ]
-    request_level_itls_p99_max = (request_level_itls_p99_max.groupby(
-        ["request_rate"], ).apply(lambda row: get_p99_ratio(row),
-                                  include_groups=False).reset_index())
+    request_level_itls_p99_max = (
+        request_level_itls_p99_max.groupby(
+            ["request_rate"],
+        )
+        .apply(lambda row: get_p99_ratio(row), include_groups=False)
+        .reset_index()
+    )
     return get_p99_ratio, request_level_itls_p99_max
 
 
@@ -589,25 +613,30 @@ def __(plt, request_level_itls_p99_max, sns):
 
 @app.cell(hide_code=True)
 def __(plt, request_level_result, sns):
-
     def get_max_mean_ttft_ratio(df):
         min_result = df["median_ttft_ms"].min()
         df["median_ttft_ms"] = df["median_ttft_ms"] / min_result
         return df
 
-    _request_level_mean_ttfts_max = (request_level_result.groupby(
-        ["scheduler_policy", "request_rate"]).agg({
-            "median_ttft_ms": "median"
-        }).reset_index())
+
+    _request_level_mean_ttfts_max = (
+        request_level_result.groupby(["scheduler_policy", "request_rate"])
+        .agg({"median_ttft_ms": "median"})
+        .reset_index()
+    )
     _request_level_mean_ttfts_max.columns = [
         "scheduler_policy",
         "request_rate",
         "median_ttft_ms",
     ]
-    _request_level_mean_ttfts_max = (_request_level_mean_ttfts_max.groupby(
-        ["request_rate"],
-        group_keys=False,
-    ).apply(lambda row: get_max_mean_ttft_ratio(row)).reset_index())
+    _request_level_mean_ttfts_max = (
+        _request_level_mean_ttfts_max.groupby(
+            ["request_rate"],
+            group_keys=False,
+        )
+        .apply(lambda row: get_max_mean_ttft_ratio(row))
+        .reset_index()
+    )
     plt.figure(figsize=(4, 2.5), dpi=150)
     ax = sns.barplot(
         data=_request_level_mean_ttfts_max,
@@ -640,7 +669,7 @@ def __(base_dir, counters, date, os):
     execute_result_dir_names = [
         os.path.join(base_dir, date, str(counter)) for counter in counters
     ]
-    return (execute_result_dir_names, )
+    return (execute_result_dir_names,)
 
 
 @app.cell(hide_code=True)
@@ -649,15 +678,18 @@ def __(execute_result_dir_names, os, pd, selected_qps):
     execute_result_dfs_moti = {}
     for _dir_name in execute_result_dir_names:
         for _file in os.listdir(_dir_name):
-            if (_file.endswith(".csv") and "_detailed" in _file
-                    and f"{selected_qps}.0qps" in _file  # Need to change
-                ):
-                _detailed_result_df = pd.read_csv(
-                    os.path.join(_dir_name, _file))
+            if (
+                _file.endswith(".csv")
+                and "_detailed" in _file
+                and f"{selected_qps}.0qps" in _file  # Need to change
+            ):
+                _detailed_result_df = pd.read_csv(os.path.join(_dir_name, _file))
                 _detailed_result_df["gpu memory iter"] = _detailed_result_df[
-                    "gpu memory iter"]
+                    "gpu memory iter"
+                ]
                 _detailed_result_df["gpu computation iter"] = (
-                    _detailed_result_df["gpu computation iter"] / 6900)
+                    _detailed_result_df["gpu computation iter"] / 6900
+                )
                 if "sjf" in _file:
                     execute_result_dfs_moti["SJF"] = _detailed_result_df
                 if "srjf" in _file:
@@ -667,9 +699,8 @@ def __(execute_result_dir_names, os, pd, selected_qps):
                 elif "fcfs" in _file:
                     execute_result_dfs_moti["FCFS"] = _detailed_result_df
                 elif "tfittradeoff" in _file:
-                    execute_result_dfs_moti[
-                        "TFITTradeoff"] = _detailed_result_df
-    return (execute_result_dfs_moti, )
+                    execute_result_dfs_moti["TFITTradeoff"] = _detailed_result_df
+    return (execute_result_dfs_moti,)
 
 
 @app.cell(hide_code=True)
@@ -729,7 +760,7 @@ def __():
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def __(execute_result_dir_names, os, pd, selected_qps):
     execute_result_dfs = {
         # "SJF": pd.DataFrame(),
@@ -738,14 +769,20 @@ def __(execute_result_dir_names, os, pd, selected_qps):
     }
     for _dir_name in execute_result_dir_names:
         for _file in os.listdir(_dir_name):
-            if (_file.endswith(".csv") and "_detailed" not in _file
-                    and f"{selected_qps}.0qps" in _file  # Need to change
-                ):
-                _detailed_result_df = pd.read_csv(
-                    os.path.join(_dir_name, _file))
+            if (
+                _file.endswith(".csv")
+                and "_detailed" not in _file
+                and f"{selected_qps}.0qps" in _file  # Need to change
+            ):
+                _detailed_result_df = pd.read_csv(os.path.join(_dir_name, _file))
                 _detailed_result_df["Cache Efficiency"] = (
-                    _detailed_result_df["Running"] /
-                    _detailed_result_df["GPU KV cache usage"])
+                    _detailed_result_df["Running"]
+                    / _detailed_result_df["GPU KV cache usage"]
+                )
+                _detailed_result_df["Resource Rate"] = (
+                    _detailed_result_df["Avg prompt throughput"]
+                    / _detailed_result_df["Avg generation throughput"]
+                )
                 if "sjf" in _file:
                     # continue
                     execute_result_dfs["SJF"] = _detailed_result_df
@@ -757,7 +794,7 @@ def __(execute_result_dir_names, os, pd, selected_qps):
                     execute_result_dfs["FCFS"] = _detailed_result_df
                 elif "tfittradeoff" in _file:
                     execute_result_dfs["TFITTradeoff"] = _detailed_result_df
-    return (execute_result_dfs, )
+    return (execute_result_dfs,)
 
 
 @app.cell(hide_code=True)
@@ -765,12 +802,13 @@ def __(execute_result_dfs, plt, sns):
     plt.figure(figsize=(16, 6), dpi=150)
     # Subplot 1: Avg generation throughput
     metric_labels = [
+        "Avg prompt throughput",
         "Avg generation throughput",
         "Running",
         "Pending",
         "Swapped",
         "GPU KV cache usage",
-        "Cache Efficiency",
+        # "Cache Efficiency",
     ]
     policies = list(execute_result_dfs.keys())
 

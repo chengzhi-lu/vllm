@@ -43,12 +43,12 @@ swap_space=64
 max_tokens=2048
 iter_theshold=15
 max_serving_time=86400
-request_duration=1200
-request_rates[0]=0.5
-# request_rates[1]=1.0
-# request_rates[2]=2.0
-request_rates[3]=5.0
-# request_rates[2]=10.0
+request_duration=120
+# request_rates[0]=0.5
+#request_rates[1]=1.0
+#request_rates[2]=2.0
+#request_rates[3]=5.0
+request_rates[2]=10.0
 # request_rates[4]=10.0
 # request_rates[5]=20.0
 # request_rates[5]=50.0
@@ -79,7 +79,7 @@ for i in {0..0}; do
           # run benchmark and save the output to benchmark.log
           taskset -c 20-39 python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
             --dataset-name $dataset_name --request-rate $request_rate \
-            --num-prompts 500  --request-duration $request_duration --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
+            --num-prompts 500 --request-duration $request_duration --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
             --save-result --result-dir $result_dir \
             --metadata swap_space=$swap_space preemption_mode=$preemption_mode \
             scheduler_policy=$policy gpu_memory_utilization=$gpu_memory_utilization\

@@ -8,7 +8,6 @@ from typing import List, Optional
 import fnmatch
 import aiohttp
 from tqdm.asyncio import tqdm
-import asyncio
 
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=6 * 60 * 60)
 
@@ -234,7 +233,7 @@ async def async_request_openai_completions(
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
         assert not request_func_input.use_beam_search
         if policy in ["srjf", "sjf"]:
-            if request_func_input.min_tokens == None:
+            if request_func_input.min_tokens is None:
                 raise ValueError(f"For policy: {policy}, should specify min_tokens")
             payload = {
                 "model": request_func_input.model,

@@ -5,9 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
-from sympy import Li
 import torch
-import numpy as np
 
 from vllm.block import LogicalTokenBlock
 from vllm.inputs import LLMInputs
@@ -289,13 +287,14 @@ class Sequence:
         else:
             # return float(np.mean(self.eos_token_prob))
             return self.eos_token_prob
+
     def get_eos_token_pos(self) -> List[int]:
         if len(self.eos_token_prob_pos) < self.eos_prob_estimation_window:
             return [-1]
         else:
             return self.eos_token_prob_pos
 
-    def update_min_eos_token_rank(self,eos_token_rank):
+    def update_min_eos_token_rank(self, eos_token_rank):
         if self.min_eos_rank == -1:
             self.min_eos_rank = eos_token_rank
         else:
@@ -371,9 +370,8 @@ class Sequence:
             eos_token_prob = logprobs.get(
                 self.eos_token_id,
                 Logprob(self.default_eos_token_prob)).logprob
-            eos_token_prob_pos = logprobs.get(
-                self.eos_token_id,
-                Logprob(0,-1)).rank
+            eos_token_prob_pos = int(
+                logprobs.get(self.eos_token_id, Logprob(0, -1)).rank)
             self.eos_token_prob.append(eos_token_prob)
             self.eos_token_prob_pos.append(eos_token_prob_pos)
             self.update_min_eos_token_rank(eos_token_prob_pos)
@@ -518,16 +516,19 @@ class SequenceGroup:
         self.execution_budget = execution_budget
         self.execution_iters = 0
         self.execution_over_budget = False
-        self.last_iter_time = None
+        self.last_iter_time = -1.0
         self.swap_time_unit = 0.00065
         self.expected_length = 0.0
         self.waiting_iter_base = waiting_iter_base
         self.priority_rate = -1000
-        self.max_length = self.sampling_params.max_tokens 
-        self.weighted:Tuple[float,float] = (0,0)
+        if self.sampling_params:
+            self.max_length = self.sampling_params.max_tokens
+        else:
+            self.max_length = 10240
+        self.weighted: Tuple[float, float] = (0, 0)
         self.swap_out_moment = None
         self.swap_in_moment = None
-        self.vocab_size=vocab_size
+        self.vocab_size = vocab_size
 
     @property
     def prompt(self) -> Optional[str]:

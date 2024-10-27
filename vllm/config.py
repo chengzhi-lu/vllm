@@ -728,7 +728,8 @@ class SchedulerConfig:
                 f"max_num_batched_tokens ({self.max_num_batched_tokens}) must "
                 "be greater than or equal to max_num_seqs "
                 f"({self.max_num_seqs}).")
-        if self.policy not in ["fcfs", "ljf", "las", "sjf", "srjf", "utf", "random", "wtf","bff",'infer', 'sjmlfq', 'inferpreempt','tfittradeoff']:
+        if self.policy not in ["fcfs", "ljf", "las", "sjf", "srjf", "utf", "random", \
+                                "wtf","bff",'infer', 'sjmlfq', 'inferpreempt','tfittradeoff']:
             raise NotImplementedError(
                 f"Scheduler policy {self.policy} is not implemented."
             )
@@ -1028,10 +1029,7 @@ class SpeculativeConfig:
         return self.num_speculative_tokens
 
     def __repr__(self) -> str:
-        if self.ngram_prompt_lookup_max > 0:
-            draft_model = "[ngram]"
-        else:
-            draft_model = self.draft_model_config.model
+        draft_model = "[ngram]" if self.ngram_prompt_lookup_max > 0 else self.draft_model_config.model
         num_spec_tokens = self.num_speculative_tokens
         return f"SpeculativeConfig({draft_model=}, {num_spec_tokens=})"
 
