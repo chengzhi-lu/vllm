@@ -87,6 +87,10 @@ class SequenceStage(enum.Enum):
     DECODE = enum.auto()
 
 
+class SequenceType(enum.Enum):
+    TEMP = enum.auto()
+    NORMAL = enum.auto()
+
 @dataclass
 class RequestMetrics:
     """Metrics associated with a request.
@@ -238,6 +242,7 @@ class Sequence:
         self.block_size = block_size
         self.eos_token_id = eos_token_id
         self.lora_request = lora_request
+        self.seq_type = SequenceType.NORMAL
 
         self.data = SequenceData(self.prompt_token_ids)
         self.output_logprobs: SampleLogprobs = []
@@ -329,6 +334,12 @@ class Sequence:
 
     def num_hashed_tokens_of_block(self, logical_idx: int):
         return logical_idx * self.block_size + self.block_size
+
+    def set_seq_type(self, seq_type: SequenceType) -> None:
+        self.seq_type = seq_type
+    
+    def get_seq_type(self) -> SequenceType:
+        return self.seq_type
 
     def reset_state_for_recompute(self):
         """Reset the sequence states for recomputation."""

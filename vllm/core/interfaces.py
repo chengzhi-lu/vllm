@@ -43,11 +43,11 @@ class BlockSpaceManager(ABC):
         raise ValueError(f"Unknown version {version=}")
 
     @abstractmethod
-    def can_allocate(self, seq_group: SequenceGroup) -> AllocStatus:
+    def can_allocate(self, seq_group: SequenceGroup, shared: bool=False) -> AllocStatus:
         pass
 
     @abstractmethod
-    def allocate(self, seq_group: SequenceGroup) -> None:
+    def allocate(self, seq_group: SequenceGroup, shared: bool=False) -> None:
         pass
 
     @abstractmethod
@@ -89,7 +89,7 @@ class BlockSpaceManager(ABC):
         pass
 
     @abstractmethod
-    def get_block_table(self, seq: Sequence) -> List[int]:
+    def get_block_table(self, seq: Sequence, shared: bool=False) -> List[int]:
         pass
 
     @abstractmethod

@@ -36,9 +36,9 @@ def __():
 @app.cell
 def __(base_dir, os):
     # _date = "20240918"
-    date = "20241027"
-    counters = [1598]
-    selected_qps = 10
+    date = "20241030"
+    counters = [0,118,119,123,125,126]
+    selected_qps = 2
     e2e_result_dir_names = [
         os.path.join(base_dir, date, str(counter)) for counter in counters
     ]
@@ -517,7 +517,7 @@ def __(add_num_annotation, plt, sns):
 def __(bar_plot_2, long_df, plt):
     required_metric_name = "P99"
     # bar_plot_1(_long_df, required_metric_name=required_metric_name)
-    required_metric_name_list = ["Median", "P99"]
+    required_metric_name_list = ["Mean", "P99"]
     required_metric_type_list = ["TTFT", "TPOT"]
     bar_plot_2(long_df, required_metric_name_list, required_metric_type_list)
     plt.subplots_adjust(wspace=0.2, hspace=0.6)
@@ -779,9 +779,9 @@ def __(execute_result_dir_names, os, pd, selected_qps):
                     _detailed_result_df["Running"]
                     / _detailed_result_df["GPU KV cache usage"]
                 )
-                _detailed_result_df["Resource Rate"] = (
+                _detailed_result_df["Total Throuhgput"] = (
                     _detailed_result_df["Avg prompt throughput"]
-                    / _detailed_result_df["Avg generation throughput"]
+                    + _detailed_result_df["Avg generation throughput"]
                 )
                 if "sjf" in _file:
                     # continue
@@ -802,7 +802,7 @@ def __(execute_result_dfs, plt, sns):
     plt.figure(figsize=(16, 6), dpi=150)
     # Subplot 1: Avg generation throughput
     metric_labels = [
-        "Avg prompt throughput",
+        "Total Throuhgput",
         "Avg generation throughput",
         "Running",
         "Pending",
