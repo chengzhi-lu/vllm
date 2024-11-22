@@ -628,6 +628,15 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             return AllocStatus.OK
         else:
             return AllocStatus.LATER
+    def can_swap_in_shared_blocks(self, seq_group: SequenceGroup) -> AllocStatus:
+        blocks = self._get_physical_blocks(seq_group)
+
+        num_swapped_seqs = seq_group.num_seqs(status=SequenceStatus.RUNNING)
+        free_shared_blocks = self.gpu_allocator.get_num_free_blocks(block_type="shared")
+        if free_shared_blocks < num_swapped_seqs:
+            return AllocStatus.NEVER
+        else:
+            return AllocStatus.OK
 
     def _swap_block_table(
             self, block_table: BlockTable, src_allocator: BlockAllocatorBase,
