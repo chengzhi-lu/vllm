@@ -633,10 +633,11 @@ class BlockSpaceManagerV1(BlockSpaceManager):
 
         num_swapped_seqs = seq_group.num_seqs(status=SequenceStatus.RUNNING)
         free_shared_blocks = self.gpu_allocator.get_num_free_blocks(block_type="shared")
-        if free_shared_blocks < num_swapped_seqs:
-            return AllocStatus.NEVER
+        if free_shared_blocks < num_swapped_seqs+len(blocks):
+            print(f"Not enough free shared blocks to swap in {num_swapped_seqs} sequences. Free shared blocks: {free_shared_blocks}")
+            return False 
         else:
-            return AllocStatus.OK
+            return True 
 
     def _swap_block_table(
             self, block_table: BlockTable, src_allocator: BlockAllocatorBase,

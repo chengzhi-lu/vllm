@@ -205,6 +205,13 @@ class TFITTradeoff(Policy):
                                                   pending_swapped_rate)
         return priority
 
+    def get_priority(
+        self,
+        now: float,
+        seq_group: SequenceGroup,
+    ) -> float:
+        return now - seq_group.metrics.arrival_time
+
 
 class Random(Policy):
 

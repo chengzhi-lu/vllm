@@ -39,6 +39,7 @@ class PreemptionMode(enum.Enum):
     """
     SWAP = enum.auto()
     RECOMPUTE = enum.auto()
+    KV_FREE_RECOMPUTE = enum.auto()
 
 
 class SwapMode(enum.Enum):
@@ -348,11 +349,12 @@ class Scheduler:
         self.ddl = None
         self.reach_ddl = False
 
-        # if self.scheduler_config.policy == 'tfittradeoff':
-        #     self.num_shared_blocks = min(int(self.scheduler_config.max_num_batched_tokens // self.cache_config.block_size // self.scheduler_config.waiting_iter_base),      
-        #                                  int(self.cache_config.num_gpu_blocks*0.1)+1)
-        # else:
-        self.num_shared_blocks = 2
+        if self.scheduler_config.policy == 'tfittradeoff':
+            # self.num_shared_blocks = min(int(self.scheduler_config.max_num_batched_tokens // self.cache_config.block_size // self.scheduler_config.waiting_iter_base),      
+            #                              int(self.cache_config.num_gpu_blocks*0.1)+1)
+            self.num_shared_blocks = 4
+        else:
+            self.num_shared_blocks = 0
         
         
         # Create the block space manager.
@@ -1157,20 +1159,10 @@ class Scheduler:
                         self.total_swap_out_blocks += victim_seq_group.total_token_block_size
                         self.total_swap_out_seqs += 1
                         if preempted_mode == PreemptionMode.RECOMPUTE:
-                            if len(
-                                    victim_seq_group.get_seqs(
-                                        status=SequenceStatus.RUNNING)) != 0:
-                                raise ValueError(
-                                    "111 There should not be any wating seq in the swapped group"
-                                )
                             preempted.add(victim_seq_group)
+                        elif preempted_mode == PreemptionMode.KV_FREE_RECOMPUTE:
+                            self.kv_free_seq_groups.append(victim_seq_group)
                         else:
-                            if len(
-                                    victim_seq_group.get_seqs(
-                                        status=SequenceStatus.WAITING)) != 0:
-                                raise ValueError(
-                                    "111 There should not be any wating seq in the swapped group"
-                                )
                             swapped_out.add(victim_seq_group)
                     else:
                         if len(self.partial_swapped) == 0:
@@ -1239,13 +1231,9 @@ class Scheduler:
 
                         if preempted_mode == PreemptionMode.RECOMPUTE:
                             preempted.add(victim_seq_group)
+                        elif preempted_mode == PreemptionMode.KV_FREE_RECOMPUTE:
+                            self.kv_free_seq_groups.append(victim_seq_group)
                         else:
-                            if len(
-                                    victim_seq_group.get_seqs(
-                                        status=SequenceStatus.WAITING)) != 0:
-                                raise ValueError(
-                                    "222 There should not be any wating seq in the swapped group"
-                                )
                             swapped_out.add(victim_seq_group)
                 else:
                     # No other sequence groups can be preempted.
@@ -1258,6 +1246,8 @@ class Scheduler:
 
                         if preempted_mode == PreemptionMode.RECOMPUTE:
                             preempted.add(seq_group)
+                        elif preempted_mode == PreemptionMode.KV_FREE_RECOMPUTE:
+                            self.kv_free_seq_groups.append(seq_group)
                         else:
                             swapped_out.add(seq_group)
                     else:
@@ -1280,20 +1270,10 @@ class Scheduler:
                             seq_group_status=seq_group_status)
 
                         if preempted_mode == PreemptionMode.RECOMPUTE:
-                            if len(
-                                    victim_seq_group.get_seqs(
-                                        status=SequenceStatus.WAITING)) != 0:
-                                raise ValueError(
-                                    "444 There should not be any wating seq in the swapped group"
-                                )
                             preempted.add(victim_seq_group)
+                        elif preempted_mode == PreemptionMode.KV_FREE_RECOMPUTE:
+                            self.kv_free_seq_groups.append(victim_seq_group)
                         else:
-                            if len(
-                                    victim_seq_group.get_seqs(
-                                        status=SequenceStatus.WAITING)) != 0:
-                                raise ValueError(
-                                    "444 There should not be any wating seq in the swapped group"
-                                )
                             swapped_out.add(victim_seq_group)
                     break
             else:
@@ -1691,19 +1671,21 @@ class Scheduler:
         # Copy the queue so that the input queue is not modified.
         waiting_queue = deque([s for s in waiting_queue])
         if policy is not None:
-            if self.scheduler_config.policy == "tfittradeoff":
-                priorities = [
-                    seq_group.priority_rate for seq_group in self.running 
-                    if seq_group.priority_rate> 0
-                ]
-                avg_priorities = float(
-                    np.max(priorities) if len(priorities) > 0 else 1)
-                # avg_priorities = 1.0
-                waiting_queue = policy.sorted_by_priority(
-                    avg_priorities, waiting_queue, pending_swapped_rate)
-            else:
+            # if self.scheduler_config.policy == "tfittradeoff":
+            #     priorities = [
+            #         seq_group.priority_rate for seq_group in self.running 
+            #         if seq_group.priority_rate> 0
+            #     ]
+            #     avg_priorities = float(
+            #         np.max(priorities) if len(priorities) > 0 else 1)
+            #     # avg_priorities = 1.0
+            #     waiting_queue = policy.sorted_by_priority(
+            #         avg_priorities, waiting_queue, pending_swapped_rate)
+            # else:
                 waiting_queue = policy.sort_by_priority(
                     time.time(), waiting_queue)
+
+        waiting_queue = deque([s for s in self.kv_free_seq_groups]+ [s for s in waiting_queue])
 
         leftover_waiting_sequences: Deque[SequenceGroup] = deque()
 
@@ -2094,12 +2076,6 @@ class Scheduler:
             self.running.extend(
                 [s.seq_group for s in swapped_in.prefill_seq_groups])
 
-            print(f"running_scheduled.decode_seq_groups {len(running_scheduled.decode_seq_groups)}, \
-                  running_scheduled.prefill_seq_groups {len(running_scheduled.prefill_seq_groups)}, \
-                  swapped_in.decode_seq_groups {len(swapped_in.decode_seq_groups)}, \
-                  swapped_in.prefill_seq_groups {len(swapped_in.prefill_seq_groups)}, \
-                  prefills.seq_groups {len(prefills.seq_groups)},  \
-                  prefills.kv_free_seq_groups {len(prefills.kv_free_seq_groups)}")
             self.kv_free_seq_groups = [s.seq_group.request_id for s in prefills.kv_free_seq_groups]
             # Update swapped requests.
             self.swapped = remaining_swapped
@@ -2390,20 +2366,26 @@ class Scheduler:
         # sequences. This may require a more sophisticated CUDA kernel.
         if preemption_mode is None:
             if self.user_specified_preemption_mode is None:
-                if seq_group.get_max_num_running_seqs(
+                if self.block_manager.can_swap_in_shared_blocks(seq_group):
+                    print(f"{seq_group.request_id} can swap in shared blocks")
+                    preemption_mode = PreemptionMode.KV_FREE_RECOMPUTE
+                elif seq_group.get_max_num_running_seqs(
                 ) == 1 or not self.block_manager.can_swap_out(seq_group):
                     preemption_mode = PreemptionMode.RECOMPUTE
                 else:
                     preemption_mode = PreemptionMode.SWAP
 
-            elif self.block_manager.can_swap_in_shared_blocks(seq_group):
-                print(f"{seq_group.request_id} can swap in shared blocks")
-                preemption_mode = PreemptionMode.RECOMPUTE
             elif self.user_specified_preemption_mode == "swap" and self.block_manager.can_swap_out(
                     seq_group):
                 preemption_mode = PreemptionMode.SWAP
             else:
                 preemption_mode = PreemptionMode.RECOMPUTE
+        
+        elif self.block_manager.can_swap_in_shared_blocks(seq_group):
+            print(f"{seq_group.request_id} can swap in shared blocks")
+            preemption_mode = PreemptionMode.KV_FREE_RECOMPUTE
+        else:
+            preemption_mode = preemption_mode
 
         if (self.num_cumulative_preemption % 50 == 0
                 and self.num_cumulative_preemption > 0):
@@ -2415,7 +2397,7 @@ class Scheduler:
                 "total_num_cumulative_preemption=%d", seq_group.request_id,
                 preemption_mode, self.num_cumulative_preemption + 1)
         self.num_cumulative_preemption += 1
-        if preemption_mode == PreemptionMode.RECOMPUTE:
+        if preemption_mode == PreemptionMode.RECOMPUTE or preemption_mode == PreemptionMode.KV_FREE_RECOMPUTE:
             # preemption_mode = PreemptionMode.RECOMPUTE
             self._preempt_by_recompute(seq_group)
         elif preemption_mode == PreemptionMode.SWAP:
