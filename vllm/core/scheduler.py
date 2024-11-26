@@ -352,7 +352,7 @@ class Scheduler:
         if self.scheduler_config.policy == 'tfittradeoff':
             # self.num_shared_blocks = min(int(self.scheduler_config.max_num_batched_tokens // self.cache_config.block_size // self.scheduler_config.waiting_iter_base),      
             #                              int(self.cache_config.num_gpu_blocks*0.1)+1)
-            self.num_shared_blocks = 4
+            self.num_shared_blocks = self.cache_config.num_shared_blocks
         else:
             self.num_shared_blocks = 0
         

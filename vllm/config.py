@@ -362,6 +362,7 @@ class CacheConfig:
         num_gpu_blocks_override: Optional[int] = None,
         sliding_window: Optional[int] = None,
         enable_prefix_caching: bool = False,
+        num_shared_blocks: Optional[int] = None
     ) -> None:
         self.block_size = block_size
         self.gpu_memory_utilization = gpu_memory_utilization
@@ -370,6 +371,7 @@ class CacheConfig:
         self.cache_dtype = cache_dtype
         self.sliding_window = sliding_window
         self.enable_prefix_caching = enable_prefix_caching
+        self.num_shared_blocks = num_shared_blocks
         self._verify_args()
         self._verify_cache_dtype()
         self._verify_prefix_caching()

@@ -47,6 +47,7 @@ class EngineArgs:
     swap_space: int = 4  # GiB
     gpu_memory_utilization: float = 0.90
     max_num_batched_tokens: Optional[int] = None
+    num_shared_blocks: Optional[int] = None
     max_num_seqs: int = 256
     max_logprobs: int = 5  # OpenAI default value
     disable_log_stats: bool = False
@@ -378,6 +379,12 @@ class EngineArgs:
                             default=EngineArgs.max_num_batched_tokens,
                             help='Maximum number of batched tokens per '
                             'iteration.')
+        
+        parser.add_argument('--num-shared-blocks',
+                    type=int,
+                    default=EngineArgs.num_shared_blocks,
+                    help='The number of shared blocks.')
+        
         parser.add_argument('--max-num-seqs',
                             type=int,
                             default=EngineArgs.max_num_seqs,
@@ -714,7 +721,9 @@ class EngineArgs:
             cache_dtype=self.kv_cache_dtype,
             num_gpu_blocks_override=self.num_gpu_blocks_override,
             sliding_window=model_config.get_sliding_window(),
-            enable_prefix_caching=self.enable_prefix_caching)
+            enable_prefix_caching=self.enable_prefix_caching,
+            num_shared_blocks=self.num_shared_blocks
+            )
         parallel_config = ParallelConfig(
             pipeline_parallel_size=self.pipeline_parallel_size,
             tensor_parallel_size=self.tensor_parallel_size,
