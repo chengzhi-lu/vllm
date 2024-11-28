@@ -1984,6 +1984,7 @@ class Scheduler:
                 waiting_queue = policy.sort_by_priority(
                     time.time(), waiting_queue)
 
+        print(f"self.kv_free_seq_groups: {len(self.kv_free_seq_groups)}")
         waiting_queue = deque([s for s in self.kv_free_seq_groups]+ [s for s in waiting_queue])
 
         leftover_waiting_sequences: Deque[SequenceGroup] = deque()
