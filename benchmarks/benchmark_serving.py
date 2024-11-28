@@ -29,9 +29,10 @@ import os
 import random
 import time
 import warnings
+import copy
 from dataclasses import dataclass
 from datetime import datetime
-from typing import AsyncGenerator, List, Optional, Tuple
+from typing import AsyncGenerator, List, Optional, Tuple 
 import fnmatch
 
 import numpy as np
@@ -41,6 +42,11 @@ from tqdm.asyncio import tqdm
 from transformers import PreTrainedTokenizerBase
 
 from vllm.transformers_utils.tokenizer import get_tokenizer
+import multiprocessing
+import nest_asyncio
+nest_asyncio.apply()
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 @dataclass
@@ -100,11 +106,11 @@ def sample_sharegpt_requests(
         prompt_len = len(prompt_token_ids)
         prompt_len_list.append(prompt_len)
         output_len = len(completion_token_ids
-                         ) if fixed_output_len is None else fixed_output_len
-        if prompt_len < 0 or output_len < 100:
-            # Prune too short sequences.
-            continue
-        if prompt_len > 1024 or prompt_len + output_len > 2048:
+                         ) 
+        # if prompt_len < 0:
+        #     # Prune too short sequences.
+        #     continue
+        if prompt_len + output_len > 2048:
             # Prune too long sequences.
             continue
         filtered_dataset.append((prompt, prompt_len, output_len))
@@ -208,36 +214,70 @@ def get_json_file():
             return file_name
     return None
 
+def generate_request(input_requests: List[Tuple[str, int, int]]) -> Tuple[str, int, int]:
+    request = input_requests[random.randint(0, len(input_requests) - 1)]
+    return request
+
+# async def get_request_duration(
+#     input_requests: List[Tuple[str, int, int]],
+#     request_rate: float,
+#     request_duration: float,
+#     executor: ProcessPoolExecutor
+# ) -> AsyncGenerator[Tuple[str, int, int], None]:
+#     st = time.time()
+    
+#     while (time.time() - st < request_duration):
+#         request = await asyncio.get_event_loop().run_in_executor(executor, generate_request, input_requests)
+        
+#         # 异步生成请求
+#         yield request
+        
+#         # 控制请求速率
+#         if request_rate == float("inf") or request_rate == -1:
+#             continue
+        
+#         # 使用指数分布的随机数来模拟请求间隔
+#         interval = np.random.exponential(1.0 / request_rate)
+#         await asyncio.sleep(interval)
+
+# def get_request_duration(
+#     input_requests: List[Tuple[str, int, int]],
+#     request_rate: float,
+#     request_duration: float
+# ) -> Generator[Tuple[str, int, int], None, None]:
+#     # file_path = get_json_file()
+#     # if file_path:
+#     #     with open(file_path, 'r', encoding="utf-8") as file:
+#     #         data = json.load(file)
+#     #     # print(f"Loaded data from {file_path}")
+#     # else:
+#     #     print("No JSON file found in the current directory.")
+#     # input_requests = iter(input_requests)
+#     st = time.time()
+#     while(time.time() - st < request_duration):
+#         request = input_requests[random.randint(0, len(input_requests) - 1)]
+#         # while request[0] not in data:
+#         #     request = input_requests[random.randint(0, len(input_requests) - 1)]
+#     # for request in input_requests:
+#         yield request
+#         if request_rate == float("inf") or request_rate == -1:
+#             continue
+#         interval = np.random.exponential(1.0 / request_rate)
+#         time.sleep(interval)
+
 async def get_request_duration(
     input_requests: List[Tuple[str, int, int]],
     request_rate: float,
-    request_duration: float
+    request_duration: float,
+    scheduler_policy: Optional[str],
 ) -> AsyncGenerator[Tuple[str, int, int], None]:
-    global count
-    file_path = get_json_file()
-    if file_path:
-        with open(file_path, 'r', encoding="utf-8") as file:
-            data = json.load(file)
-        # print(f"Loaded data from {file_path}")
-    else:
-        print("No JSON file found in the current directory.")
-    # input_requests = iter(input_requests)
     st = time.time()
-    count = 0
     while(time.time() - st < request_duration):
-        # print(st)
         request = input_requests[random.randint(0, len(input_requests) - 1)]
-        # while request[0] not in data:
-        #     request = input_requests[random.randint(0, len(input_requests) - 1)]
-    # for request in input_requests:
         yield request
         if request_rate == float("inf") or request_rate == -1:
-            # If the request rate is infinity, then we don't need to wait.
             continue
-        # Sample the request interval from the exponential distribution.
-        count += 1
         interval = np.random.exponential(1.0 / request_rate)
-        # The next request will be sent after the interval.
         await asyncio.sleep(interval)
 
 def calculate_metrics(
@@ -253,8 +293,6 @@ def calculate_metrics(
     tpots = []
     ttfts = []
     latencies = []
-    print("length of the input_requests: ", len(input_requests))
-    print("length of the outputs: ", len(outputs))
     for i in range(len(outputs)):
         if outputs[i].success:
             # We use the tokenizer to count the number of output tokens for all
@@ -265,7 +303,6 @@ def calculate_metrics(
                 tokenizer(outputs[i].generated_text,
                           add_special_tokens=False).input_ids)
             actual_output_lens.append(output_len)
-            # print(i)
             total_input += outputs[i].prompt_len
             if output_len > 1:
                 tpots.append(
@@ -282,6 +319,9 @@ def calculate_metrics(
             "All requests failed. This is likely due to a misconfiguration "
             "on the benchmark arguments.",
             stacklevel=2)
+    ttfts = [t for t in ttfts if t > 0]
+    tpots = [t for t in tpots if t > 0]
+    itls = [t for t in itls if t > 0]
     metrics = BenchmarkMetrics(
         completed=completed,
         total_input=total_input,
@@ -307,6 +347,98 @@ def calculate_metrics(
     return metrics, actual_output_lens
 
 
+async def process_request(request, model_id, api_url, best_of, use_beam_search, backend, request_func, pbar):
+    """
+    Function to process a single request.
+    """
+    prompt, prompt_len, output_len = request
+    request_func_input = RequestFuncInput(
+        model=model_id,
+        prompt=prompt,
+        api_url=api_url,
+        prompt_len=prompt_len,
+        output_len=output_len,
+        best_of=best_of,
+        use_beam_search=use_beam_search,
+    )
+    
+    if backend == "vllm":
+        return await request_func(scheduler_policy=None, request_func_input=request_func_input, pbar=pbar)
+    else:
+        return await request_func(request_func_input=request_func_input, pbar=pbar)
+
+# def worker_function(request, backend, args, model_id, api_url, best_of, use_beam_search, pbar, request_func):
+#     prompt, prompt_len, output_len = request
+#     request_func_input = RequestFuncInput(
+#         model=model_id,
+#         prompt=prompt,
+#         api_url=api_url,
+#         prompt_len=prompt_len,
+#         output_len=output_len,
+#         best_of=best_of,
+#         use_beam_search=use_beam_search,
+#     )
+#     return process_request(backend, args, request_func_input, pbar, request_func)
+
+def run_event_loop_in_process(requests, model_id, api_url, best_of, use_beam_search, backend, request_func, pbar):
+    """
+    Run the asyncio event loop to handle multiple requests in a process.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # Run multiple async tasks within this process
+    result = loop.run_until_complete(
+        process_multiple_requests(requests, model_id, api_url, best_of, use_beam_search, backend, request_func, pbar)
+    )
+
+    loop.close()
+    return result
+
+async def process_multiple_requests(requests, model_id, api_url, best_of, use_beam_search, backend, request_func, pbar):
+    tasks = []
+    for request in requests:
+        tasks.append(process_request(request, model_id, api_url, best_of, use_beam_search, backend, request_func, pbar))
+    results = await asyncio.gather(*tasks)
+    return results
+
+def process_requests(backend, args, request_func, data1=None):
+    async def handle_requests():
+        tasks:List[asyncio.Task] = []
+        while True:
+            request_func_input = await asyncio.get_event_loop().run_in_executor(None, request_queue.get)
+            if request_func_input is None:
+                break
+
+            if backend == "vllm":
+                tasks.append(
+                    asyncio.create_task(
+                        request_func(args.scheduler_policy,
+                                    request_func_input=request_func_input)
+                    )
+                )
+            else:
+                tasks.append(
+                    asyncio.create_task(
+                        request_func(request_func_input=request_func_input)
+                    )
+                )
+
+        # Gather the results of all tasks
+        try:
+            outputs = await asyncio.gather(*tasks)
+        except Exception as e:
+            raise e
+        await asyncio.get_event_loop().run_in_executor(None, result_queue.put, outputs)
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(handle_requests())
+    finally:
+        loop.close()
+        loop.stop()
+
 async def benchmark(
     backend: str,
     api_url: str,
@@ -317,39 +449,32 @@ async def benchmark(
     use_beam_search: bool,
     request_rate: float,
     disable_tqdm: bool,
-    request_duration: float
+    request_duration: float,
+    scheduler_policy: Optional[str],
+    data,
 ):
     if backend in ASYNC_REQUEST_FUNCS:
         request_func = ASYNC_REQUEST_FUNCS.get(backend)
     else:
         raise ValueError(f"Unknown backend: {backend}")
 
-    # print("Starting initial single prompt test run...")
-    # test_prompt, test_prompt_len, test_output_len = input_requests[0]
-    # test_input = RequestFuncInput(
-    #     model=model_id,
-    #     prompt=test_prompt,
-    #     api_url=api_url,
-    #     prompt_len=test_prompt_len,
-    #     output_len=test_output_len,
-    #     best_of=best_of,
-    #     use_beam_search=use_beam_search,
-    # )
-    # test_output = await request_func(request_func_input=test_input)
-    # if not test_output.success:
-    #     raise ValueError(
-    #         "Initial test run failed - Please make sure benchmark arguments "
-    #         f"are correctly specified. Error: {test_output.error}")
-    # else:
-    #     print("Initial test run completed. Starting main benchmark run...")
-    # print(f"Traffic request rate: {request_rate}")
-
     pbar = None if disable_tqdm else tqdm(total=len(input_requests))
 
     benchmark_start_time = time.perf_counter()
-    tasks = []
-    async for request in get_request_duration(input_requests, request_rate, request_duration):
+    
+    num_workers = 20
+    workers = []
+        
+    for i in range(num_workers):
+        worker = multiprocessing.Process(target=process_requests, 
+                                         args=(backend, args,request_func))
+        worker.start()
+        workers.append(worker)
+    
+    send_request_num = 0
+    async for request in get_request_duration(input_requests, request_rate, request_duration, scheduler_policy):
         prompt, prompt_len, output_len = request
+        min_tokens = copy.deepcopy(data[prompt]) if scheduler_policy in ["srjf", "sjf"] else None
         request_func_input = RequestFuncInput(
             model=model_id,
             prompt=prompt,
@@ -358,20 +483,29 @@ async def benchmark(
             output_len=output_len,
             best_of=best_of,
             use_beam_search=use_beam_search,
+            min_tokens=min_tokens,
         )
-        if backend == "vllm":
-            tasks.append(
-                asyncio.create_task(
-                    request_func(args.scheduler_policy,
-                                request_func_input=request_func_input,
-                                pbar=pbar)))
-        else:
-            tasks.append(
-                asyncio.create_task(
-                    request_func(request_func_input=request_func_input,
-                                pbar=pbar)))
-    outputs: List[RequestFuncOutput] = await asyncio.gather(*tasks)
+        send_request_num += 1
+        request_queue.put(request_func_input)
     
+    for _ in range(num_workers):
+        request_queue.put(None)
+        
+    outputs: List[RequestFuncOutput] = []
+    while True:
+        try:
+            if len(outputs) == send_request_num:
+                break
+            result = result_queue.get()
+            for res in result:
+                pbar.update(1)
+                outputs.append(res)
+        except Exception as error:
+            raise error
+        
+    for worker in workers:
+        worker.join()
+        
     if not disable_tqdm:
         pbar.close()
 
@@ -534,20 +668,52 @@ def main(args: argparse.Namespace):
 
     else:
         raise ValueError(f"Unknown dataset: {args.dataset_name}")
-
-    benchmark_result, outputs = asyncio.run(
-        benchmark(
-            backend=backend,
-            api_url=api_url,
-            model_id=model_id,
-            tokenizer=tokenizer,
-            input_requests=input_requests,
-            best_of=args.best_of,
-            use_beam_search=args.use_beam_search,
-            request_rate=args.request_rate,
-            disable_tqdm=args.disable_tqdm,
-            request_duration=args.request_duration
-        ))
+    
+    if args.scheduler_policy in ["srjf", "sjf"]:
+        data = None
+        file_path = get_json_file()
+        if file_path:
+            with open(file_path, 'r', encoding="utf-8") as file:
+                data = json.load(file)
+            # print(f"Loaded data from {file_path}")
+        else:
+            print("No JSON file found in the current directory.")
+        
+        if data is not None:
+            data = {k:v for k, v in data.items() if v != 0}
+            input_requests = [req for req in input_requests if req[0] in data]
+    
+        benchmark_result, outputs = asyncio.run(
+            benchmark(
+                backend=backend,
+                api_url=api_url,
+                model_id=model_id,
+                tokenizer=tokenizer,
+                input_requests=input_requests,
+                best_of=args.best_of,
+                use_beam_search=args.use_beam_search,
+                request_rate=args.request_rate,
+                disable_tqdm=args.disable_tqdm,
+                request_duration=args.request_duration,
+                scheduler_policy=args.scheduler_policy,
+                data=data
+            ))
+    else:
+        benchmark_result, outputs = asyncio.run(
+            benchmark(
+                backend=backend,
+                api_url=api_url,
+                model_id=model_id,
+                tokenizer=tokenizer,
+                input_requests=input_requests,
+                best_of=args.best_of,
+                use_beam_search=args.use_beam_search,
+                request_rate=args.request_rate,
+                disable_tqdm=args.disable_tqdm,
+                request_duration=args.request_duration,
+                scheduler_policy=args.scheduler_policy,
+                data=None
+            ))
 
     # Save config and results to json
     if args.save_result:
@@ -588,7 +754,6 @@ def main(args: argparse.Namespace):
         dir_name = f"{days}/{args.execution_counter}"
         file_name = f"{backend}-{args.request_rate}qps-{base_model_id}-{seconds}-{args.scheduler_policy}.json"  #noqa
         if args.result_dir:
-            print("result_dir:", args.result_dir)
             if not os.path.exists(os.path.join(args.result_dir, dir_name)):
                 os.makedirs(os.path.join(args.result_dir, dir_name))
             file_name = os.path.join(args.result_dir, dir_name, file_name)
@@ -598,23 +763,23 @@ def main(args: argparse.Namespace):
         prompt_output_lens_json = {}
         for i in range(len(outputs)):
             prompt_output_lens_json[outputs[i].prompt] = benchmark_result["output_lens"][i]
-        prompt_output_lens_file_name = f"prompt_output_{backend}-{args.request_rate}qps-{base_model_id}-{seconds}-{args.scheduler_policy}.json"
+        prompt_output_lens_file_name = f"prompt_output_{backend}-{args.request_rate}qps-{base_model_id}-{seconds}-{args.scheduler_policy}.json"  # noqa: E501
         
         if args.result_dir:
-            print("result_dir:", args.result_dir)
             if not os.path.exists(os.path.join(args.result_dir, dir_name,"prompt")):
                 os.makedirs(os.path.join(args.result_dir, dir_name,"prompt"))
-            prompt_output_lens_file_name = os.path.join(args.result_dir, dir_name,"prompt", prompt_output_lens_file_name)
+            prompt_output_lens_file_name = os.path.join(args.result_dir, dir_name,"prompt", prompt_output_lens_file_name)  # noqa: E501
         with open(prompt_output_lens_file_name, "w") as prompt_output_lens_file_name_outfile:
             json.dump(prompt_output_lens_json, prompt_output_lens_file_name_outfile)
-
-
-
-
 
 if __name__ == "__main__":
     st = time.time()
     count = 0
+    request_queue = multiprocessing.Queue()
+    result_queue = multiprocessing.Queue()
+    lock = multiprocessing.Lock()
+    RESULTLEN = 0
+
     parser = argparse.ArgumentParser(
         description="Benchmark the online serving throughput.")
     parser.add_argument(
@@ -764,7 +929,7 @@ if __name__ == "__main__":
     parser.add_argument("--scheduler-policy",
                         type=str,
                         default="fcfs",
-                        choices=["fcfs", "infer","sjmlfq", "inferpreempt","sjf","tfittradeoff", "las"],
+                        choices=["fcfs", "infer","sjmlfq", "inferpreempt","sjf", "srjf", "tfittradeoff", "las"],
                         help="Specify the scheduler policy.")
     parser.add_argument("--execution-counter",
                         type=int,

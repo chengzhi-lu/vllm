@@ -362,6 +362,7 @@ class CacheConfig:
         num_gpu_blocks_override: Optional[int] = None,
         sliding_window: Optional[int] = None,
         enable_prefix_caching: bool = False,
+        num_shared_blocks: Optional[int] = None
     ) -> None:
         self.block_size = block_size
         self.gpu_memory_utilization = gpu_memory_utilization
@@ -370,6 +371,7 @@ class CacheConfig:
         self.cache_dtype = cache_dtype
         self.sliding_window = sliding_window
         self.enable_prefix_caching = enable_prefix_caching
+        self.num_shared_blocks = num_shared_blocks
         self._verify_args()
         self._verify_cache_dtype()
         self._verify_prefix_caching()
@@ -728,7 +730,8 @@ class SchedulerConfig:
                 f"max_num_batched_tokens ({self.max_num_batched_tokens}) must "
                 "be greater than or equal to max_num_seqs "
                 f"({self.max_num_seqs}).")
-        if self.policy not in ["fcfs", "ljf", "las", "sjf", "utf", "random", "wtf","bff",'infer', 'sjmlfq', 'inferpreempt','tfittradeoff']:
+        if self.policy not in ["fcfs", "ljf", "las", "sjf", "srjf", "utf", "random", \
+                                "wtf","bff",'infer', 'sjmlfq', 'inferpreempt','tfittradeoff']:
             raise NotImplementedError(
                 f"Scheduler policy {self.policy} is not implemented."
             )
@@ -1028,10 +1031,7 @@ class SpeculativeConfig:
         return self.num_speculative_tokens
 
     def __repr__(self) -> str:
-        if self.ngram_prompt_lookup_max > 0:
-            draft_model = "[ngram]"
-        else:
-            draft_model = self.draft_model_config.model
+        draft_model = "[ngram]" if self.ngram_prompt_lookup_max > 0 else self.draft_model_config.model
         num_spec_tokens = self.num_speculative_tokens
         return f"SpeculativeConfig({draft_model=}, {num_spec_tokens=})"
 

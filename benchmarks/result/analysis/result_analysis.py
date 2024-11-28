@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.8.14"
+__generated_with = "0.7.12"
 app = marimo.App(width="full")
 
 
@@ -39,12 +39,12 @@ def __(mo):
 
 @app.cell
 def __(base_dir, os):
-    _date = "results"
-    _counters = [512]
+    date = "20241024"
+    counters = [1522]
     e2e_result_dir_names = [
-        os.path.join(base_dir, _date, str(counter)) for counter in _counters
+        os.path.join(base_dir, date, str(counter)) for counter in counters
     ]
-    return e2e_result_dir_names,
+    return counters, date, e2e_result_dir_names
 
 
 @app.cell
@@ -150,7 +150,7 @@ def e2e_result(
             group_keys=False,
         )
         .apply(lambda row: get_tp_ratio(row))
-        .drop(columns=["swap_policies", "request_rates"])
+        .drop(columns=["swap_policies"])
         .reset_index()
     )
     sns.set_style(style="whitegrid")
@@ -356,21 +356,16 @@ def __(barplot, fig, pd, plt, selected_columns, selected_result):
         var_name="Metric",
         value_name="Value",
     )
-    _long_df = (
-        _long_df.groupby(
-            ["Metric", "request_rate"],
-            group_keys=False,
-        )
-        .apply(lambda row: get_metric_ratio(row))
-        .drop(columns=["Metric", "request_rate"])
-        .reset_index()
-    )
-    print(_long_df)
+    _long_df = _long_df.groupby(
+        ["Metric", "request_rate"],
+        group_keys=False,
+    ).apply(lambda row: get_metric_ratio(row))
     _long_df[["metric_name", "metric_type"]] = _long_df["Metric"].apply(
         lambda row: pd.Series(
             [row.split("_", 2)[0].capitalize(), row.split("_", 2)[1].upper()]
         )
     )
+    print(_long_df["Ratio"].max())
     # _long_df = _long_df[_long_df["metric_name"] == "P99"]
     show_legend = True
 
@@ -510,11 +505,9 @@ def __(mo):
 
 
 @app.cell
-def __(base_dir, os):
-    _date = "results"
-    _counters = [512]
+def __(base_dir, counters, date, os):
     execute_result_dir_names = [
-        os.path.join(base_dir, _date, str(counter)) for counter in _counters
+        os.path.join(base_dir, date, str(counter)) for counter in counters
     ]
     return execute_result_dir_names,
 
@@ -909,7 +902,7 @@ def __():
 
 
 @app.cell
-def __(add_num_annotation, detailed_result_dfs, plt, sns):
+def __(detailed_result_dfs, plt, sns):
     detailed_mean_result = (
         detailed_result_dfs.groupby(["schedule_policy"])
         .max()
@@ -935,20 +928,7 @@ def __(add_num_annotation, detailed_result_dfs, plt, sns):
     )
     # plt.yscale("log")
     plt.legend(title="")
-    add_num_annotation(ax)
-    plt.xticks(rotation=45)
-    plt.show()
     return ax, detailed_mean_result
-
-
-@app.cell
-def __():
-    return
-
-
-@app.cell
-def __():
-    return
 
 
 if __name__ == "__main__":

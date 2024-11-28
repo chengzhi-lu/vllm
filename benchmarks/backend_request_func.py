@@ -8,7 +8,6 @@ from typing import List, Optional
 import fnmatch
 import aiohttp
 from tqdm.asyncio import tqdm
-import asyncio
 
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=6 * 60 * 60)
 
@@ -22,6 +21,7 @@ class RequestFuncInput:
     model: str
     best_of: int = 1
     use_beam_search: bool = False
+    min_tokens: int = None
 
 
 @dataclass
@@ -142,7 +142,6 @@ async def async_request_trt_llm(
 
                         data = json.loads(chunk)
                         output.generated_text += data["text_output"]
-                        print(data['text_output'])
                         timestamp = time.perf_counter()
                         # First token
                         if ttft == 0.0:
@@ -231,25 +230,18 @@ async def async_request_openai_completions(
         "v1/completions"
     ), "OpenAI Completions API URL must end with 'v1/completions'."
     
-    # if policy in ["sjf",'tfittradeoff','fcfs']:
-    #     file_path = get_json_file()
-    #     if file_path:
-    #         with open(file_path, 'r', encoding="utf-8") as file:
-    #             data = json.load(file)
-    #     else:
-    #         print("No JSON file found in the current directory.")
-        
-
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
         assert not request_func_input.use_beam_search
-        if policy in ["sjf"]:
+        if policy in ["srjf", "sjf"]:
+            if request_func_input.min_tokens is None:
+                raise ValueError(f"For policy: {policy}, should specify min_tokens")
             payload = {
                 "model": request_func_input.model,
                 "prompt": request_func_input.prompt,
                 "temperature": 0.0,
                 "best_of": request_func_input.best_of,
-                "min_tokens": data[request_func_input.prompt],
-                "max_tokens": data[request_func_input.prompt],
+                "min_tokens": request_func_input.min_tokens,
+                "max_tokens": request_func_input.min_tokens,
                 "stream": True,
             }
         else:
@@ -367,7 +359,6 @@ async def async_request_openai_chat_completions(
                     async for chunk_bytes in response.content:
                         chunk_bytes = chunk_bytes.strip()
                         if not chunk_bytes:
-                            print(chunk_bytes)
                             continue
 
                         chunk = remove_prefix(chunk_bytes.decode("utf-8"),
@@ -398,7 +389,6 @@ async def async_request_openai_chat_completions(
                     output.success = True
                     output.latency = latency
                 else:
-                    print(response.reason)
                     output.error = response.reason or ""
                     output.success = False
         except Exception:

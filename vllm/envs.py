@@ -145,7 +145,7 @@ environment_variables: Dict[str, Callable[[], Any]] = {
 
     # timeout for each iteration in the engine
     "VLLM_ENGINE_ITERATION_TIMEOUT_S":
-    lambda: int(os.environ.get("VLLM_ENGINE_ITERATION_TIMEOUT_S", "60")),
+    lambda: int(os.environ.get("VLLM_ENGINE_ITERATION_TIMEOUT_S", "600")),
 
     # API key for VLLM API server
     "VLLM_API_KEY":
