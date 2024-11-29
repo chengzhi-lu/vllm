@@ -191,5 +191,5 @@ hip_compat.h
 *.txt
 
 tags
-# *1_serving_benchmark.sh
-1_serving_benchmark_test1.sh
+*1_serving_benchmark.sh
+# 1_serving_benchmark_test1.sh
