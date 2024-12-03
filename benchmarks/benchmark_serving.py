@@ -110,10 +110,11 @@ def sample_sharegpt_requests(
         # if prompt_len < 0:
         #     # Prune too short sequences.
         #     continue
-        if prompt_len + output_len > 2048:
+        if output_len < 10  or prompt_len > 128:
             # Prune too long sequences.
             continue
         filtered_dataset.append((prompt, prompt_len, output_len))
+    print(f"Number of requests: {len(filtered_dataset)}")
     import collections
     prompt_len_list=collections.Counter(prompt_len_list)
     return filtered_dataset

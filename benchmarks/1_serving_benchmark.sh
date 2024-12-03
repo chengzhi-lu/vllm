@@ -25,10 +25,10 @@ result_dir="${pwd}/result"
 # scheduler_policy=(infer)
 # swap_policies=(partial)
 declare -a scheduler_swap_policies
-# scheduler_swap_policies[0]="tfittradeoff partial"
+scheduler_swap_policies[0]="tfittradeoff partial"
 scheduler_swap_policies[1]="fcfs full"
 scheduler_swap_policies[2]="las full"
-scheduler_swap_policies[3]="tfittradeoff full"
+# scheduler_swap_policies[3]="tfittradeoff full"
 scheduler_swap_policies[4]="sjf full"
 scheduler_swap_policies[5]="srjf full"
 # scheduler_swap_policies[3]="sjmlfq full"
@@ -37,19 +37,19 @@ scheduler_swap_policies[5]="srjf full"
 # scheduler_swap_policies[5]="sjmlfq full"fish
 
 preemption_mode="swap"
-gpu_memory_utilization=0.9 # 0.5, 0.7, 0.9
+gpu_memory_utilization=0.7 # 0.5, 0.7, 0.9
 max_num_seqs=384
 swap_space=64
 max_tokens=2048
 iter_theshold=15
 max_serving_time=86400 # 86400
-request_duration=300 # 1
+request_duration=120 # 1
 num_shared_blocks=0
 
-request_rates[0]=0.5
+# request_rates[0]=0.5
 request_rates[1]=1.0
-request_rates[2]=2.0
-request_rates[3]=5.0
+# request_rates[2]=2.0
+# request_rates[3]=5.0
 # request_rates[4]=10.0
 # request_rates[4]=10.0
 # request_rates[5]=20.0
@@ -81,7 +81,7 @@ for waiting_iter in "${waiting_iter_base[@]}"; do
           for i in {0..0}; do
             taskset -c 30-49 python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
               --dataset-name $dataset_name --request-rate $request_rate \
-              --num-prompts 500 --request-duration $request_duration --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
+              --num-prompts 3000 --request-duration $request_duration --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
               --save-result --result-dir $result_dir \
               --metadata swap_space=$swap_space preemption_mode=$preemption_mode \
               scheduler_policy=$policy gpu_memory_utilization=$gpu_memory_utilization \

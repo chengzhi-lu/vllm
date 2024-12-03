@@ -637,6 +637,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             print(f"Not enough free shared blocks to swap in {num_swapped_seqs} sequences. Free shared blocks: {free_shared_blocks}")
             return False 
         else:
+            print("Enough free shared blocks to swap in sequences.")
             return True 
 
     def _swap_block_table(
@@ -824,10 +825,10 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         self.shared_block_tables.clear()
         self.gpu_allocator.merge_tables()
     
-    def add_shared_blocks(self, shared_block_percent:float) -> int:
-        if shared_block_percent == 0:
+    def add_shared_blocks(self, num_shared_blocks: int) -> int:
+        if num_shared_blocks== 0:
             return
-        shared_block_nums= min(2, self.gpu_allocator.get_num_free_blocks())
+        shared_block_nums= min(num_shared_blocks, self.gpu_allocator.get_num_free_blocks())
         if shared_block_nums == 0:
             return 0
         else:
