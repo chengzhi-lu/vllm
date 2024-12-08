@@ -164,7 +164,8 @@ class TFITTradeoff(Policy):
         else:
             decode_length = sum(
                 seq.get_output_len() for seq in seq_group.seqs_dict.values())
-            priority = 1-(decode_length / seq_group.max_length)
+            # priority = 1-(decode_length / seq_group.max_length)
+            priority = seq_group.seq_len / seq_group.max_length
 
         return priority
 

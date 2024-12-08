@@ -110,7 +110,7 @@ def sample_sharegpt_requests(
         # if prompt_len < 0:
         #     # Prune too short sequences.
         #     continue
-        if output_len < 10  or prompt_len > 128:
+        if output_len < 10  or prompt_len > 64:
             # Prune too long sequences.
             continue
         filtered_dataset.append((prompt, prompt_len, output_len))
