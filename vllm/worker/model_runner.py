@@ -722,8 +722,8 @@ class ModelRunner:
         (input_tokens, input_positions, attn_metadata, sampling_metadata,
          lora_requests, lora_mapping, multi_modal_kwargs
          ) = self.prepare_input_tensors(seq_group_metadata_list)
-        # et = time.time()
-        # self.total_prepare_input_time += et - st
+        et = time.time()
+        self.total_prepare_input_time += et - st
 
         if self.lora_config:
             self.set_active_loras(lora_requests, lora_mapping)
@@ -737,7 +737,7 @@ class ModelRunner:
         else:
             model_executable = self.model
 
-        # st = time.time()
+        st = time.time()
         hidden_states = model_executable(
             input_ids=input_tokens,
             positions=input_positions,
@@ -745,30 +745,30 @@ class ModelRunner:
             attn_metadata=attn_metadata,
             **multi_modal_kwargs,
         )
-        # et = time.time()
-        # self.total_execute_time += et - st
+        et = time.time()
+        self.total_execute_time += et - st
 
-        # st = time.time()
+        st = time.time()
         # Compute the logits.
         logits = self.model.compute_logits(hidden_states, sampling_metadata)
-        # et = time.time()
-        # self.total_compute_logits_time += et - st
+        et = time.time()
+        self.total_compute_logits_time += et - st
 
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:
             return None
 
         # Sample the next token.
-        # sample_st = time.time()
+        sample_st = time.time()
         output = self.model.sample(
             logits=logits,
             sampling_metadata=sampling_metadata,
         )
-        # et = time.time()
-        # self.total_sample_time += et - st
+        et = time.time()
+        self.total_sample_time += et - sample_st
 
-        # print(f"Total time: {et - st:.3f}s, sample time: {et - sample_st:.3f}s, ratio: {100 * (et - sample_st) / (et - st):.2f}%")
-        # print(f"Total prepare input time: {self.total_prepare_input_time:.3f}s, total execute time: {self.total_execute_time:.3f}s, total compute logits time: {self.total_compute_logits_time:.3f}s, total sample time: {self.total_sample_time:.3f}s")
+        print(f"Total time: {et - st:.3f}s, sample time: {et - sample_st:.3f}s, ratio: {100 * (et - sample_st) / (et - st):.2f}%")
+        print(f"Total prepare input time: {self.total_prepare_input_time:.3f}s, total execute time: {self.total_execute_time:.3f}s, total compute logits time: {self.total_compute_logits_time:.3f}s, total sample time: {self.total_sample_time:.3f}s")
 
         return output
 

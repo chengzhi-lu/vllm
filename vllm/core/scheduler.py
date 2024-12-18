@@ -427,6 +427,9 @@ class Scheduler:
         self.schedule_waiting_time = 0.0
         self.schedule_swapped_time = 0.0
 
+        self.prefill_token_num = 0
+        self.decode_token_num = 0
+
         # Motivation:
         self.gpu_memory_iter = 0
         self.gpu_computation_iter = 0
@@ -2031,6 +2034,15 @@ class Scheduler:
             self.swapped = remaining_swapped
             self.swapped.extend(running_scheduled.swapped_out)
             self.iter_nums += 1
+            
+            self.prefill_token_num = 0
+            for s in (prefills.seq_groups+running_scheduled.prefill_seq_groups+swapped_in.prefill_seq_groups):
+                self.prefill_token_num += len(s.seq_group.prompt_token_ids)
+            
+            self.decode_token_num = 0
+            for s in (running_scheduled.decode_seq_groups +
+                                    swapped_in.decode_seq_groups):
+                self.decode_token_num += len(s.seq_group.prompt_token_ids)
 
             # Motivation:
             # 1) GPU Memory:

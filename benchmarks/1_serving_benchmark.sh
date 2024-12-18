@@ -25,8 +25,8 @@ result_dir="${pwd}/result"
 # scheduler_policy=(infer)
 # swap_policies=(partial)
 declare -a scheduler_swap_policies
-scheduler_swap_policies[0]="tfittradeoff partial"
-# scheduler_swap_policies[1]="fcfs full"
+# scheduler_swap_policies[0]="tfittradeoff partial"
+scheduler_swap_policies[1]="fcfs full"
 # scheduler_swap_policies[2]="las full"
 # scheduler_swap_policies[3]="tfittradeoff full"
 # scheduler_swap_policies[4]="sjf full"
