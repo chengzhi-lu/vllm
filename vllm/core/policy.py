@@ -1,4 +1,5 @@
 from collections import deque
+import numpy as np
 import math
 from typing import Deque
 
@@ -149,33 +150,70 @@ class TFTLatencyTrade(Policy):
 
 class TFITTradeoff(Policy):
 
+    def sigmoid(self, x, steepness=1, midpoint=0):
+        if x < midpoint:
+            return x
+        return 1 / (1 + math.exp(x))
+    
     def _get_running_priority(self, avg_priority_rate: float,
-                              seq_group: SequenceGroup):
-        min_eos_token_pos = min(
-            (min(seq.get_eos_token_pos())
-             for seq in seq_group.seqs_dict.values()),
-            default=-1,
-        )
+                              seq_group: SequenceGroup, pending_swapped_rate: float):
+        # all_min_eos_token_pos = [seq.min_eos_rank for seq in seq_group.seqs_dict.values()] 
+                                    #   seq_group: SequenceGroup):
+        # min_eos_token_pos = min(
+        #     (min(seq.get_eos_token_pos())
+        #      for seq in seq_group.seqs_dict.values()),
+        #     default=-1,
+        # )
+
+        all_eos_token_pos= []
+        for seq in seq_group.seqs_dict.values():
+            all_eos_token_pos.extend(seq.get_eos_token_pos())
+        min_eos_token_pos = min(all_eos_token_pos, default=-1)
+        if len(all_eos_token_pos) < 10:
+            max_eos_token_pos= 32000
+        else:
+            max_eos_token_pos = np.mean(all_eos_token_pos[10:])
+        # max_eos_token_pos = 32000
+        # print(pending_swapped_rate)
+        # max_eos_token_pos = 32000
         if min_eos_token_pos > 0:
             seq_group.priority_rate = (
-                32000 - min_eos_token_pos) / 32000  # 32,768, 50432
-            priority = (seq_group.priority_rate * seq_group.seq_len /
-                        seq_group.max_length)
+                max_eos_token_pos - min_eos_token_pos) / max_eos_token_pos# 32,768, 50432
+            # priority_rate_component = self.sigmoid(
+                # seq_group.priority_rate, steepness=1, midpoint=0.9)
+            seq_weight = (seq_group.seq_len / seq_group.max_length)
+            # seq_weight_componenet = self.sigmoid(
+                # seq_weight, steepness=1, midpoint=0.9)
+            # priority =  (priority_rate_component + seq_weight_componenet) / 2
+            # priority = priority_rate_component * seq_weight_componenet
+            priority = ((seq_group.priority_rate) * seq_group.seq_len /
+                            seq_group.max_length)
+            
+            
         else:
-            decode_length = sum(
-                seq.get_output_len() for seq in seq_group.seqs_dict.values())
+            # decode_length = sum(
+                # seq.get_output_len() for seq in seq_group.seqs_dict.values())
             # priority = 1-(decode_length / seq_group.max_length)
+            # seq_weight = (seq_group.seq_len / seq_group.max_length)
+            # seq_weight_componenet = self.sigmoid(
+                # seq_weight, steepness=1, midpoint=0.9)
             priority = seq_group.seq_len / seq_group.max_length
+            # priority = seq_weight_componenet
 
         return priority
 
     def _get_waiting_priority(self, avg_priority_rate: float,
                               seq_group: SequenceGroup,
                               pending_swapped_rate: float):
-        priority_rate = min(
-            (min(seq.get_eos_token_pos()) for seq in seq_group.seqs_dict.values()),
-            default=-1,
-        )
+        all_eos_token_pos= []
+        for seq in seq_group.seqs_dict.values():
+            all_eos_token_pos.extend(seq.get_eos_token_pos())
+        min_eos_token_pos = min(all_eos_token_pos, default=-1)
+        if len(all_eos_token_pos) < 10:
+            max_eos_token_pos= 32000
+        else:
+            max_eos_token_pos = np.mean(all_eos_token_pos[10:])
+        priority_rate = (max_eos_token_pos - min_eos_token_pos) / max_eos_token_pos
         if priority_rate > 0:
             # decode_length = sum(
             #     seq.get_output_len() for seq in seq_group.seqs_dict.values()
@@ -200,8 +238,8 @@ class TFITTradeoff(Policy):
         seq_group: SequenceGroup,
         pending_swapped_rate: float,
     ) -> float:
-        if pending_swapped_rate == -1:
-            priority = self._get_running_priority(avg_priority_rate, seq_group)
+        if pending_swapped_rate != -1:
+            priority = self._get_running_priority(avg_priority_rate, seq_group, pending_swapped_rate)
         else:
             priority = self._get_waiting_priority(avg_priority_rate, seq_group,
                                                   pending_swapped_rate)
