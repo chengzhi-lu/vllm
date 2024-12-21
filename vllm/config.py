@@ -685,7 +685,7 @@ class SchedulerConfig:
             if enable_chunked_prefill:
                 # It is the values that have the best balance between ITL
                 # and TTFT on A100. Note it is not optimized for throughput.
-                self.max_num_batched_tokens = max(max_model_len, 2048)
+                self.max_num_batched_tokens = max(max_model_len, 4096)
             elif embedding_mode:
                 # For embedding, choose specific value for higher throughput
                 self.max_num_batched_tokens = max(
@@ -693,7 +693,7 @@ class SchedulerConfig:
             else:
                 # If max_model_len is too short, use 2048 as the default value
                 # for higher throughput.
-                self.max_num_batched_tokens = max(max_model_len, 2048)
+                self.max_num_batched_tokens = max(max_model_len, 4096)
         if enable_chunked_prefill:
             logger.info("Chunked prefill is enabled (EXPERIMENTAL).")
 
@@ -1238,7 +1238,7 @@ def _get_and_verify_max_len(
             # If max_model_len is specified, we use it.
             return max_model_len
 
-        default_max_len = 2048
+        default_max_len = 4096
         logger.warning(
             "The model's config.json does not contain any of the following "
             "keys to determine the original maximum length of the model: "

@@ -107,15 +107,24 @@ def sample_sharegpt_requests(
         prompt_len_list.append(prompt_len)
         output_len = len(completion_token_ids
                          )
-        if prompt_len > 64 or output_len < 512:
+        if output_len < 256:
             continue
         # # if prompt_len < 0:
         # #     # Prune too short sequences.
         # #     continue
-        # # if output_len < 10  or prompt_len > 64:
-        # #     # Prune too long sequences.
-        # #     continue
-        # if prompt_len < 4 or output_len < 4:
+        # if output_len < 10  or prompt_len > 256:
+        #     # Prune too long sequences.
+        #     continue
+
+        # if prompt_len > 64:
+        #     # Prune too short sequences.
+        #     continue
+
+        # if prompt_len > 512 or output_len < 10:
+        #     # Prune too short sequences.
+        #     continue
+
+        # if prompt_len < 10 or output_len < 10:
         #     # Prune too short sequences.
         #     continue
         # if prompt_len > 1024 or prompt_len + output_len > 2048:

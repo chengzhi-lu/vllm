@@ -1741,6 +1741,7 @@ class Scheduler:
             seq_groups.append(
                 ScheduledSequenceGroup(seq_group=seq_group,
                                        token_chunk_size=num_new_tokens))
+            self.prefill_token_num += num_new_tokens
             budget.add_num_batched_tokens(seq_group.request_id, num_new_tokens)
             budget.add_num_seqs(seq_group.request_id, num_new_seqs)
         self.prefill_while += time.time() - st_while
@@ -1910,6 +1911,7 @@ class Scheduler:
                 pending_swapped_rate = 0.0
 
             # pending_swapped_rate = -1
+            self.prefill_token_num = 0
 
             if self.scheduler_config.policy in ["infer"]:
                 remaining_running, running_scheduled, recomputed_token_nums = \
@@ -2035,14 +2037,13 @@ class Scheduler:
             self.swapped.extend(running_scheduled.swapped_out)
             self.iter_nums += 1
             
-            self.prefill_token_num = 0
-            for s in (prefills.seq_groups+running_scheduled.prefill_seq_groups+swapped_in.prefill_seq_groups):
+            for s in (running_scheduled.prefill_seq_groups+swapped_in.prefill_seq_groups):
                 self.prefill_token_num += len(s.seq_group.prompt_token_ids)
             
             self.decode_token_num = 0
             for s in (running_scheduled.decode_seq_groups +
                                     swapped_in.decode_seq_groups):
-                self.decode_token_num += len(s.seq_group.prompt_token_ids)
+                self.decode_token_num += 1
 
             # Motivation:
             # 1) GPU Memory:

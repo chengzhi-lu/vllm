@@ -18,7 +18,7 @@ model_name="meta-llama/Llama-2-13b-chat-hf"
 # model_name="EleutherAI/gpt-neox-20b"
 # model_name="facebook/opt-6.7b"
 dataset_name="sharegpt"
-dataset_path="/root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
+dataset_path="/root/v1/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
 result_dir="${pwd}/result"
 # scheduler_policy=(fcfs)
 # swap_policies=(full)
@@ -37,23 +37,23 @@ scheduler_swap_policies[1]="fcfs full"
 # scheduler_swap_policies[5]="sjmlfq full"fish
 
 preemption_mode="swap"
-gpu_memory_utilization=0.5 # 0.5, 0.7, 0.9
-max_num_seqs=256
+gpu_memory_utilization=0.9 # 0.5, 0.7, 0.9
+max_num_seqs=512
 # max_num_seqs=1024
 swap_space=80
 # swap_space=32
-max_tokens=2048
+max_tokens=4096
 # max_tokens=4096
 iter_theshold=15
 max_serving_time=86400 # 86400
-request_duration=120 # 1
+request_duration=150 # 1
 num_shared_blocks=0
 
 # request_rates[0]=0.5
 # request_rates[1]=1.0
 # request_rates[2]=2.0
-request_rates[1]=5.0
-# request_rates[0]=10.0
+# request_rates[1]=5.0
+request_rates[0]=10.0
 # request_rates[4]=10.0
 # request_rates[5]=20.0
 # request_rates[5]=50.0
@@ -64,7 +64,7 @@ request_rates[1]=5.0
 # request_rates=(2.0)
 swap_out_partial_rates=(0.5)
 waiting_iter_base=(0.1)
-gpu_devices=1
+gpu_devices=0
 
 for waiting_iter in "${waiting_iter_base[@]}"; do
   for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do
