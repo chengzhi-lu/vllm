@@ -20,25 +20,14 @@ model_name="meta-llama/Llama-2-13b-chat-hf"
 dataset_name="sharegpt"
 dataset_path="/root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
 result_dir="${pwd}/result"
-# scheduler_policy=(fcfs)
-# swap_policies=(full)
-# scheduler_policy=(infer)
-# swap_policies=(partial)
+
 declare -a scheduler_swap_policies
-# scheduler_swap_policies[0]="tfittradeoff partial"
 scheduler_swap_policies[1]="fcfs full"
-# scheduler_swap_policies[2]="las full"
-scheduler_swap_policies[3]="tfittradeoff full"
-# scheduler_swap_policies[4]="sjf full"
-# scheduler_swap_policies[5]="srjf full"
-# scheduler_swap_policies[3]="sjmlfq full"
-# scheduler_swap_policies[3]="infer partial"
-# scheduler_swap_policies[4]="inferpreempt full"
-# scheduler_swap_policies[5]="sjmlfq full"fish
+
 
 preemption_mode="swap"
 gpu_memory_utilization=0.9 # 0.5, 0.7, 0.9
-max_num_seqs=384
+max_num_seqs=512
 # max_num_seqs=1024
 swap_space=80
 # swap_space=32
@@ -46,22 +35,14 @@ max_tokens=4096
 # max_tokens=4096
 iter_theshold=15
 max_serving_time=86400 # 86400
-request_duration=150 # 1
+request_duration=300 # 1
 num_shared_blocks=0
 
-# request_rates[0]=0.5
-# request_rates[1]=1.0
-# request_rates[2]=2.0
-# request_rates[1]=5.0
-request_rates[0]=10.0
-# request_rates[4]=10.0
-# request_rates[5]=20.0
-# request_rates[5]=50.0
-# request_rates[5]=30.0
-# request_rates[5]=50.0
-# request_rates[5]=100.0
+declare -a request_rates
 
-# request_rates=(2.0)
+# random request rates
+
+request_rates=(20)
 swap_out_partial_rates=(0.5)
 waiting_iter_base=(0.1)
 gpu_devices=0
@@ -75,7 +56,7 @@ for waiting_iter in "${waiting_iter_base[@]}"; do
 
       CUDA_VISIBLE_DEVICES=$gpu_devices taskset -c 28-29 python3 -m vllm.entrypoints.openai.api_server \
       --model $model_name --swap-space $swap_space --preemption-mode $preemption_mode --scheduler-policy $policy \
-      --enable-chunked-prefill --max-num-batched-tokens $max_tokens --iter-threshold $iter_theshold --max-num-seqs $max_num_seqs --swap-out-tokens-policy $swap_policy --swap-out-partial-rate $swap_out_partial_rate --execution-budget $iter_theshold \
+      --enable-chunked-prefill --max-num-batched-tokens $max_tokens --iter-threshold $iter_theshold --max-num-seqs $max_num_seqs --swap-out-tokens-policy $swap_policy --swap-out-partial-rate $swap_out_partial_rate --execution-budget $iter_theshold  --enforce-eager\
       --tensor-parallel-size 1 --num-shared-blocks $num_shared_blocks --gpu-memory-utilization $gpu_memory_utilization --disable-sliding-window --waiting-iter-base $waiting_iter --disable-log-requests --max-serving-time $max_serving_time >api_server_${policy}_${swap_policy}.log 2>&1 &
       pid=$!
 

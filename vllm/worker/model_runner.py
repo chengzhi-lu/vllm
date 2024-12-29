@@ -96,10 +96,10 @@ class ModelRunner:
 
         self.device = self.device_config.device
         self.pin_memory = is_pin_memory_available()
-        self.total_prepare_input_time = 0.0
-        self.total_execute_time = 0.0
-        self.total_compute_logits_time = 0.0
-        self.total_sample_time = 0.0
+        self.per_prepare_input_time = 0.0
+        self.per_execute_time = 0.0
+        self.per_compute_logits_time = 0.0
+        self.per_sample_time = 0.0
         self.kv_cache_dtype = kv_cache_dtype
         self.sliding_window = model_config.get_sliding_window()
         self.block_size = cache_config.block_size
@@ -305,18 +305,18 @@ class ModelRunner:
                         "now.")
 
                 seq_data = seq_group_metadata.seq_data[seq_id]
-                if is_prompt:
+                if is_prompt:  # noqa: SIM108
                     context_len = seq_data.get_num_computed_tokens()
                 else:
                     # get_num_computed_tokens is incorrect for spec decoding.
                     # So, we should have a special logic here.
                     # TODO(sang): Fix it.
-                    context_len = seq_data.get_len() - 1
+                    context_len = seq_data.get_len() - 1 
 
                 seq_len = min(
                     seq_data.get_len(),
                     context_len + seq_group_metadata.token_chunk_size)
-                if is_prompt:
+                if is_prompt:  # noqa: SIM108
                     tokens = seq_data.get_token_ids()[context_len:seq_len]
                 else:
                     # Optimization. get_token_ids requires the entire copy of
@@ -723,7 +723,7 @@ class ModelRunner:
          lora_requests, lora_mapping, multi_modal_kwargs
          ) = self.prepare_input_tensors(seq_group_metadata_list)
         et = time.time()
-        self.total_prepare_input_time += et - st
+        self.per_prepare_input_time = et - st
 
         if self.lora_config:
             self.set_active_loras(lora_requests, lora_mapping)
@@ -745,14 +745,16 @@ class ModelRunner:
             attn_metadata=attn_metadata,
             **multi_modal_kwargs,
         )
+        torch.cuda.synchronize()
         et = time.time()
-        self.total_execute_time += et - st
+        self.per_execute_time = et - st
 
         st = time.time()
         # Compute the logits.
         logits = self.model.compute_logits(hidden_states, sampling_metadata)
+        torch.cuda.synchronize()
         et = time.time()
-        self.total_compute_logits_time += et - st
+        self.per_compute_logits_time = et - st
 
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:
@@ -764,11 +766,10 @@ class ModelRunner:
             logits=logits,
             sampling_metadata=sampling_metadata,
         )
+        torch.cuda.synchronize()
         et = time.time()
-        self.total_sample_time += et - sample_st
+        self.per_sample_time = et - sample_st
 
-        print(f"Total time: {et - st:.3f}s, sample time: {et - sample_st:.3f}s, ratio: {100 * (et - sample_st) / (et - st):.2f}%")
-        print(f"Total prepare input time: {self.total_prepare_input_time:.3f}s, total execute time: {self.total_execute_time:.3f}s, total compute logits time: {self.total_compute_logits_time:.3f}s, total sample time: {self.total_sample_time:.3f}s")
 
         return output
 
