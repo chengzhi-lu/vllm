@@ -1,20 +1,26 @@
 """Sequence and its related classes."""
 import copy
 import enum
+import math
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 import time
 import torch
 
 from vllm.block import LogicalTokenBlock
 from vllm.inputs import LLMInputs
+from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, Union
+
+
 from vllm.lora.request import LoRARequest
 from vllm.pooling_params import PoolingParams
+from vllm.prompt_adapter.request import PromptAdapterRequest
 from vllm.sampling_params import SamplingParams
 
 if TYPE_CHECKING:
-    from vllm.multimodal import MultiModalData
+    from vllm.inputs import LLMInputs
+    from vllm.multimodal import MultiModalDataDict
     from vllm.spec_decode.metrics import SpecDecodeWorkerMetrics
 
 
@@ -40,31 +46,29 @@ PromptLogprobs = List[Optional[Dict[int, Logprob]]]
 SampleLogprobs = List[Dict[int, Logprob]]
 
 
-class SequenceStatus(enum.Enum):
+class SequenceStatus(enum.IntEnum):
     """Status of a sequence."""
 
-    WAITING = enum.auto()
-    RUNNING = enum.auto()
-    SWAPPED = enum.auto()
-    PARTIAL_SWAPPED = enum.auto()
-    All = enum.auto()
-    FINISHED_STOPPED = enum.auto()
-    FINISHED_LENGTH_CAPPED = enum.auto()
-    FINISHED_ABORTED = enum.auto()
-    FINISHED_IGNORED = enum.auto()
-    INIT_WAITING = enum.auto()
-    WAITING_TO_RUNNING = enum.auto()
-    RUNNING_TO_WAITING = enum.auto()
-    RUNNING_TO_FINISHED_STOPPED = enum.auto()
+    
+    WAITING = 0
+    RUNNING = 1
+    SWAPPED = 2
+    # Note: anything after SWAPPED (2) will be considered
+    # as a finished status.
+    FINISHED_STOPPED = 3
+    FINISHED_LENGTH_CAPPED = 4
+    FINISHED_ABORTED = 5
+    FINISHED_IGNORED = 6
+    PARTIAL_SWAPPED = 7
+    All = 8
+    INIT_WAITING = 9
+    WAITING_TO_RUNNING = 10
+    RUNNING_TO_WAITING = 11
+    RUNNING_TO_FINISHED_STOPPED = 12
 
     @staticmethod
     def is_finished(status: "SequenceStatus") -> bool:
-        return status in [
-            SequenceStatus.FINISHED_STOPPED,
-            SequenceStatus.FINISHED_LENGTH_CAPPED,
-            SequenceStatus.FINISHED_ABORTED,
-            SequenceStatus.FINISHED_IGNORED,
-        ]
+        return status > SequenceStatus.SWAPPED
 
     @staticmethod
     def get_finished_reason(status: "SequenceStatus") -> Union[str, None]:
@@ -135,38 +139,64 @@ class SequenceData:
         prompt_token_ids: List[int],
         output_token_ids: Optional[List[int]] = None,
     ) -> None:
-        if output_token_ids is None:
-            output_token_ids = []
-
-        self.prompt_token_ids = prompt_token_ids
+        self._prompt_token_ids: List[int] = list(prompt_token_ids)
         self._prompt_token_ids_tuple: Tuple[int, ...] = tuple(prompt_token_ids)
-        self.output_token_ids = output_token_ids
+        self._output_token_ids: List[int] = (
+            list(output_token_ids) if output_token_ids is not None else [])
+
         self.cumulative_logprob = 0.0
         # The number of tokens that are computed (that run against the model).
         self._num_computed_tokens = 0
         self._stage: SequenceStage = SequenceStage.PREFILL
 
+        self._update_cached_all_tokens()
+
+    def _update_cached_all_tokens(self):
+        self._cached_all_token_ids: List[int] = (self._prompt_token_ids +
+                                                 self._output_token_ids)
+
+    @property
+    def prompt_token_ids(self) -> Tuple[int, ...]:
+        return self._prompt_token_ids_tuple
+
+    @prompt_token_ids.setter
+    def prompt_token_ids(self, new_prompt_token_ids) -> None:
+        self._prompt_token_ids = list(new_prompt_token_ids)
+        self._prompt_token_ids_tuple = tuple(new_prompt_token_ids)
+        self._update_cached_all_tokens()
+
+    @property
+    def output_token_ids(self) -> Tuple[int, ...]:
+        return tuple(self._output_token_ids)
+
+    @output_token_ids.setter
+    def output_token_ids(self, new_output_token_ids) -> None:
+        self._output_token_ids = list(new_output_token_ids)
+        self._update_cached_all_tokens()
+
     def append_token_id(self, token_id: int, logprob: float) -> None:
-        self.output_token_ids.append(token_id)
+        self._output_token_ids.append(token_id)
+        self._cached_all_token_ids.append(token_id)
         self.cumulative_logprob += logprob
 
     def get_len(self) -> int:
-        return len(self.output_token_ids) + len(self.prompt_token_ids)
+        return len(self._output_token_ids) + len(self._prompt_token_ids)
 
     def get_prompt_len(self) -> int:
-        return len(self.prompt_token_ids)
+        return len(self._prompt_token_ids)
 
     def get_output_len(self) -> int:
-        return len(self.output_token_ids)
+        return len(self._output_token_ids)
 
     def get_token_ids(self) -> List[int]:
-        return self.prompt_token_ids + self.output_token_ids
+        return self._cached_all_token_ids
 
     def get_prefix_token_ids(self, num_tokens: int) -> Tuple[Tuple[int, ...], Optional[Tuple[int, ...]]]:
         """Get prefix tokens, and make the return value hashable"""
-        prompt_length = len(self.prompt_token_ids)
+        prompt_length = self.get_prompt_len()
         if num_tokens > prompt_length:
-            return (self._prompt_token_ids_tuple, tuple(self.output_token_ids[: num_tokens - prompt_length]))
+            return (self._prompt_token_ids_tuple,
+                    tuple(self._output_token_ids[:num_tokens - prompt_length]))
         else:
             return (self._prompt_token_ids_tuple[:num_tokens], None)
 
@@ -198,14 +228,14 @@ class SequenceData:
         return self.get_len() - self.get_num_computed_tokens()
 
     def get_last_token_id(self) -> int:
-        if not self.output_token_ids:
-            return self.prompt_token_ids[-1]
-        return self.output_token_ids[-1]
+        if not self._output_token_ids:
+            return self._prompt_token_ids[-1]
+        return self._output_token_ids[-1]
 
-    def get_prompt_token_ids(self) -> List[int]:
+    def get_prompt_token_ids(self) -> Tuple[int, ...]:
         return self.prompt_token_ids
 
-    def get_output_token_ids(self) -> List[int]:
+    def get_output_token_ids(self) -> Tuple[int, ...]:
         return self.output_token_ids
 
     @property
@@ -213,12 +243,10 @@ class SequenceData:
         return self._stage
 
     def __repr__(self) -> str:
-        return (
-            f"SequenceData("
-            f"prompt_token_ids={self.prompt_token_ids}, "
-            f"output_token_ids={self.output_token_ids}, "
-            f"cumulative_logprob={self.cumulative_logprob})"
-        )
+        return (f"SequenceData("
+                f"prompt_token_ids={self._prompt_token_ids}, "
+                f"output_token_ids={self._output_token_ids}, "
+                f"cumulative_logprob={self.cumulative_logprob})")
 
 
 class Sequence:
@@ -230,15 +258,18 @@ class Sequence:
         block_size: The block size of the sequence. Should be the same as the
             block size used by the block manager and cache engine.
         lora_request: LoRA request.
+        prompt_adapter_request: Prompt Adapter request.
+
     """
 
     def __init__(
-        self,
-        seq_id: int,
-        inputs: LLMInputs,
-        block_size: int,
-        eos_token_id: Optional[int] = None,
-        lora_request: Optional[LoRARequest] = None,
+            self,
+            seq_id: int,
+            inputs: "LLMInputs",
+            block_size: int,
+            eos_token_id: Optional[int] = None,
+            lora_request: Optional[LoRARequest] = None,
+            prompt_adapter_request: Optional[PromptAdapterRequest] = None
     ) -> None:
         self.seq_id = seq_id
         self.inputs = inputs
@@ -246,6 +277,7 @@ class Sequence:
         self.eos_token_id = eos_token_id
         self.lora_request = lora_request
         self.seq_type = SequenceType.NORMAL
+        self.prompt_adapter_request = prompt_adapter_request
 
         self.data = SequenceData(self.prompt_token_ids)
         self.output_logprobs: SampleLogprobs = []
@@ -282,9 +314,15 @@ class Sequence:
     def prompt_token_ids(self) -> List[int]:
         return self.inputs["prompt_token_ids"]
 
+
     @property
-    def multi_modal_data(self) -> Optional["MultiModalData"]:
-        return self.inputs.get("multi_modal_data")
+    def n_blocks(self) -> int:
+        return math.ceil(self.get_len() / self.block_size)
+
+
+    @property
+    def multi_modal_data(self) -> "MultiModalDataDict":
+        return self.inputs.get("multi_modal_data") or {}
 
     @property
     def lora_int_id(self) -> int:
@@ -327,6 +365,10 @@ class Sequence:
 
     def get_swapped_out_block_nums(self) -> int:
         return self.swapped_out_block_nums
+    @property
+    def prompt_adapter_id(self) -> int:
+        return self.prompt_adapter_request.prompt_adapter_id \
+                        if self.prompt_adapter_request else 0
 
     def get_output_text_to_return(self, buffer_length: int):
         # We return the full output text if the sequence is finished.
@@ -384,7 +426,6 @@ class Sequence:
         logprobs: Dict[int, Logprob],
     ) -> None:
         assert token_id in logprobs
-        self._append_tokens_to_blocks([token_id])
         self.output_logprobs.append(logprobs)
         self.data.append_token_id(token_id, logprobs[token_id].logprob)
         if self.eos_token_id in logprobs:
@@ -414,14 +455,14 @@ class Sequence:
     def get_token_ids(self) -> List[int]:
         return self.data.get_token_ids()
 
-    def get_prompt_token_ids(self) -> List[int]:
+    def get_prompt_token_ids(self) -> Tuple[int, ...]:
         return self.data.get_prompt_token_ids()
 
     def get_last_token_id(self) -> int:
         return self.data.get_last_token_id()
 
-    def get_output_token_ids(self) -> List[int]:
-        return self.data.output_token_ids
+    def get_output_token_ids(self) -> Tuple[int, ...]:
+        return self.data.get_output_token_ids()
 
     def get_cumulative_logprob(self) -> float:
         return self.data.cumulative_logprob
@@ -466,11 +507,9 @@ class Sequence:
         return self.data.stage == SequenceStage.PREFILL
 
     def __repr__(self) -> str:
-        return (
-            f"Sequence(seq_id={self.seq_id}, "
-            f"status={self.status.name}, "
-            f"num_blocks={len(self.logical_token_blocks)})"
-        )
+        return (f"Sequence(seq_id={self.seq_id}, "
+                f"status={self.status.name}, "
+                f"num_blocks={self.n_blocks}, ")
 
 
 @dataclass
@@ -496,6 +535,8 @@ class SequenceGroup:
             for an embedding model.
         encoder_seq: Optional, the single encoder sequence. Should be None
                      unless you are working with an encoder/decoder model.
+        trace_headers: OpenTelemetry trace headers.
+        prompt_adapter_request: Prompt Adapter request.
     """
 
     def __init__(
@@ -511,6 +552,8 @@ class SequenceGroup:
         encoder_seq: Optional[Sequence] = None,
         waiting_iter_base: float = 1,
         vocab_size: int = 32000,
+        trace_headers: Optional[Dict[str, str]] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
     ) -> None:
         self.request_id = request_id
         self.seqs_dict = {seq.seq_id: seq for seq in seqs}
@@ -529,7 +572,6 @@ class SequenceGroup:
         self.state = SequenceGroupState()
         self.embeddings = embeddings
         self.pooling_params = pooling_params
-        self.encoder_seq = encoder_seq
         self.eos_token_id = self.seqs_dict[next(iter(self.seqs_dict))].eos_token_id
         self.current_priority = None
         self.promoted = 0
@@ -549,6 +591,9 @@ class SequenceGroup:
         self.swap_out_moment = None
         self.swap_in_moment = None
         self.vocab_size = vocab_size
+        self.prompt_adapter_request = prompt_adapter_request
+        self.encoder_seq = encoder_seq
+        self.trace_headers = trace_headers
 
     @property
     def prompt(self) -> Optional[str]:
@@ -563,7 +608,7 @@ class SequenceGroup:
         return next(iter(self.seqs_dict.values())).prompt_token_ids
 
     @property
-    def multi_modal_data(self) -> Optional["MultiModalData"]:
+    def multi_modal_data(self) -> "MultiModalDataDict":
         # All sequences in the group should have the same multi-modal data.
         # We use the multi-modal data of an arbitrary sequence.
         return next(iter(self.seqs_dict.values())).multi_modal_data
@@ -587,6 +632,14 @@ class SequenceGroup:
     @property
     def swap_out_time(self) -> float:
         return self.total_token_block_size * self.swap_time_unit
+    def prompt_adapter_id(self) -> int:
+        return self.prompt_adapter_request.prompt_adapter_id \
+                        if self.prompt_adapter_request else 0
+
+    @property
+    def prompt_adapter_num_virtual_tokens(self) -> int:
+        return self.prompt_adapter_request.prompt_adapter_num_virtual_tokens\
+                         if self.prompt_adapter_request else 0
 
     def get_last_latency(self, now: float) -> Optional[float]:
         """Sets the last token time for Request level timings."""
@@ -654,6 +707,12 @@ class SequenceGroup:
         # )) if status is None or status == SequenceStatus.All else [
         #     seq for seq in self.seqs_dict.values() if seq.status == status
         # ]
+
+    def is_encoder_decoder(self) -> bool:
+        return self.encoder_seq is not None
+
+    def get_encoder_seq(self) -> Optional[Sequence]:
+        return self.encoder_seq
 
     def is_encoder_decoder(self) -> bool:
         return self.encoder_seq is not None
@@ -767,7 +826,7 @@ class SequenceGroupMetadata:
         state: Internal state tied to this sequence group.
         multi_modal_data: Multi modal data.
         encoder_seq_data: Optional sequence data for encoder prompt
-                          (SequenceGroup.encoder_seq). Should be None
+                          (SequenceGroup.encoder_seq). Should be None 
                           unless you are working with an encoder/decoder
                           model.
         cross_block_table: Optional cross-attention block table associated
@@ -775,6 +834,7 @@ class SequenceGroupMetadata:
                            (SequenceGroup.encoder_seq). Should be None
                            unless you are working with an encoder/decoder
                            model.
+        prompt_adapter_request: Prompt Adapter request.
     """
 
     def __init__(
@@ -790,10 +850,12 @@ class SequenceGroupMetadata:
         lora_request: Optional[LoRARequest] = None,
         computed_block_nums: Optional[List[int]] = None,
         state: Optional[SequenceGroupState] = None,
-        multi_modal_data: Optional["MultiModalData"] = None,
+        multi_modal_data: Optional["MultiModalDataDict"] = None,
         encoder_seq_data: Optional[SequenceData] = None,
         cross_block_table: Optional[List[int]] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         eos_token_id: Optional[int] = None,
+
     ) -> None:
         self.request_id = request_id
         self.is_prompt = is_prompt
@@ -802,6 +864,7 @@ class SequenceGroupMetadata:
         self.block_tables = block_tables
         self.pooling_params = pooling_params
         self.lora_request = lora_request
+        self.prompt_adapter_request = prompt_adapter_request
         self.computed_block_nums = computed_block_nums
         self.multi_modal_data = multi_modal_data
         self.state = SequenceGroupState() if state is None else state
@@ -825,6 +888,16 @@ class SequenceGroupMetadata:
     @property
     def lora_int_id(self) -> int:
         return self.lora_request.lora_int_id if self.lora_request else 0
+
+    @property
+    def prompt_adapter_id(self) -> int:
+        return self.prompt_adapter_request.prompt_adapter_id \
+                        if self.prompt_adapter_request else 0
+
+    @property
+    def prompt_adapter_num_virtual_tokens(self) -> int:
+        return self.prompt_adapter_request.prompt_adapter_num_virtual_tokens \
+                        if self.prompt_adapter_request else 0
 
     @property
     def token_chunk_size(self) -> int:
@@ -921,6 +994,34 @@ class EmbeddingSequenceGroupOutput(SequenceGroupOutput):
 
 
 @dataclass
+class IntermediateTensors:
+    """For all pipeline stages except the last, we need to return the hidden
+    states and residuals to be sent to the next stage. This data structure
+    contains the hidden states and residuals for a request.
+    """
+
+    tensors: Dict[str, torch.Tensor]
+
+    def __getitem__(self, key: Union[str, slice]):
+        if isinstance(key, str):
+            return self.tensors[key]
+        elif isinstance(key, slice):
+            return self.__class__({k: v[key] for k, v in self.tensors.items()})
+
+    def __setitem__(self, key: str, value):
+        self.tensors[key] = value
+
+    def __len__(self):
+        return len(self.tensors)
+
+    def __eq__(self, other: object):
+        return isinstance(other, self.__class__) and self
+
+    def __repr__(self) -> str:
+        return f"IntermediateTensors(tensors={self.tensors})"
+
+
+@dataclass
 class SamplerOutput:
     """For each sequence group, we generate a list of SequenceOutput object,
     each of which contains one possible candidate for the next token.
@@ -944,6 +1045,9 @@ class SamplerOutput:
 
     # Spec decode metrics populated by workers.
     spec_decode_worker_metrics: Optional["SpecDecodeWorkerMetrics"] = None
+
+    # Optional last hidden states from the model.
+    hidden_states: Optional[torch.Tensor] = None
 
     def __getitem__(self, idx: int):
         return self.outputs[idx]
@@ -990,10 +1094,65 @@ class PoolerOutput:
         return isinstance(other, self.__class__) and self.outputs == other.outputs
 
 
+def get_all_seq_ids(
+        seq_group_metadata_list: List[SequenceGroupMetadata]) -> List[int]:
+    """Given a list of SequenceGroupMetadata, create a list of all
+    sequence ids.
+    """
+    return [seq_id for sg in seq_group_metadata_list for seq_id in sg.seq_data]
+
+
+def get_all_seq_ids_and_request_ids(
+    seq_group_metadata_list: List[SequenceGroupMetadata]
+) -> Tuple[List[int], Dict[str, Set[int]]]:
+    """Given a list of SequenceGroupMetadata, create a list of all
+    sequence ids.
+    """
+    seq_ids: List[int] = []
+    request_id_seq_ids_mapping: Dict[str, Set[int]] = defaultdict(set)
+    for sg in seq_group_metadata_list:
+        for seq_id in sg.seq_data:
+            seq_ids.append(seq_id)
+            request_id_seq_ids_mapping[sg.request_id].add(seq_id)
+    return seq_ids, request_id_seq_ids_mapping
+
+
+class HiddenStates:
+    """Hidden states corresponding to in-progress sequences.
+    Used in speculative decoding to pass hidden states from
+    the target model to the proposer model in the subsequent step.
+
+    seq_ids are the sequence ids of each entry of the batch
+    dimension of the hidden_states tensor"""
+
+    def __init__(self, seq_group_metadata_list: List[SequenceGroupMetadata],
+                 hidden_states: torch.Tensor):
+        assert len(seq_group_metadata_list) == len(hidden_states)
+        self.seq_ids: List[int] = get_all_seq_ids(seq_group_metadata_list)
+        self.hidden_states: torch.Tensor = hidden_states
+
+    def update(self, seq_group_metadata_list: List[SequenceGroupMetadata],
+               hidden_states: torch.Tensor) -> None:
+        """Update hidden states from target model invocation."""
+        assert len(seq_group_metadata_list) == len(hidden_states)
+        self.seq_ids.extend(get_all_seq_ids(seq_group_metadata_list))
+        self.hidden_states = torch.cat([self.hidden_states, hidden_states])
+
+    def prune(self,
+              seq_group_metadata_list: List[SequenceGroupMetadata]) -> None:
+        """Prune to provided list of sequence ids."""
+        seq_ids = get_all_seq_ids(seq_group_metadata_list)
+        if seq_ids != self.seq_ids:
+            # Batch contents changed - prune removed sequences.
+            index = [self.seq_ids.index(seq_id) for seq_id in seq_ids]
+            self.hidden_states = self.hidden_states[index]
+            self.seq_ids = seq_ids
+
+
 @dataclass
 class ExecuteModelRequest:
-    """The model execution request."""
-
+    """The model execution request, containing CPU metadata only. The LLM
+    engine should create an instance of this class for each request batch."""
     # The sequence group metadata list.
     seq_group_metadata_list: List[SequenceGroupMetadata]
     # Blocks to swap in. List of CPU -> GPU block number.
@@ -1002,10 +1161,18 @@ class ExecuteModelRequest:
     blocks_to_swap_out: List[Tuple[int, int]] = field(default_factory=list)
     # Blocks to copy. Source to dest block.
     blocks_to_copy: List[Tuple[int, int]] = field(default_factory=list)
+    # Virtual engine ID for pipeline parallel.
+    virtual_engine: int = 0
     # The number of slots for lookahead decoding.
     num_lookahead_slots: int = 0
     # The number of requests in the running queue.
     running_queue_size: int = 0
+    # Optional hidden states from prior step.
+    previous_hidden_states: Optional[HiddenStates] = None
+    # The number of forward steps to run.
+    num_steps: int = 1
+    # Finished request ids since last step.
+    finished_requests_ids: List[str] = field(default_factory=list)
 
     def clone(self, seq_group_metadata_list: List[SequenceGroupMetadata]) -> "ExecuteModelRequest":
         """Clone the request with a new sequence group metadata list."""
@@ -1014,6 +1181,9 @@ class ExecuteModelRequest:
             blocks_to_swap_in=self.blocks_to_swap_in.copy(),
             blocks_to_swap_out=self.blocks_to_swap_out.copy(),
             blocks_to_copy=self.blocks_to_copy.copy(),
+            virtual_engine=self.virtual_engine,
             num_lookahead_slots=self.num_lookahead_slots,
             running_queue_size=self.running_queue_size,
-        )
+            previous_hidden_states=self.previous_hidden_states,
+            num_steps=self.num_steps,
+            finished_requests_ids=self.finished_requests_ids)

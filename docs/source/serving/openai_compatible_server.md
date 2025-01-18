@@ -30,6 +30,8 @@ Please see the [OpenAI API Reference](https://platform.openai.com/docs/api-refer
 - Chat: `tools`, and `tool_choice`.
 - Completions: `suffix`.
 
+vLLM also provides experimental support for OpenAI Vision API compatible inference. See more details in [Using VLMs](../models/vlm.rst).
+
 ## Extra Parameters
 vLLM supports a set of parameters that are not part of the OpenAI API.
 In order to use them, you can pass them as extra parameters in the OpenAI client.
@@ -107,7 +109,7 @@ directory [here](https://github.com/vllm-project/vllm/tree/main/examples/)
 
 ```{argparse}
 :module: vllm.entrypoints.openai.cli_args
-:func: make_arg_parser
+:func: create_parser_for_docs
 :prog: -m vllm.entrypoints.openai.api_server
 ```
 
