@@ -1,17 +1,22 @@
 from collections import deque
+from os import wait
+import time
 from dataclasses import dataclass
-import numpy as np
 import math
 from typing import Deque
 
+import numpy as np
+
 from vllm.sequence import SequenceGroup
 import random
+
 
 @dataclass
 class PolicyInfo:
     waiting_queue_size: int = 0
     running_queue_size: int = 0
     swapped_queue_size: int = 0
+    now: float = 0.0
 
 
 class Policy:
@@ -49,6 +54,7 @@ class Policy:
         queue_type: str,
         policy_info: PolicyInfo,
     ) -> Deque[SequenceGroup]:
+        policy_info.now = time.time()
         return deque(
             sorted(
                 seq_groups,
@@ -79,8 +85,8 @@ class MLFQ(Policy):
 class SkipJoinMLFQ(Policy):
     def __init__(self, quantum_ratio=2, starve_limit=2):
         self.quantum_ratio = quantum_ratio  # Q_i/Q_{i-1}
-        self.starve_limit = 5  # change to iter num
-        self.min_quantum = 2  # quantum of Q_1
+        self.starve_limit = 100  # change to iter num
+        self.min_quantum = 30  # quantum of Q_1
 
     def get_highest_priority(self, first_iteration_time):
         priority_level = 1  # the highest priority
@@ -95,10 +101,13 @@ class SkipJoinMLFQ(Policy):
     def get_priority(self, now: float, seq_group: SequenceGroup) -> float:
         input_length = len(seq_group.prompt_token_ids)
 
-        if not seq_group.current_priority:  # Have been assigned with a priority?
+        if seq_group.current_priority is None:  # Have been assigned with a priority?
             seq_group.current_priority = self.get_highest_priority(input_length)
         else:
-            if (
+            if seq_group.metrics.first_scheduled_time is None:   
+                seq_group.current_priority = 1
+                seq_group.promoted = 1  
+            elif (
                 now - seq_group.metrics.first_scheduled_time
                 > (2 ** (seq_group.current_priority - 1)) * self.min_quantum
                 and not seq_group.promoted
@@ -107,6 +116,7 @@ class SkipJoinMLFQ(Policy):
             elif seq_group.metrics.waiting_iter_nums >= self.starve_limit:
                 seq_group.current_priority = 1  # Promote to highest priority (Q1)
                 seq_group.promoted = 1  # has been promoted to the Q1
+        
 
         return -seq_group.current_priority  # higher value means higher priority
 
@@ -149,18 +159,13 @@ class TFTLatencyTrade(Policy):
 
 
 class TFITTradeoff(Policy):
-    def sigmoid(self, x, steepness=1, midpoint=0):
-        if x < midpoint:
-            return x
-        return 1 / (1 + math.exp(x))
-
     def _get_running_priority(self, seq_group: SequenceGroup, policy_info: PolicyInfo):
-        if seq_group.priority_rate == -1:
+        if seq_group.priority_rate == 1:
             all_eos_token_prob_diff = []
             for seq in seq_group.seqs_dict.values():
                 all_eos_token_prob_diff.append(seq.get_eos_token_prob_diff())
             seq_group.priority_rate = max(all_eos_token_prob_diff)
-        priority = -((seq_group.priority_rate) * seq_group.seq_len / seq_group.max_length)
+        priority = abs((seq_group.priority_rate)**2  -  (seq_group.seq_len / seq_group.max_length)**2)
 
         return priority
 
@@ -168,14 +173,28 @@ class TFITTradeoff(Policy):
         # if policy_info.swapped_queue_size + policy_info.running_queue_size > policy_info.waiting_queue_size:
         #     priority = seq_group.priority_rate * seq_group.metrics.waiting_iter_nums * seq_group.seq_len
         # else:
-        priority =  -seq_group.priority_rate * seq_group.metrics.waiting_iter_nums * seq_group.seq_len
+        # decode_length = sum(seq.get_output_len() for seq in seq_group.seqs_dict.values())
+        waiting_time = policy_info.now - seq_group.get_last_execute_time()
+        # priority= -waiting_time*seq_group.seq_len
+        # priority = -(seq_group.metrics.waiting_iter_nums+1) *seq_group.seq_len
+        # priority = -(seq_group.metrics.waiting_iter_nums+1) / (1-seq_group.seq_len/seq_group.max_length)
+        # priority=  waiting_time + np.log(seq_group.max_length/seq_group.seq_len)
+        priority = waiting_time/seq_group.seq_len
+        # priority = waiting_time+1/seq_group.seq_len
         return priority
 
     def _get_waiting_priority(self, seq_group: SequenceGroup, policy_info: PolicyInfo):
         # if policy_info.swapped_queue_size + policy_info.running_queue_size > policy_info.waiting_queue_size:
         #     priority = -seq_group.metrics.waiting_iter_nums * seq_group.seq_len
         # else:
-        priority = seq_group.metrics.waiting_iter_nums * seq_group.seq_len
+        # priority = -(seq_group.metrics.waiting_iter_nums+1) *seq_group.seq_len
+        # priority= (seq_group.metrics.waiting_iter_nums+1) + np.log(seq_group.max_length/seq_group.seq_len)
+        # priority = -(seq_group.metrics.waiting_iter_nums+1) / (1-seq_group.seq_len/seq_group.max_length)
+        waiting_time = policy_info.now - seq_group.get_last_execute_time()
+        # priority= -waiting_time*seq_group.seq_len
+        # priority=  waiting_time + np.log(seq_group.max_length/seq_group.seq_len)
+        priority = waiting_time/seq_group.seq_len
+        # priority = waiting_time+1/seq_group.seq_len
         return priority
 
     def got_priority(
@@ -184,10 +203,11 @@ class TFITTradeoff(Policy):
         queue_type: str,
         policy_info: PolicyInfo,
     ) -> float:
+        policy_info.now = time.time()
         if queue_type == "running":
             priority = self._get_running_priority(seq_group, policy_info)
         elif queue_type == "swapped":
-            priority = self._get_swapped_priority( seq_group, policy_info)
+            priority = self._get_swapped_priority(seq_group, policy_info)
         elif queue_type == "waiting":
             priority = self._get_waiting_priority(seq_group, policy_info)
         else:
@@ -258,7 +278,7 @@ class LeastAttainedSvr(Policy):
     ) -> float:
         decode_length = sum(seq.get_output_len() for seq in seq_group.seqs_dict.values())
         # priority = -seq_group.seq_len
-        priority = -decode_length
+        priority = now - seq_group.metrics.arrival_time if decode_length == 0 else -decode_length
         return priority
 
 

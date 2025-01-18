@@ -48,6 +48,7 @@ from vllm.model_executor.model_loader.weight_utils import (
 from vllm.model_executor.sampling_metadata import SamplingMetadata
 from vllm.sequence import SamplerOutput
 from vllm.utils import is_hip, print_warning_once
+from vllm.worker.cache_engine import CacheEngine
 
 
 class LlamaMLP(nn.Module):
@@ -259,16 +260,27 @@ class LlamaModel(nn.Module):
             config.hidden_size,
             org_num_embeddings=config.vocab_size,
         )
+        self.stream_compute = torch.cuda.Stream(device=torch.cuda.current_device())
+        self.stream_swap = torch.cuda.Stream(device=torch.cuda.current_device())
         self.layers = nn.ModuleList([
             LlamaDecoderLayer(config=config,
                               cache_config=cache_config,
                               quant_config=quant_config)
             for idx in range(config.num_hidden_layers)
         ])
+        self.events = [
+            torch.cuda.Event(enable_timing=True)
+            for _ in range(len(self.layers))
+        ]
+        self.cache_engine = None
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+    
+    def set_cache_engine(self, cache_engine: CacheEngine) -> None:
+        self.cache_engine = cache_engine
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
+
 
     def forward(
         self,
@@ -277,21 +289,50 @@ class LlamaModel(nn.Module):
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
         inputs_embeds: Optional[torch.Tensor] = None,
+        swapped_blocks: Optional[Dict[str, torch.Tensor]] = None,
     ) -> torch.Tensor:
-        if inputs_embeds is not None:
-            hidden_states = inputs_embeds
+        if swapped_blocks is not None and self.cache_engine is not None:
+            print("parallelizing swapping and computing")
+            swap_in_blocks = swapped_blocks['blocks_to_swap_in']
+            swap_out_blocks = swapped_blocks['blocks_to_swap_out']
+            with torch.cuda.stream(self.stream_compute):
+                hidden_states = inputs_embeds if inputs_embeds is not None else self.get_input_embeddings(input_ids)
+            with torch.cuda.stream(self.stream_swap):
+                self.cache_engine.pre_swap_out(swap_out_blocks, 0)
+                self.cache_engine.pre_swap_in(swap_in_blocks, 0)
+                self.events[0].record(stream=self.stream_swap)
+            residual = None
+            for i in range(len(self.layers)):
+                if i < len(self.layers) -1:
+                    with torch.cuda.stream(self.stream_swap):
+                        self.cache_engine.pre_swap_out(swap_out_blocks, i+1)
+                        self.cache_engine.pre_swap_in(swap_in_blocks, i+1)
+                        self.events[i+1].record(stream=self.stream_swap)
+                with torch.cuda.stream(self.stream_compute):
+                    self.events[i].wait(stream=self.stream_compute)
+                    layer = self.layers[i]
+                    hidden_states, residual = layer(
+                        positions,
+                        hidden_states,
+                        self.cache_engine.gpu_cache[i],
+                        attn_metadata,
+                        residual,
+                    )
         else:
-            hidden_states = self.get_input_embeddings(input_ids)
-        residual = None
-        for i in range(len(self.layers)):
-            layer = self.layers[i]
-            hidden_states, residual = layer(
-                positions,
-                hidden_states,
-                kv_caches[i],
-                attn_metadata,
-                residual,
-            )
+            print("not parallelizing swapping and computing")
+            hidden_states = inputs_embeds if inputs_embeds is not None else self.get_input_embeddings(input_ids)
+            residual = None
+            for i in range(len(self.layers)):
+                layer=self.layers[i]
+                hidden_states, residual = layer(
+                            positions,
+                            hidden_states,
+                            kv_caches[i],
+                            attn_metadata,
+                            residual,
+                        ) 
+        
+        torch.cuda.synchronize()
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
@@ -334,6 +375,7 @@ class LlamaForCausalLM(nn.Module):
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
         lora_config: Optional[LoRAConfig] = None,
+        cache_engine: Optional[CacheEngine] = None,
     ) -> None:
         super().__init__()
         self.config = config
@@ -360,6 +402,9 @@ class LlamaForCausalLM(nn.Module):
         self.logits_processor = LogitsProcessor(self.unpadded_vocab_size,
                                                 config.vocab_size, logit_scale)
         self.sampler = Sampler()
+    
+    def set_cache_engine(self, cache_engine: CacheEngine) -> None:
+        self.model.set_cache_engine(cache_engine)
 
     def forward(
         self,
@@ -367,9 +412,10 @@ class LlamaForCausalLM(nn.Module):
         positions: torch.Tensor,
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
+        swapped_blocks: Optional[Dict[str, torch.Tensor]] = None,
     ) -> torch.Tensor:
         hidden_states = self.model(input_ids, positions, kv_caches,
-                                   attn_metadata)
+                                   attn_metadata, swapped_blocks=swapped_blocks)
         return hidden_states
 
     def compute_logits(self, hidden_states: torch.Tensor,

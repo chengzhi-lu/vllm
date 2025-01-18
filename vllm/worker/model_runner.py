@@ -1,7 +1,7 @@
 import time
 import warnings
 from collections import defaultdict
-from typing import Dict, List, NamedTuple, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple, Union
 
 import numpy as np
 import torch
@@ -17,6 +17,7 @@ from vllm.logger import init_logger
 from vllm.lora.layers import LoRAMapping
 from vllm.lora.request import LoRARequest
 from vllm.lora.worker_manager import LRUCacheWorkerLoRAManager
+from vllm.worker.cache_engine import CacheEngine
 from vllm.model_executor import SamplingMetadata
 from vllm.model_executor.model_loader import get_model
 from vllm.multimodal import MULTIMODAL_REGISTRY
@@ -98,7 +99,6 @@ class ModelRunner:
         self.pin_memory = is_pin_memory_available()
         self.per_prepare_input_time = 0.0
         self.per_execute_time = 0.0
-        self.per_compute_logits_time = 0.0
         self.per_sample_time = 0.0
         self.kv_cache_dtype = kv_cache_dtype
         self.sliding_window = model_config.get_sliding_window()
@@ -142,6 +142,9 @@ class ModelRunner:
         self.flashinfer_workspace_buffer: torch.Tensor
         # Set after load_model.
         self.lora_manager: Optional[LRUCacheWorkerLoRAManager] = None
+
+    def set_cache_engine(self, cache_engine: CacheEngine) -> None:
+        self.model.set_cache_engine(cache_engine)
 
     def load_model(self) -> None:
         with CudaMemoryProfiler() as m:
@@ -717,6 +720,7 @@ class ModelRunner:
         self,
         seq_group_metadata_list: Optional[List[SequenceGroupMetadata]],
         kv_caches: List[torch.Tensor],
+        swapped_blocks: Optional[Dict[str, Any]]=None
     ) -> Optional[SamplerOutput]:
         st = time.time()
         (input_tokens, input_positions, attn_metadata, sampling_metadata,
@@ -743,18 +747,15 @@ class ModelRunner:
             positions=input_positions,
             kv_caches=kv_caches,
             attn_metadata=attn_metadata,
+            swapped_blocks=swapped_blocks,
             **multi_modal_kwargs,
         )
         torch.cuda.synchronize()
         et = time.time()
         self.per_execute_time = et - st
 
-        st = time.time()
         # Compute the logits.
         logits = self.model.compute_logits(hidden_states, sampling_metadata)
-        torch.cuda.synchronize()
-        et = time.time()
-        self.per_compute_logits_time = et - st
 
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:

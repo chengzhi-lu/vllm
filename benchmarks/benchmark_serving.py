@@ -76,6 +76,7 @@ def sample_sharegpt_requests(
     num_requests: int,
     tokenizer: PreTrainedTokenizerBase,
     fixed_output_len: Optional[int] = None,
+    scheduler_policy: Optional[str] = None,
 ) -> List[Tuple[str, int, int]]:
     if fixed_output_len is not None and fixed_output_len < 4:
         raise ValueError("output_len too small")
@@ -94,45 +95,56 @@ def sample_sharegpt_requests(
     prompt_len_list = []
     # Filter out sequences that are too long or too short
     filtered_dataset: List[Tuple[str, int, int]] = []
+    filtered_data_prompts = []
+    data=None
+    if args.scheduler_policy in ["srjf", "sjf"]:
+        file_path = get_json_file(qps=args.request_rate)
+        if file_path:
+            with open(file_path, 'r', encoding="utf-8") as file:
+                data = json.load(file)
+            # print(f"Loaded data from {file_path}")
+        else:
+            print("No JSON file found in the current directory.")
+        
+        # prompts = data['prompts']
+        # output_lens = data['output_lens']
+        # for prompt in prompts:
+        #     index= prompts.index(prompt)
+        #     prompt_token_ids = tokenizer(prompt).input_ids
+        #     prompt_len = len(prompt_token_ids)
+        #     output_len = output_lens[index]
+        #     filtered_dataset.append((prompt, prompt_len, output_len))
     for i in range(len(dataset)):
-        if len(filtered_dataset) == num_requests:
+        if len(filtered_data_prompts) == num_requests:
             break
 
         # Tokenize the prompts and completions.
         prompt = dataset[i][0]
+        if prompt in filtered_data_prompts:
+            continue
         prompt_token_ids = tokenizer(prompt).input_ids
         completion = dataset[i][1]
         completion_token_ids = tokenizer(completion).input_ids
         prompt_len = len(prompt_token_ids)
         prompt_len_list.append(prompt_len)
+        # if data is not None:
+            # if prompt not in data['prompts']:
         output_len = len(completion_token_ids
-                         )
-        # if prompt_len > 16:
-        # #     # Prune too short sequences.
-            # continue
-        # if output_len < 10  or prompt_len > 256:
-        #     # Prune too long sequences.
-        #     continue
-
-        # if prompt_len > 64:
-        #     # Prune too short sequences.
-        #     continue
-
-        # if prompt_len > 512 or output_len < 10:
-        #     # Prune too short sequences.
-        #     continue
-
-        if prompt_len < 10 or output_len < 10:
-            # Prune too short sequences.
+                        )
+        if prompt_len + output_len < 128:
             continue
-        # if prompt_len > 1024 or prompt_len + output_len > 2048:
-        #     # Prune too long sequences.
-        #     continue
+            # else:
+            #     index = data['prompts'].index(prompt)
+            #     output_len = data['output_lens'][index]
+            #     if output_len == 0:
+            #         output_len = len(completion_token_ids
+            #                     )
+        # else:
+        #     output_len=0
         filtered_dataset.append((prompt, prompt_len, output_len))
+        filtered_data_prompts.append(prompt)
     print(f"Number of requests: {len(filtered_dataset)}")
-    import collections
-    prompt_len_list=collections.Counter(prompt_len_list)
-    return filtered_dataset
+    return filtered_dataset,data
 
 
 def sample_sonnet_requests(
@@ -224,62 +236,17 @@ async def get_request(
         await asyncio.sleep(interval)
         i+=1
 
-def get_json_file():
+def get_json_file(qps):
     for file_name in os.listdir('.'):
         if fnmatch.fnmatch(file_name, '*.json'):
+            if str(qps) not in file_name:
+                continue
             return file_name
     return None
 
 def generate_request(input_requests: List[Tuple[str, int, int]]) -> Tuple[str, int, int]:
     request = input_requests[random.randint(0, len(input_requests) - 1)]
     return request
-
-# async def get_request_duration(
-#     input_requests: List[Tuple[str, int, int]],
-#     request_rate: float,
-#     request_duration: float,
-#     executor: ProcessPoolExecutor
-# ) -> AsyncGenerator[Tuple[str, int, int], None]:
-#     st = time.time()
-    
-#     while (time.time() - st < request_duration):
-#         request = await asyncio.get_event_loop().run_in_executor(executor, generate_request, input_requests)
-        
-#         # 异步生成请求
-#         yield request
-        
-#         # 控制请求速率
-#         if request_rate == float("inf") or request_rate == -1:
-#             continue
-        
-#         # 使用指数分布的随机数来模拟请求间隔
-#         interval = np.random.exponential(1.0 / request_rate)
-#         await asyncio.sleep(interval)
-
-# def get_request_duration(
-#     input_requests: List[Tuple[str, int, int]],
-#     request_rate: float,
-#     request_duration: float
-# ) -> Generator[Tuple[str, int, int], None, None]:
-#     # file_path = get_json_file()
-#     # if file_path:
-#     #     with open(file_path, 'r', encoding="utf-8") as file:
-#     #         data = json.load(file)
-#     #     # print(f"Loaded data from {file_path}")
-#     # else:
-#     #     print("No JSON file found in the current directory.")
-#     # input_requests = iter(input_requests)
-#     st = time.time()
-#     while(time.time() - st < request_duration):
-#         request = input_requests[random.randint(0, len(input_requests) - 1)]
-#         # while request[0] not in data:
-#         #     request = input_requests[random.randint(0, len(input_requests) - 1)]
-#     # for request in input_requests:
-#         yield request
-#         if request_rate == float("inf") or request_rate == -1:
-#             continue
-#         interval = np.random.exponential(1.0 / request_rate)
-#         time.sleep(interval)
 
 async def get_request_duration(
     input_requests: List[Tuple[str, int, int]],
@@ -383,19 +350,6 @@ async def process_request(request, model_id, api_url, best_of, use_beam_search, 
     else:
         return await request_func(request_func_input=request_func_input, pbar=pbar)
 
-# def worker_function(request, backend, args, model_id, api_url, best_of, use_beam_search, pbar, request_func):
-#     prompt, prompt_len, output_len = request
-#     request_func_input = RequestFuncInput(
-#         model=model_id,
-#         prompt=prompt,
-#         api_url=api_url,
-#         prompt_len=prompt_len,
-#         output_len=output_len,
-#         best_of=best_of,
-#         use_beam_search=use_beam_search,
-#     )
-#     return process_request(backend, args, request_func_input, pbar, request_func)
-
 def run_event_loop_in_process(requests, model_id, api_url, best_of, use_beam_search, backend, request_func, pbar):
     """
     Run the asyncio event loop to handle multiple requests in a process.
@@ -490,7 +444,7 @@ async def benchmark(
     send_request_num = 0
     async for request in get_request_duration(input_requests, request_rate, request_duration, scheduler_policy):
         prompt, prompt_len, output_len = request
-        min_tokens = copy.deepcopy(data[prompt]) if scheduler_policy in ["srjf", "sjf"] else None
+        min_tokens = output_len if scheduler_policy in ["srjf", "sjf"] else None 
         request_func_input = RequestFuncInput(
             model=model_id,
             prompt=prompt,
@@ -637,19 +591,21 @@ def main(args: argparse.Namespace):
             "release. Please use '--dataset-name' and "
             "'--dataset-path' in the future runs.",
             stacklevel=2)
-        input_requests = sample_sharegpt_requests(
+        input_requests,data = sample_sharegpt_requests(
             dataset_path=args.dataset,
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
             fixed_output_len=args.sharegpt_output_len,
+            scheduler_policy=args.scheduler_policy,
         )
 
     elif args.dataset_name == "sharegpt":
-        input_requests = sample_sharegpt_requests(
+        input_requests,data = sample_sharegpt_requests(
             dataset_path=args.dataset_path,
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
             fixed_output_len=args.sharegpt_output_len,
+            scheduler_policy=args.scheduler_policy,
         )
 
     elif args.dataset_name == "sonnet":
@@ -685,51 +641,23 @@ def main(args: argparse.Namespace):
     else:
         raise ValueError(f"Unknown dataset: {args.dataset_name}")
     
-    if args.scheduler_policy in ["srjf", "sjf"]:
-        data = None
-        file_path = get_json_file()
-        if file_path:
-            with open(file_path, 'r', encoding="utf-8") as file:
-                data = json.load(file)
-            # print(f"Loaded data from {file_path}")
-        else:
-            print("No JSON file found in the current directory.")
-        
-        if data is not None:
-            data = {k:v for k, v in data.items() if v != 0}
-            input_requests = [req for req in input_requests if req[0] in data]
     
-        benchmark_result, outputs = asyncio.run(
-            benchmark(
-                backend=backend,
-                api_url=api_url,
-                model_id=model_id,
-                tokenizer=tokenizer,
-                input_requests=input_requests,
-                best_of=args.best_of,
-                use_beam_search=args.use_beam_search,
-                request_rate=args.request_rate,
-                disable_tqdm=args.disable_tqdm,
-                request_duration=args.request_duration,
-                scheduler_policy=args.scheduler_policy,
-                data=data
-            ))
-    else:
-        benchmark_result, outputs = asyncio.run(
-            benchmark(
-                backend=backend,
-                api_url=api_url,
-                model_id=model_id,
-                tokenizer=tokenizer,
-                input_requests=input_requests,
-                best_of=args.best_of,
-                use_beam_search=args.use_beam_search,
-                request_rate=args.request_rate,
-                disable_tqdm=args.disable_tqdm,
-                request_duration=args.request_duration,
-                scheduler_policy=args.scheduler_policy,
-                data=None
-            ))
+
+    benchmark_result, outputs = asyncio.run(
+        benchmark(
+            backend=backend,
+            api_url=api_url,
+            model_id=model_id,
+            tokenizer=tokenizer,
+            input_requests=input_requests,
+            best_of=args.best_of,
+            use_beam_search=args.use_beam_search,
+            request_rate=args.request_rate,
+            disable_tqdm=args.disable_tqdm,
+            request_duration=args.request_duration,
+            scheduler_policy=args.scheduler_policy,
+            data=data
+        ))
 
     # Save config and results to json
     if args.save_result:
@@ -776,17 +704,21 @@ def main(args: argparse.Namespace):
         with open(file_name, "w") as outfile:
             json.dump(result_json, outfile)
         
-        prompt_output_lens_json = {}
-        for i in range(len(outputs)):
-            prompt_output_lens_json[outputs[i].prompt] = benchmark_result["output_lens"][i]
-        prompt_output_lens_file_name = f"prompt_output_{backend}-{args.request_rate}qps-{base_model_id}-{seconds}-{args.scheduler_policy}.json"  # noqa: E501
-        
-        if args.result_dir:
-            if not os.path.exists(os.path.join(args.result_dir, dir_name,"prompt")):
-                os.makedirs(os.path.join(args.result_dir, dir_name,"prompt"))
-            prompt_output_lens_file_name = os.path.join(args.result_dir, dir_name,"prompt", prompt_output_lens_file_name)  # noqa: E501
-        with open(prompt_output_lens_file_name, "w") as prompt_output_lens_file_name_outfile:
-            json.dump(prompt_output_lens_json, prompt_output_lens_file_name_outfile)
+        if args.scheduler_policy == 'tfittradeoff':
+            prompt_output_lens_json = {"prompts":[],"output_lens":[]}
+            for i in range(len(outputs)):
+                prompt= outputs[i].prompt
+                output_len = benchmark_result["output_lens"][i]
+                prompt_output_lens_json["prompts"].append(prompt)
+                prompt_output_lens_json["output_lens"].append(output_len)
+            prompt_output_lens_file_name = f"prompt_output_{backend}-{args.request_rate}qps-{base_model_id}-{seconds}-{args.scheduler_policy}.json"  # noqa: E501
+            
+            if args.result_dir:
+                if not os.path.exists(os.path.join(args.result_dir, dir_name,"prompt")):
+                    os.makedirs(os.path.join(args.result_dir, dir_name,"prompt"))
+                prompt_output_lens_file_name = os.path.join(args.result_dir, dir_name,"prompt", prompt_output_lens_file_name)  # noqa: E501
+            with open(prompt_output_lens_file_name, "w") as prompt_output_lens_file_name_outfile:
+                json.dump(prompt_output_lens_json, prompt_output_lens_file_name_outfile)
 
 if __name__ == "__main__":
     st = time.time()

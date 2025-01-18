@@ -635,7 +635,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         free_shared_blocks = self.gpu_allocator.get_num_free_blocks(block_type="shared")
         if free_shared_blocks < num_swapped_seqs+len(blocks):
             print(f"Not enough free shared blocks to swap in {num_swapped_seqs} sequences. Free shared blocks: {free_shared_blocks}")
-            return False 
+            return False
         else:
             print("Enough free shared blocks to swap in sequences.")
             return True 

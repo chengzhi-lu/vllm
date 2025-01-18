@@ -4,7 +4,7 @@ import enum
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
-
+import time
 import torch
 
 from vllm.block import LogicalTokenBlock
@@ -109,6 +109,7 @@ class RequestMetrics:
     arrival_time: float
     last_token_time: float
     waiting_iter_nums: int
+    last_execute_time: float
     first_scheduled_time: Optional[float]
     first_token_time: Optional[float]
     time_in_queue: Optional[float]
@@ -297,7 +298,7 @@ class Sequence:
             return self.eos_token_prob
 
     def get_eos_token_prob_diff(self) -> float:
-        if len(self.eos_token_prob) >= self.eos_prob_estimation_window and self.eos_token_prob_diff == -1:
+        if len(self.eos_token_prob) >= self.eos_prob_estimation_window and self.eos_token_prob_diff == 1:
             self.eos_token_prob_diff = (
                 max(self.eos_token_prob[: self.eos_prob_estimation_window])
                 - min(self.eos_token_prob[: self.eos_prob_estimation_window])
@@ -518,6 +519,7 @@ class SequenceGroup:
             arrival_time=arrival_time,
             last_token_time=arrival_time,
             waiting_iter_nums=0,
+            last_execute_time=time.time(),
             first_scheduled_time=None,
             first_token_time=None,
             time_in_queue=None,
@@ -538,7 +540,7 @@ class SequenceGroup:
         self.swap_time_unit = 0.00065
         self.expected_length = 0.0
         self.waiting_iter_base = waiting_iter_base
-        self.priority_rate = -1
+        self.priority_rate = 1
         if self.sampling_params:
             self.max_length = self.sampling_params.max_tokens
         else:
@@ -664,6 +666,12 @@ class SequenceGroup:
 
     def get_finished_seqs(self) -> List[Sequence]:
         return [seq for seq in self.seqs_dict.values() if seq.is_finished()]
+
+    def update_last_execute_time(self):
+        self.metrics.last_execute_time = time.time()
+
+    def get_last_execute_time(self):
+        return self.metrics.last_execute_time
 
     def update_waiting_iter_nums(self):
         self.metrics.waiting_iter_nums += 1

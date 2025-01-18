@@ -255,7 +255,6 @@ class _AsyncLLMEngine(LLMEngine):
         et = time.time()
         execution_time_per_step = et - st
         self.execution_time += et - st
-        throughput_iter = self.scheduler.gpu_computation_iter / (et - st)
         self.total_iteration_time = self.execution_time - self.swap_time
         # print("execute time is:", et - st)
         st = time.time()
@@ -275,8 +274,6 @@ class _AsyncLLMEngine(LLMEngine):
         self.handle_output_time += self.et - st
         # Log stats.
         self.do_log_stats(scheduler_outputs, output)
-        self.scheduler.update_iter_time(self.total_iteration_time /
-                                        self.total_count)
             
         if not request_outputs:
             # Stop the execute model loop in parallel workers until there are
@@ -285,7 +282,10 @@ class _AsyncLLMEngine(LLMEngine):
             # the RPC thread in the workers so that they can process any other
             # queued control plane messages, such as add/remove lora adapters.
             await self.model_executor.stop_remote_worker_execution_loop_async()
-        if self.scheduler.total_swap_in_seqs != 0:
+        low_efficient_swap_out_ratio = -1 if self.scheduler.scheduler_metric.total_swap_in_seqs == 0 else self.scheduler.scheduler_metric.total_low_eff_swap_out/self.scheduler.scheduler_metric.total_swap_in_seqs
+        mean_low_efficient_swap_out_extent = -1 if self.scheduler.scheduler_metric.total_swap_in_seqs == 0 else self.scheduler.scheduler_metric.total_low_eff_swap_out_diff/self.scheduler.scheduler_metric.total_swap_in_seqs
+        mean_swap_out_seq_waiting_time = -1 if self.scheduler.scheduler_metric.total_swap_in_seqs == 0 else self.scheduler.scheduler_metric.total_swap_out_waiting_time/self.scheduler.scheduler_metric.total_swap_in_seqs
+        if self.parallel_config.tensor_parallel_size > 1:
             logger.info(
                 "Total time: %.5f s, Total schedule time: %.5f s, Total execution time: %.5f s, per execution time: %.5f s,"
                 "handle output time: %.5f s, swap time: %.5f s, "
@@ -296,7 +296,7 @@ class _AsyncLLMEngine(LLMEngine):
                 "gpu memory iter: %.5f, gpu computation iter: %.5f, sort time: %.5f, "
                 "schedule running time: %.5f, schedule swapped time: %.5f, schedule prefill time: %.5f,"
                 "swap while time: %.5f, prefill while time: %.5f, prefill token num: %d, decode token num: %d,prepare input time: %.5f,"
-                "compute logits time: %.5f, sample time: %.5f, single execution time: %.5f"
+                "sample time: %.5f, single execution time: %.5f"
                 ,self.schedule_time+self.execution_time+self.handle_output_time,
                 self.schedule_time,
                 self.execution_time, 
@@ -304,61 +304,63 @@ class _AsyncLLMEngine(LLMEngine):
                 self.handle_output_time, 
                 self.swap_time,
                 self.total_count, 
-                self.scheduler.total_swap_out_blocks,
-                self.scheduler.total_swap_out_seqs,
-                self.scheduler.total_swap_in_blocks,
-                self.scheduler.total_swap_in_seqs, 
-                self.scheduler.total_low_eff_swap_out/self.scheduler.total_swap_in_seqs,
-                self.scheduler.total_low_eff_swap_out_diff/self.scheduler.total_swap_in_seqs,
-                self.scheduler.total_swap_out_waiting_time/self.scheduler.total_swap_in_seqs,
-                self.scheduler.gpu_memory_iter,
-                self.scheduler.gpu_computation_iter,
-                self.scheduler.sort_time_iter,
-                self.scheduler.schedule_running_time,
-                self.scheduler.schedule_swapped_time,
-                self.scheduler.schedule_waiting_time,
-                self.scheduler.swap_while,
-                self.scheduler.prefill_while,
-                self.scheduler.prefill_token_num,
-                self.scheduler.decode_token_num,
-                self.model_executor.driver_worker.model_runner.per_prepare_input_time,
-                self.model_executor.driver_worker.model_runner.per_compute_logits_time,
-                self.model_executor.driver_worker.model_runner.per_sample_time,
-                self.model_executor.driver_worker.model_runner.per_execute_time,)
+                self.scheduler.scheduler_metric.total_swap_out_blocks,
+                self.scheduler.scheduler_metric.total_swap_out_seqs,
+                self.scheduler.scheduler_metric.total_swap_in_blocks,
+                self.scheduler.scheduler_metric.total_swap_in_seqs, 
+                low_efficient_swap_out_ratio,
+                mean_low_efficient_swap_out_extent,
+                mean_swap_out_seq_waiting_time,
+                self.scheduler.scheduler_metric.gpu_memory_iter,
+                self.scheduler.scheduler_metric.gpu_computation_iter,
+                self.scheduler.scheduler_metric.sort_time_iter,
+                self.scheduler.scheduler_metric.schedule_running_time,
+                self.scheduler.scheduler_metric.schedule_swapped_time,
+                self.scheduler.scheduler_metric.schedule_waiting_time,
+                self.scheduler.scheduler_metric.swap_while,
+                self.scheduler.scheduler_metric.prefill_while,
+                self.scheduler.scheduler_metric.prefill_token_num,
+                self.scheduler.scheduler_metric.decode_token_num,
+                0,
+                0,
+                0,)
         else:
             logger.info(
                 "Total time: %.5f s, Total schedule time: %.5f s, Total execution time: %.5f s, per execution time: %.5f s,"
                 "handle output time: %.5f s, swap time: %.5f s, "
                 "total iteration number: %d, "
                 "swap out block num: %d, swap out seq num: %d, "
-                "swap in block num: %d, swap in seq num: %d, low efficient swap out ratio: %.5f,"
+                "swap in block num: %d, swap in seq num: %d, low efficient swap out ratio: %.5f, "
                 "mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f, "
                 "gpu memory iter: %.5f, gpu computation iter: %.5f, sort time: %.5f, "
                 "schedule running time: %.5f, schedule swapped time: %.5f, schedule prefill time: %.5f,"
-                "swap while time: %.5f, prefill while time: %.5f, prefill token num: %d, decode token num: %d, prepare input time: %.5f,"
-                "compute logits time: %.5f, sample time: %.5f, single execution time: %.5f",
-                self.schedule_time+self.execution_time+self.handle_output_time,
+                "swap while time: %.5f, prefill while time: %.5f, prefill token num: %d, decode token num: %d,prepare input time: %.5f,"
+                "sample time: %.5f, single execution time: %.5f"
+                ,self.schedule_time+self.execution_time+self.handle_output_time,
                 self.schedule_time,
-                self.execution_time, execution_time_per_step, self.handle_output_time, self.swap_time,
-                self.total_count, self.scheduler.total_swap_out_blocks,
-                self.scheduler.total_swap_out_seqs,
-                self.scheduler.total_swap_in_blocks,
-                self.scheduler.total_swap_in_seqs, 
-                0.0,
-                0.0,
-                0.0,
-                self.scheduler.gpu_memory_iter,
-                self.scheduler.gpu_computation_iter,
-                self.scheduler.sort_time_iter,
-                self.scheduler.schedule_running_time,
-                self.scheduler.schedule_swapped_time,
-                self.scheduler.schedule_waiting_time,
-                self.scheduler.swap_while,
-                self.scheduler.prefill_while,
-                self.scheduler.prefill_token_num,
-                self.scheduler.decode_token_num,
+                self.execution_time, 
+                execution_time_per_step,
+                self.handle_output_time, 
+                self.swap_time,
+                self.total_count, 
+                self.scheduler.scheduler_metric.total_swap_out_blocks,
+                self.scheduler.scheduler_metric.total_swap_out_seqs,
+                self.scheduler.scheduler_metric.total_swap_in_blocks,
+                self.scheduler.scheduler_metric.total_swap_in_seqs, 
+                low_efficient_swap_out_ratio,
+                mean_low_efficient_swap_out_extent,
+                mean_swap_out_seq_waiting_time,
+                self.scheduler.scheduler_metric.gpu_memory_iter,
+                self.scheduler.scheduler_metric.gpu_computation_iter,
+                self.scheduler.scheduler_metric.sort_time_iter,
+                self.scheduler.scheduler_metric.schedule_running_time,
+                self.scheduler.scheduler_metric.schedule_swapped_time,
+                self.scheduler.scheduler_metric.schedule_waiting_time,
+                self.scheduler.scheduler_metric.swap_while,
+                self.scheduler.scheduler_metric.prefill_while,
+                self.scheduler.scheduler_metric.prefill_token_num,
+                self.scheduler.scheduler_metric.decode_token_num,
                 self.model_executor.driver_worker.model_runner.per_prepare_input_time,
-                self.model_executor.driver_worker.model_runner.per_compute_logits_time,
                 self.model_executor.driver_worker.model_runner.per_sample_time,
                 self.model_executor.driver_worker.model_runner.per_execute_time,)
         return request_outputs

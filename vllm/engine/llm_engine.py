@@ -951,6 +951,7 @@ class LLMEngine:
                     scheduler_outputs.scheduled_seq_groups):
                 group_was_prefill = idx < scheduler_outputs.num_prefill_groups
                 seq_group = scheduled_seq_group.seq_group
+                seq_group.update_last_execute_time()
 
                 # NOTE: a seq_group that completed all of its prefill tokens
                 # in the last iteration will have seq_group.is_prefill() = False

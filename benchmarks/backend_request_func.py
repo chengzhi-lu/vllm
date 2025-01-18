@@ -79,17 +79,17 @@ async def async_request_tgi(
                         timestamp = time.perf_counter()
                         # First token
                         if ttft == 0.0:
-                            ttft = time.perf_counter() - st
+                            ttft = round(time.perf_counter() - st,6)
                             output.ttft = ttft
 
                         # Decoding phase
                         else:
-                            output.itl.append(timestamp -
-                                              most_recent_timestamp)
+                            output.itl.append(round(timestamp -
+                                              most_recent_timestamp,6))
 
                         most_recent_timestamp = timestamp
 
-                    output.latency = most_recent_timestamp - st
+                    output.latency = round(most_recent_timestamp - st,6)
                     output.success = True
                     output.generated_text = data["generated_text"]
                 else:
@@ -286,7 +286,7 @@ async def async_request_openai_completions(
                                 timestamp = time.perf_counter()
                                 # First token
                                 if ttft == 0.0:
-                                    ttft = time.perf_counter() - st
+                                    ttft = round(time.perf_counter() - st,6)
                                     output.ttft = ttft
 
                                 # Decoding phase
@@ -294,8 +294,8 @@ async def async_request_openai_completions(
                                 # usage summary response without a token so we
                                 # do not want to include as inter-token-latency
                                 elif data.get("usage", None) is None:
-                                    output.itl.append(timestamp -
-                                                      most_recent_timestamp)
+                                    output.itl.append(round(timestamp -
+                                                      most_recent_timestamp,6))
 
                                 most_recent_timestamp = timestamp
                                 generated_text += data["choices"][0]["text"]
@@ -364,7 +364,7 @@ async def async_request_openai_chat_completions(
                         chunk = remove_prefix(chunk_bytes.decode("utf-8"),
                                               "data: ")
                         if chunk == "[DONE]":
-                            latency = time.perf_counter() - st
+                            latency = round(time.perf_counter() - st, 6)
                         else:
                             timestamp = time.perf_counter()
                             data = json.loads(chunk)
@@ -373,13 +373,13 @@ async def async_request_openai_chat_completions(
                             if delta.get("content", None):
                                 # First token
                                 if ttft == 0.0:
-                                    ttft = time.perf_counter() - st
+                                    ttft = round(time.perf_counter() - st, 6)
                                     output.ttft = ttft
 
                                 # Decoding phase
                                 else:
-                                    output.itl.append(timestamp -
-                                                      most_recent_timestamp)
+                                    output.itl.append(round(timestamp -
+                                                      most_recent_timestamp,6))
 
                                 generated_text += delta["content"]
 

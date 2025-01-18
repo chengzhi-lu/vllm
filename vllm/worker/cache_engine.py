@@ -83,10 +83,22 @@ class CacheEngine:
             self.attn_backend.swap_blocks(self.cpu_cache[i], self.gpu_cache[i],
                                           src_to_dst)
 
+    def pre_swap_in(self, src_to_dst: torch.Tensor, layer_id:int)->None:
+        if src_to_dst is not None:
+            self.attn_backend.swap_blocks(self.cpu_cache[layer_id], self.gpu_cache[layer_id],
+                                          src_to_dst)
+
+
     def swap_out(self, src_to_dst: torch.Tensor) -> None:
         for i in range(self.num_layers):
             self.attn_backend.swap_blocks(self.gpu_cache[i], self.cpu_cache[i],
                                           src_to_dst)
+
+    def pre_swap_out(self, src_to_dst: torch.Tensor, layer_id:int)->None:
+        if src_to_dst is not None:
+            self.attn_backend.swap_blocks(self.gpu_cache[layer_id], self.cpu_cache[layer_id],
+                                          src_to_dst)   
+
 
     def copy(self, src_to_dsts: torch.Tensor) -> None:
         self.attn_backend.copy_blocks(self.gpu_cache, src_to_dsts)

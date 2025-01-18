@@ -41,6 +41,7 @@ class EngineArgs:
     tensor_parallel_size: int = 1
     max_parallel_loading_workers: Optional[int] = None
     block_size: int = 16
+    swap_parallelize: bool = False
     enable_prefix_caching: bool = False
     disable_sliding_window: bool = False
     use_v2_block_manager: bool = False
@@ -332,7 +333,10 @@ class EngineArgs:
                             choices=[8, 16, 32],
                             help='Token block size for contiguous chunks of '
                             'tokens.')
-
+        parser.add_argument('--swap-parallelize',
+                            action='store_true',
+                            help='Enable parallel swap with computatiion'
+        )
         parser.add_argument('--enable-prefix-caching',
                             action='store_true',
                             help='Enables automatic prefix caching.')
@@ -692,6 +696,9 @@ class EngineArgs:
                 "BitsAndBytes load format and QLoRA adapter only support "
                 f"'bitsandbytes' quantization, but got {self.quantization}")
 
+        if self.scheduler_policy == "tfittradeoff":
+            self.swap_parallelize=True
+
         device_config = DeviceConfig(device=self.device)
         model_config = ModelConfig(
             model=self.model,
@@ -721,6 +728,7 @@ class EngineArgs:
             cache_dtype=self.kv_cache_dtype,
             num_gpu_blocks_override=self.num_gpu_blocks_override,
             sliding_window=model_config.get_sliding_window(),
+            swap_parallelize=self.swap_parallelize,
             enable_prefix_caching=self.enable_prefix_caching,
             num_shared_blocks=self.num_shared_blocks
             )
