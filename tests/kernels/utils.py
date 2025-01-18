@@ -831,7 +831,7 @@ def make_test_metadata(
         num_encoder_tokens = (None if encoder_seq_lens is None else
                               (sum(encoder_seq_lens)))
 
-    if cross_test_params is None:
+    if cross_test_params is None:  # noqa: SIM108
         cross_kv_mmap = None
     else:
         # Encoder/decoder or encoder-only models only:

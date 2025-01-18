@@ -204,18 +204,6 @@ class NaiveBlockAllocator(BlockAllocator):
         """
         return sorted(self._all_block_indices).index(absolute_id)
 
-    def get_physical_block_id(self, absolute_id: int) -> int:
-        """Returns the zero-offset block id on certain block allocator
-        given the absolute block id.
-
-        Args:
-            absolute_id (int): The absolute block id for the block 
-            in whole allocator.
-
-        Returns:
-            int: The zero-offset block id on certain device.
-        """
-        return sorted(self._all_block_indices).index(absolute_id)
 
     @property
     def refcounter(self):
@@ -355,55 +343,7 @@ class NaiveBlockAllocator(BlockAllocator):
 
             block.block_id = block_id  # Assign block_id
 
-    def get_num_blocks_touched(self,
-                               blocks: List[Block],
-                               num_lookahead_slots: int = 0) -> int:
-        """Determine the number of blocks that will be touched by
-        swapping in/out the given blocks from certain sequence
-        group with the provided num_lookahead_slots.
-
-        Args:
-            blocks (List[Block]): The potential blocks to swap.
-            num_lookahead_slots (int): number of lookahead slots (0 for swap 
-                out).
-        
-        Returns:
-            int: the number of blocks that will be touched by
-                swapping in/out the given blocks and num_lookahead_slots.
-        """
-        # NOTE: for naive block, we use set to eliminate common blocks among
-        # seqs, also we compare the empty slots in the mutable blocks with
-        # lookahead slots to get the number of unique new block that are
-        # needed.
-        old_block_set = set()
-        new_block_count = 0
-        # TODO(cade): make sure the logic is correct and clean it up.
-        for block in blocks:
-            if not block.is_full and num_lookahead_slots != 0:
-                if block.num_empty_slots >= num_lookahead_slots:
-                    new_block_count += 1
-                else:
-                    new_block_count += cdiv(
-                        num_lookahead_slots - block.num_empty_slots,
-                        self._block_size)
-            else:
-                old_block_set.add(block.block_id)
-        num_touched_blocks = new_block_count + len(old_block_set)
-        return num_touched_blocks
-
-    def swap_out(self, blocks: List[Block]) -> None:
-        for block in blocks:
-            self.free(block)
-
-    def swap_in(self, blocks: List[Block]) -> None:
-        for block in blocks:
-            if block.is_full:
-                alloc = self.allocate_immutable(block.prev_block,
-                                                block.token_ids)
-            else:
-                alloc = self.allocate_mutable(block.prev_block)
-                alloc.append_token_ids(block.token_ids)
-            block.block_id = alloc.block_id
+ 
 
 
 class NaiveBlock(Block):

@@ -384,30 +384,6 @@ class _AsyncLLMEngine(LLMEngine):
         request_id: str,
         inputs: PromptInputs,
         lora_request: Optional[LoRARequest] = None,
-    ) -> LLMInputs:
-        if isinstance(inputs, str):
-            inputs = {"prompt": inputs}
-
-        if "prompt_token_ids" not in inputs:
-            tokenizer = self.get_tokenizer_group("prompts must be None if "
-                                                 "skip_tokenizer_init is True")
-
-            prompt_token_ids = await tokenizer.encode_async(
-                request_id=request_id,
-                prompt=inputs["prompt"],
-                lora_request=lora_request)
-        else:
-            prompt_token_ids = inputs["prompt_token_ids"]
-
-        return LLMInputs(prompt_token_ids=prompt_token_ids,
-                         prompt=inputs.get("prompt"),
-                         multi_modal_data=inputs.get("multi_modal_data"))
-
-    async def process_model_inputs_async(
-        self,
-        request_id: str,
-        inputs: PromptInputs,
-        lora_request: Optional[LoRARequest] = None,
         arrival_time: Optional[float] = None,
         prompt_adapter_request: Optional[PromptAdapterRequest] = None,
     ) -> LLMInputs:
@@ -736,11 +712,12 @@ class AsyncLLMEngine:
             self.engine.abort_request(request_ids)
 
     async def run_engine_loop(self):
-        if self.engine_use_ray:
-            pipeline_parallel_size = 1  # type: ignore
-        else:
-            pipeline_parallel_size = \
-                self.engine.parallel_config.pipeline_parallel_size
+        # if self.engine_use_ray:
+        #     pipeline_parallel_size = 1  # type: ignore
+        # else:
+        #     pipeline_parallel_size = \
+        #         self.engine.parallel_config.pipeline_parallel_size
+        pipeline_parallel_size = 1 if self.engine_use_ray else self.engine.parallel_config.pipeline_parallel_size
         has_requests_in_progress = [False] * pipeline_parallel_size
         while True:
             if not any(has_requests_in_progress):

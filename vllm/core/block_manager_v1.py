@@ -529,7 +529,10 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         # num_hashed_tokens is used to compute future hashes
         # (e.g. in the hashing function, it is used to ask the sequence for
         # prefix tokens)
-        new_block = self.gpu_allocator.allocate(block_hash, num_hashed_tokens, block_type='shared' if seq_type == SequenceType.TEMP else None)
+        new_block = self.gpu_allocator.allocate(
+            block_hash, 
+            num_hashed_tokens,  
+            block_type='shared' if seq_type == SequenceType.TEMP else None)
 
         # If the block has is None, then the block is not full.
         # If the block is not full, then we expect it to have a refcount of 1.
@@ -544,7 +547,6 @@ class BlockSpaceManagerV1(BlockSpaceManager):
     ) -> List[Tuple[int, int]]:
         """Allocate a physical slot for a new token."""
         seq_type = seq.get_seq_type()
-        logical_blocks = seq.logical_token_blocks
         n_blocks = seq.n_blocks
         if seq_type == SequenceType.TEMP:
             block_table = self.shared_block_tables[seq.seq_id]
@@ -657,7 +659,8 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         num_swapped_seqs = seq_group.num_seqs(status=SequenceStatus.RUNNING)
         free_shared_blocks = self.gpu_allocator.get_num_free_blocks(block_type="shared")
         if free_shared_blocks < num_swapped_seqs+len(blocks):
-            print(f"Not enough free shared blocks to swap in {num_swapped_seqs} sequences. Free shared blocks: {free_shared_blocks}")
+            print(f'''Not enough free shared blocks to swap in {num_swapped_seqs} sequences. 
+                  Free shared blocks: {free_shared_blocks}''')
             return False
         else:
             print("Enough free shared blocks to swap in sequences.")
@@ -865,13 +868,6 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             allocated_shared_block_nums = self.gpu_allocator.split_tables(shared_block_nums)
             return allocated_shared_block_nums
 
-    def free_cross(self, seq_group: SequenceGroup) -> None:
-        if seq_group.request_id not in self.cross_block_tables:
-            # Already freed or hasn't ben scheduled yet.
-            return
-        block_table = self.cross_block_tables[seq_group.request_id]
-        self._free_block_table(block_table)
-        del self.cross_block_tables[seq_group.request_id]
 
     def reset(self) -> None:
         # Free decoder block tables
@@ -893,9 +889,6 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         block_table = self.cross_block_tables[seq_group.request_id]
         return [block.block_number for block in block_table]
 
-    def get_cross_block_table(self, seq_group: SequenceGroup) -> List[int]:
-        block_table = self.cross_block_tables[seq_group.request_id]
-        return [block.block_number for block in block_table]
 
     def get_num_free_gpu_blocks(self) -> int:
         return self.gpu_allocator.get_num_free_blocks()

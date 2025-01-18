@@ -1,11 +1,9 @@
 from collections import deque
-from os import wait
 import time
 from dataclasses import dataclass
 import math
 from typing import Deque
 
-import numpy as np
 
 from vllm.sequence import SequenceGroup
 import random

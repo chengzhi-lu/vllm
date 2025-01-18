@@ -716,7 +716,7 @@ class LLMEngine:
             lora_request=lora_request,
             pooling_params=pooling_params,
             waiting_iter_base=self.scheduler_config.waiting_iter_base,
-            vocab_size=self.model_config.get_vocab_size()
+            vocab_size=self.model_config.get_vocab_size(),
             prompt_adapter_request=prompt_adapter_request)
         return seq_group
 
@@ -985,7 +985,6 @@ class LLMEngine:
         model_output: Optional[List[SamplerOutput]] = None,
     ) -> None:
         """Forced log when no requests active."""
-        stats = self._get_stats(scheduler_outputs, model_output)
         if self.log_stats:
             for logger in self.stat_loggers.values():
                 logger.log(self._get_stats(scheduler_outputs, model_output))

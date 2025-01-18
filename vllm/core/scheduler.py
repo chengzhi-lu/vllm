@@ -381,8 +381,10 @@ class Scheduler:
         self.reach_ddl = False
 
         if self.scheduler_config.policy == 'tfittradeoff':
-            # self.num_shared_blocks = min(int(self.scheduler_config.max_num_batched_tokens // self.cache_config.block_size // self.scheduler_config.waiting_iter_base),      
-            #                              int(self.cache_config.num_gpu_blocks*0.1)+1)
+            # self.num_shared_blocks = min(int(self.scheduler_config.max_num_batched_tokens 
+            # // self.cache_config.block_size 
+            # // self.scheduler_config.waiting_iter_base),      
+            # int(self.cache_config.num_gpu_blocks*0.1)+1)
             self.num_shared_blocks = self.cache_config.num_shared_blocks
         else:
             self.num_shared_blocks = 0
@@ -416,8 +418,10 @@ class Scheduler:
         # Contain decode requests that are swapped out.
         self.swapped: Deque[SequenceGroup] = deque()
 
-        self.high_priority_seq_groups: List[SequenceGroup] = [] # cache seqs with high priority in the waiting queue and swap them into the running queue. 
-        self.low_priority_seq_groups: List[SequenceGroup] = [] # cache seqs with low priority in the running queue and swap them out to the waiting queue. 
+        self.high_priority_seq_groups: List[SequenceGroup] = [] # cache seqs with high priority in the waiting 
+                                                             #queue and swap them into the running queue. 
+        self.low_priority_seq_groups: List[SequenceGroup] = [] # cache seqs with low priority in the running queue  
+                                                            #and swap them out to the waiting queue. 
 
 
         self.kv_free_seq_groups: List[str] = []
@@ -1211,7 +1215,11 @@ class Scheduler:
                                                 self.partial_swapped.pop(
                                                     victim_seq_group_request_id)
                             seq_group_status, swap_out_block_nums = self.handle_victim(
-                                required_block_size, left_victim_block_size, victim_seq_group_request_id, victim_seq_group)
+                                required_block_size, 
+                                left_victim_block_size, 
+                                victim_seq_group_request_id, 
+                                victim_seq_group
+                                )
 
                         preempted_mode = self._preempt(
                             victim_seq_group,
@@ -1915,6 +1923,10 @@ class Scheduler:
         )
         policy_info = PolicyInfo(
             waiting_queue_size=len(self.waiting),
+            running_queue_size = len(self.running),
+            swapped_queue_size = len(self.swapped),
+            now=time.time(),
+        )
         curr_loras: Set[int] = set()
 
         remaining_waiting, prefills = (self.waiting,

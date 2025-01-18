@@ -212,10 +212,7 @@ def run_server(args, llm_engine=None):
     logger.info("vLLM API server version %s", VLLM_VERSION)
     logger.info("args: %s", args)
 
-    if args.served_model_name is not None:
-        served_model_names = args.served_model_name
-    else:
-        served_model_names = [args.model]
+    served_model_names = args.served_model_name if args.served_model_name is not None else [args.model]
 
     global engine, engine_args
 

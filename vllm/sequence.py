@@ -19,7 +19,6 @@ from vllm.prompt_adapter.request import PromptAdapterRequest
 from vllm.sampling_params import SamplingParams
 
 if TYPE_CHECKING:
-    from vllm.inputs import LLMInputs
     from vllm.multimodal import MultiModalDataDict
     from vllm.spec_decode.metrics import SpecDecodeWorkerMetrics
 
@@ -707,12 +706,6 @@ class SequenceGroup:
         # )) if status is None or status == SequenceStatus.All else [
         #     seq for seq in self.seqs_dict.values() if seq.status == status
         # ]
-
-    def is_encoder_decoder(self) -> bool:
-        return self.encoder_seq is not None
-
-    def get_encoder_seq(self) -> Optional[Sequence]:
-        return self.encoder_seq
 
     def is_encoder_decoder(self) -> bool:
         return self.encoder_seq is not None
