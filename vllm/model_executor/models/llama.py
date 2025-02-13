@@ -21,7 +21,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Inference-only LLaMA model compatible with HuggingFace weights."""
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -29,7 +29,7 @@ from transformers import LlamaConfig
 
 from vllm.attention import Attention, AttentionMetadata
 from vllm.config import CacheConfig, LoRAConfig
-from vllm.distributed import (get_tensor_model_parallel_rank,
+from vllm.distributed import (get_pp_group, get_tensor_model_parallel_rank,
                               get_tensor_model_parallel_world_size)
 from vllm.model_executor.layers.activation import SiluAndMul
 from vllm.model_executor.layers.layernorm import RMSNorm
@@ -46,8 +46,12 @@ from vllm.model_executor.layers.vocab_parallel_embedding import (
 from vllm.model_executor.model_loader.weight_utils import (
     default_weight_loader, kv_cache_scales_loader)
 from vllm.model_executor.sampling_metadata import SamplingMetadata
-from vllm.sequence import SamplerOutput
+from vllm.sequence import IntermediateTensors, SamplerOutput
 from vllm.utils import is_hip, print_warning_once
+from vllm.worker.cache_engine import CacheEngine
+
+from .interfaces import SupportsLoRA
+from .utils import is_pp_missing_parameter, make_layers
 
 
 class LlamaMLP(nn.Module):
@@ -259,16 +263,26 @@ class LlamaModel(nn.Module):
             config.hidden_size,
             org_num_embeddings=config.vocab_size,
         )
-        self.layers = nn.ModuleList([
-            LlamaDecoderLayer(config=config,
-                              cache_config=cache_config,
-                              quant_config=quant_config)
-            for idx in range(config.num_hidden_layers)
-        ])
+        self.stream_compute = torch.cuda.Stream(device=torch.cuda.current_device())
+        self.stream_swap = torch.cuda.Stream(device=torch.cuda.current_device())
+        self.start_layer, self.end_layer, self.layers = make_layers(
+            config.num_hidden_layers,
+            lambda: LlamaDecoderLayer(config=config,
+                                      cache_config=cache_config,
+                                      quant_config=quant_config))
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.events = [
+            torch.cuda.Event(enable_timing=True)
+            for _ in range(len(self.layers))
+        ]
+        self.cache_engine = None
+    
+    def set_cache_engine(self, cache_engine: CacheEngine) -> None:
+        self.cache_engine = cache_engine
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
+
 
     def forward(
         self,
@@ -276,27 +290,113 @@ class LlamaModel(nn.Module):
         positions: torch.Tensor,
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
+        intermediate_tensors: Optional[IntermediateTensors],
         inputs_embeds: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        if inputs_embeds is not None:
-            hidden_states = inputs_embeds
+        swapped_blocks: Optional[Dict[str, torch.Tensor]] = None,
+     ) -> Union[torch.Tensor, IntermediateTensors]:
+        # if swapped_blocks is not None and self.cache_engine is not None:
+        #     print("parallelizing swapping and computing")
+        #     swap_in_blocks = swapped_blocks['blocks_to_swap_in']
+        #     swap_out_blocks = swapped_blocks['blocks_to_swap_out']
+        #     with torch.cuda.stream(self.stream_compute):
+        #         hidden_states = inputs_embeds if inputs_embeds is not None else self.get_input_embeddings(input_ids)
+        #     with torch.cuda.stream(self.stream_swap):
+        #         self.cache_engine.pre_swap_out(swap_out_blocks, 0)
+        #         self.cache_engine.pre_swap_in(swap_in_blocks, 0)
+        #         self.events[0].record(stream=self.stream_swap)
+        #     residual = None
+        #     for i in range(len(self.layers)):
+        #         if i < len(self.layers) -1:
+        #             with torch.cuda.stream(self.stream_swap):
+        #                 self.cache_engine.pre_swap_out(swap_out_blocks, i+1)
+        #                 self.cache_engine.pre_swap_in(swap_in_blocks, i+1)
+        #                 self.events[i+1].record(stream=self.stream_swap)
+        #         with torch.cuda.stream(self.stream_compute):
+        #             self.events[i].wait(stream=self.stream_compute)
+        #             layer = self.layers[i]
+        #             hidden_states, residual = layer(
+        #                 positions,
+        #                 hidden_states,
+        #                 self.cache_engine.gpu_cache[i],
+        #                 attn_metadata,
+        #                 residual,
+        #             )
+        # else:
+        #     print("not parallelizing swapping and computing")
+        #     hidden_states = inputs_embeds if inputs_embeds is not None else self.get_input_embeddings(input_ids)
+        #     residual = None
+        #     for i in range(len(self.layers)):
+        #         layer=self.layers[i]
+        #         hidden_states, residual = layer(
+        #                     positions,
+        #                     hidden_states,
+        #                     kv_caches[i],
+        #                     attn_metadata,
+        #                     residual,
+        #                 ) 
+        
+        # torch.cuda.synchronize()
+   
+        if get_pp_group().is_first_rank:
+            if swapped_blocks is not None and self.cache_engine is not None:
+                swap_in_blocks = swapped_blocks['blocks_to_swap_in']
+                swap_out_blocks = swapped_blocks['blocks_to_swap_out']
+                with torch.cuda.stream(self.stream_compute):
+                    hidden_states = inputs_embeds if inputs_embeds is not None else self.get_input_embeddings(input_ids)
+                with torch.cuda.stream(self.stream_swap):
+                    self.cache_engine.pre_swap_out(swap_out_blocks, 0)
+                    self.cache_engine.pre_swap_in(swap_in_blocks, 0)
+                    self.events[0].record(stream=self.stream_swap)
+                residual = None
+            else:
+                hidden_states = inputs_embeds if inputs_embeds is not None else self.get_input_embeddings(input_ids)
+                residual = None
+
         else:
-            hidden_states = self.get_input_embeddings(input_ids)
-        residual = None
-        for i in range(len(self.layers)):
-            layer = self.layers[i]
-            hidden_states, residual = layer(
-                positions,
-                hidden_states,
-                kv_caches[i],
-                attn_metadata,
-                residual,
-            )
+            assert intermediate_tensors is not None
+            hidden_states = intermediate_tensors["hidden_states"]
+            residual = intermediate_tensors["residual"]
+
+        if swapped_blocks is not None and self.cache_engine is not None:
+            for i in range(self.start_layer, self.end_layer):
+                if i < self.end_layer -1:
+                        with torch.cuda.stream(self.stream_swap):
+                            self.cache_engine.pre_swap_out(swap_out_blocks, i+1)
+                            self.cache_engine.pre_swap_in(swap_in_blocks, i+1)
+                            self.events[i+1].record(stream=self.stream_swap)
+                with torch.cuda.stream(self.stream_compute):
+                    self.events[i].wait(stream=self.stream_compute)
+                    layer = self.layers[i]
+                    hidden_states, residual = layer(
+                        positions,
+                        hidden_states,
+                        self.cache_engine.gpu_cache[i - self.start_layeri],
+                        attn_metadata,
+                        residual,
+                    )
+            torch.cuda.synchronize()
+        else:
+            for i in range(self.start_layer, self.end_layer):
+                layer = self.layers[i]
+                hidden_states, residual = layer(
+                    positions,
+                    hidden_states,
+                    kv_caches[i - self.start_layer],
+                    attn_metadata,
+                    residual,
+                )
+
+        if not get_pp_group().is_last_rank:
+            return IntermediateTensors({
+                "hidden_states": hidden_states,
+                "residual": residual
+            })
+
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
 
-class LlamaForCausalLM(nn.Module):
+class LlamaForCausalLM(nn.Module, SupportsLoRA):
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",
@@ -336,7 +436,10 @@ class LlamaForCausalLM(nn.Module):
         lora_config: Optional[LoRAConfig] = None,
     ) -> None:
         super().__init__()
+
         self.config = config
+        self.lora_config = lora_config
+
         self.model = LlamaModel(config,
                                 cache_config,
                                 quant_config,
@@ -352,6 +455,7 @@ class LlamaForCausalLM(nn.Module):
             # We need bigger padding if using lora for kernel
             # compatibility
             if not lora_config else lora_config.lora_vocab_padding_size,
+            quant_config=quant_config,
         )
         if config.tie_word_embeddings:
             self.lm_head.weight = self.model.embed_tokens.weight
@@ -360,6 +464,9 @@ class LlamaForCausalLM(nn.Module):
         self.logits_processor = LogitsProcessor(self.unpadded_vocab_size,
                                                 config.vocab_size, logit_scale)
         self.sampler = Sampler()
+    
+    def set_cache_engine(self, cache_engine: CacheEngine) -> None:
+        self.model.set_cache_engine(cache_engine)
 
     def forward(
         self,
@@ -367,14 +474,15 @@ class LlamaForCausalLM(nn.Module):
         positions: torch.Tensor,
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
-    ) -> torch.Tensor:
-        hidden_states = self.model(input_ids, positions, kv_caches,
-                                   attn_metadata)
-        return hidden_states
+        intermediate_tensors: Optional[IntermediateTensors] = None,
+    ) -> Union[torch.Tensor, IntermediateTensors]:
+        model_output = self.model(input_ids, positions, kv_caches,
+                                  attn_metadata, intermediate_tensors)
+        return model_output
 
     def compute_logits(self, hidden_states: torch.Tensor,
                        sampling_metadata: SamplingMetadata) -> torch.Tensor:
-        logits = self.logits_processor(self.lm_head.weight, hidden_states,
+        logits = self.logits_processor(self.lm_head, hidden_states,
                                        sampling_metadata)
         return logits
 
@@ -385,6 +493,20 @@ class LlamaForCausalLM(nn.Module):
     ) -> Optional[SamplerOutput]:
         next_tokens = self.sampler(logits, sampling_metadata)
         return next_tokens
+
+    def make_empty_intermediate_tensors(
+            self, batch_size: int, dtype: torch.dtype,
+            device: torch.device) -> IntermediateTensors:
+        return IntermediateTensors({
+            "hidden_states":
+            torch.zeros((batch_size, self.config.hidden_size),
+                        dtype=dtype,
+                        device=device),
+            "residual":
+            torch.zeros((batch_size, self.config.hidden_size),
+                        dtype=dtype,
+                        device=device),
+        })
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
         stacked_params_mapping = [
@@ -411,9 +533,14 @@ class LlamaForCausalLM(nn.Module):
                 # Skip loading extra bias for GPTQ models.
                 if name.endswith(".bias") and name not in params_dict:
                     continue
+
+                if is_pp_missing_parameter(name, self):
+                    continue
+
                 param = params_dict[name]
                 weight_loader = param.weight_loader
                 weight_loader(param, loaded_weight, shard_id)
+
                 break
             else:
                 # Skip loading extra bias for GPTQ models.
@@ -432,6 +559,10 @@ class LlamaForCausalLM(nn.Module):
                         continue
                     else:
                         name = remapped_kv_scale_name
+
+                if is_pp_missing_parameter(name, self):
+                    continue
+
                 param = params_dict[name]
                 weight_loader = getattr(param, "weight_loader",
                                         default_weight_loader)
@@ -447,7 +578,8 @@ class LlamaForCausalLM(nn.Module):
                 quantization_param_path, tp_rank, tp_size,
                 self.config.num_hidden_layers,
                 self.config.__class__.model_type):
-            layer_self_attn = self.model.layers[layer_idx].self_attn
+            if not isinstance(self.model.layers[layer_idx], nn.Identity):
+                layer_self_attn = self.model.layers[layer_idx].self_attn
 
             if is_hip():
                 # The scaling factor convention we are assuming is

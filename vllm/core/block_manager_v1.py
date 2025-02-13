@@ -183,7 +183,7 @@ class UncachedBlockAllocator(BlockAllocatorBase):
         self.device = device
         self.block_size = block_size
         self.num_blocks = num_blocks
-        self.num_shared_blocks = num_shared_blocks
+        self.num_shared_blocks = 0 
         self.free_shared_blocks: BlockTable = []
         # Initialize the free blocks.
         self.free_blocks: BlockTable = []
@@ -319,15 +319,14 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         self.shared_block_tables: Dict[int, BlockTable] = {}
         self.gpu_block_capacity = self.num_total_gpu_blocks - self.watermark_blocks - self.num_shared_blocks
         # self.block_device_tables: Dict[int, Dict[int, Device]]={}
-
         # Mapping: req_id -> BlockTable
         # Note that each SequenceGroup has a unique
         # request ID
         self.cross_block_tables: Dict[str, BlockTable] = {}
 
     def _get_seq_num_required_blocks(self, seq: Sequence) -> int:
-        return 0 if seq is None \
-            else len(seq.logical_token_blocks)
+        return 0 if seq is None else seq.n_blocks
+
 
     def can_allocate(self, seq_group: SequenceGroup, shared=False) -> AllocStatus:
         # FIXME(woosuk): Here we assume that all sequences in the group share
@@ -374,7 +373,8 @@ class BlockSpaceManagerV1(BlockSpaceManager):
                            shared: bool=False, \
                            is_encoder_decoder: bool = True) -> BlockTable:
         # Allocate new physical token blocks that will store the prompt tokens.
-        num_prompt_blocks = len(seq.logical_token_blocks)
+        num_prompt_blocks = seq.n_blocks
+
         block_table: BlockTable = []
         # block_device_table: Dict[BlockTable, Device] = {}
         for logical_idx in range(num_prompt_blocks):
@@ -429,6 +429,15 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             # Assign the cross-attention block table for the SequenceGroup.
             self.cross_block_tables[seq_group.request_id] = block_table
 
+        # Allocate encoder sequence
+        if is_encoder_decoder:
+            # A SequenceGroup has only a single encoder sequence (at most),
+            # thus allocate with a ref count of 1
+            block_table = self._allocate_sequence(seq_group.get_encoder_seq(),
+                                                  1, is_encoder_decoder)
+            # Assign the cross-attention block table for the SequenceGroup.
+            self.cross_block_tables[seq_group.request_id] = block_table
+
     def can_append_slots(self,
                          seq_group: SequenceGroup,
                          num_lookahead_slots: int = 0) -> bool:
@@ -458,7 +467,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
 
         # Compute a new hash for the block so that it can be shared by other
         # Sequences
-        new_hash = seq.hash_of_block(len(seq.logical_token_blocks) - 1)
+        new_hash = seq.hash_of_block(seq.n_blocks - 1)
 
         # if new_hash is already in the cached table, then free last_block
         # and return the cached version
@@ -502,15 +511,18 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             elif seq_type == SequenceType.NORMAL:
                 return self.gpu_allocator.allocate()
         block_hash: Optional[int] = None
+        n_blocks = seq.n_blocks
         if (self._is_last_block_full(seq)):
-            block_hash = seq.hash_of_block(len(seq.logical_token_blocks) - 1)
-        num_hashed_tokens = seq.num_hashed_tokens_of_block(
-            len(seq.logical_token_blocks) - 1)
+            block_hash = seq.hash_of_block(n_blocks - 1)
+        num_hashed_tokens = seq.num_hashed_tokens_of_block(n_blocks - 1)
 
         # num_hashed_tokens is used to compute future hashes
         # (e.g. in the hashing function, it is used to ask the sequence for
         # prefix tokens)
-        new_block = self.gpu_allocator.allocate(block_hash, num_hashed_tokens, block_type='shared' if seq_type == SequenceType.TEMP else None)
+        new_block = self.gpu_allocator.allocate(
+            block_hash, 
+            num_hashed_tokens,  
+            block_type='shared' if seq_type == SequenceType.TEMP else None)
 
         # If the block has is None, then the block is not full.
         # If the block is not full, then we expect it to have a refcount of 1.
@@ -525,15 +537,15 @@ class BlockSpaceManagerV1(BlockSpaceManager):
     ) -> List[Tuple[int, int]]:
         """Allocate a physical slot for a new token."""
         seq_type = seq.get_seq_type()
-        logical_blocks = seq.logical_token_blocks
+        n_blocks = seq.n_blocks
         if seq_type == SequenceType.TEMP:
             block_table = self.shared_block_tables[seq.seq_id]
         else:
             block_table = self.block_tables[seq.seq_id]
         # If we need to allocate a new physical block
-        if len(block_table) < len(logical_blocks):
+        if len(block_table) < n_blocks:
             # Currently this code only supports adding one physical block
-            assert len(block_table) == len(logical_blocks) - 1
+            assert len(block_table) == n_blocks - 1
 
             if (self.block_sliding_window
                     and len(block_table) >= self.block_sliding_window):
@@ -580,6 +592,9 @@ class BlockSpaceManagerV1(BlockSpaceManager):
     def fork(self, parent_seq: Sequence, child_seq: Sequence) -> None:
         # NOTE: fork does not allocate a new physical block.
         # Thus, it is always safe from OOM.
+        if parent_seq.seq_id not in self.block_tables:
+            # Parent sequence has either been freed or never existed.
+            return
         src_block_table = self.block_tables[parent_seq.seq_id]
         self.block_tables[child_seq.seq_id] = src_block_table.copy()
         # When using a sliding window, blocks will be eventually reused.
@@ -634,9 +649,11 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         num_swapped_seqs = seq_group.num_seqs(status=SequenceStatus.RUNNING)
         free_shared_blocks = self.gpu_allocator.get_num_free_blocks(block_type="shared")
         if free_shared_blocks < num_swapped_seqs+len(blocks):
-            print(f"Not enough free shared blocks to swap in {num_swapped_seqs} sequences. Free shared blocks: {free_shared_blocks}")
-            return False 
+            print(f'''Not enough free shared blocks to swap in {num_swapped_seqs} sequences. 
+                  Free shared blocks: {free_shared_blocks}''')
+            return False
         else:
+            print("Enough free shared blocks to swap in sequences.")
             return True 
 
     def _swap_block_table(
@@ -699,6 +716,13 @@ class BlockSpaceManagerV1(BlockSpaceManager):
                         seq.seq_id][block_indx] = swapped_in_block
             else:
                 self.block_tables[seq.seq_id] = swapped_in_blocks
+        # for seq in seq_group.get_seqs(status=SequenceStatus.SWAPPED):
+        #     self.block_tables[seq.seq_id] = \
+        #         self._swap_block_table(self.block_tables[seq.seq_id],
+        #                                self.cpu_allocator,
+        #                                self.gpu_allocator,
+        #                                mapping)
+
         if seq_group.is_encoder_decoder():
             self.cross_block_tables[request_id] = \
                 self._swap_block_table(self.cross_block_tables[request_id],
@@ -824,15 +848,16 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         self.shared_block_tables.clear()
         self.gpu_allocator.merge_tables()
     
-    def add_shared_blocks(self, shared_block_percent:float) -> int:
-        if shared_block_percent == 0:
+    def add_shared_blocks(self, num_shared_blocks: int) -> int:
+        if num_shared_blocks== 0:
             return
-        shared_block_nums= min(2, self.gpu_allocator.get_num_free_blocks())
+        shared_block_nums= min(num_shared_blocks, self.gpu_allocator.get_num_free_blocks())
         if shared_block_nums == 0:
             return 0
         else:
             allocated_shared_block_nums = self.gpu_allocator.split_tables(shared_block_nums)
             return allocated_shared_block_nums
+
 
     def reset(self) -> None:
         # Free decoder block tables
@@ -853,6 +878,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
     def get_cross_block_table(self, seq_group: SequenceGroup) -> List[int]:
         block_table = self.cross_block_tables[seq_group.request_id]
         return [block.block_number for block in block_table]
+
 
     def get_num_free_gpu_blocks(self) -> int:
         return self.gpu_allocator.get_num_free_blocks()
@@ -913,3 +939,4 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         if self.enable_caching:
             for seq in seq_group.seqs_dict.values():
                 self.compute_full_blocks_in_seq(seq)
+

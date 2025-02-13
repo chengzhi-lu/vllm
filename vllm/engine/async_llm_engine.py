@@ -8,8 +8,9 @@ from transformers import PreTrainedTokenizer
 
 import vllm.envs as envs
 from vllm.config import DecodingConfig, ModelConfig
-from vllm.core.scheduler import SchedulerOutputs
+from vllm.core.scheduler import SchedulerMetric, SchedulerOutputs
 from vllm.engine.arg_utils import AsyncEngineArgs
+from vllm.engine.async_timeout import asyncio_timeout
 from vllm.engine.llm_engine import LLMEngine
 from vllm.executor.ray_utils import initialize_ray_cluster, ray
 from vllm.inputs import LLMInputs, PromptInputs
@@ -17,6 +18,7 @@ from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
 from vllm.outputs import EmbeddingRequestOutput, RequestOutput
 from vllm.pooling_params import PoolingParams
+from vllm.prompt_adapter.request import PromptAdapterRequest
 from vllm.sampling_params import SamplingParams
 from vllm.sequence import ExecuteModelRequest, SamplerOutput
 from vllm.usage.usage_lib import UsageContext
@@ -214,8 +216,37 @@ class RequestTracker:
 class _AsyncLLMEngine(LLMEngine):
     """Extension of LLMEngine to add async methods."""
 
+    def parse_scheduler_metric(self):
+        total_scheduler_metric = SchedulerMetric()
+        for scheduler in self.scheduler:
+            total_scheduler_metric.total_swap_out_blocks += scheduler.scheduler_metric.total_swap_out_blocks
+            total_scheduler_metric.total_swap_in_blocks += scheduler.scheduler_metric.total_swap_in_blocks
+            total_scheduler_metric.total_swap_out_seqs += scheduler.scheduler_metric.total_swap_out_seqs
+            total_scheduler_metric.total_swap_in_seqs += scheduler.scheduler_metric.total_swap_in_seqs
+            total_scheduler_metric.total_low_eff_swap_out += scheduler.scheduler_metric.total_low_eff_swap_out
+            total_scheduler_metric.total_low_eff_swap_out_diff += scheduler.scheduler_metric.total_low_eff_swap_out_diff
+            total_scheduler_metric.total_swap_out_waiting_time += scheduler.scheduler_metric.total_swap_out_waiting_time
+            total_scheduler_metric.sort_time_iter += scheduler.scheduler_metric.sort_time_iter
+            total_scheduler_metric.swap_while += scheduler.scheduler_metric.swap_while
+            total_scheduler_metric.prefill_while += scheduler.scheduler_metric.prefill_while
+            total_scheduler_metric.schedule_running_time += scheduler.scheduler_metric.schedule_running_time
+            total_scheduler_metric.schedule_waiting_time += scheduler.scheduler_metric.schedule_waiting_time
+            total_scheduler_metric.schedule_swapped_time += scheduler.scheduler_metric.schedule_swapped_time
+            total_scheduler_metric.prefill_token_num += scheduler.scheduler_metric.prefill_token_num
+            total_scheduler_metric.decode_token_num += scheduler.scheduler_metric.decode_token_num
+            total_scheduler_metric.gpu_memory_iter += scheduler.scheduler_metric.gpu_memory_iter
+            total_scheduler_metric.gpu_computation_iter += scheduler.scheduler_metric.gpu_computation_iter
+            total_scheduler_metric.total_running_block_size += scheduler.scheduler_metric.total_running_block_size
+        return total_scheduler_metric
+
+
+            
+
+
+
     async def step_async(
-            self) -> List[Union[RequestOutput, EmbeddingRequestOutput]]:
+        self, virtual_engine: int
+    ) -> List[Union[RequestOutput, EmbeddingRequestOutput]]:
         """Performs one decoding iteration and returns newly generated results.
         The workers are ran asynchronously if possible.
 
@@ -225,12 +256,14 @@ class _AsyncLLMEngine(LLMEngine):
         and updates the scheduler with the model outputs. Finally, it decodes
         the sequences and returns the newly generated results.
         """
-        if self.scheduler.reach_ddl:
+        reach_ddl = self.scheduler[virtual_engine].reach_ddl
+        if reach_ddl:
             return []
         st = time.time()
         if self.et != 0:
             logger.debug("interval time is:", st - self.et)  
-        seq_group_metadata_list, scheduler_outputs = self.scheduler.schedule()
+        seq_group_metadata_list, scheduler_outputs = self.scheduler[
+            virtual_engine].schedule()
         et = time.time()
         self.schedule_time += et - st
         self.total_count += 1
@@ -238,14 +271,17 @@ class _AsyncLLMEngine(LLMEngine):
         st = time.time()
         if not scheduler_outputs.is_empty() and len(seq_group_metadata_list) > 0:
             # Execute the model.
+            finished_requests_ids = self.scheduler[
+                virtual_engine].get_and_reset_finished_requests_ids()
             execute_model_req = ExecuteModelRequest(
                 seq_group_metadata_list=seq_group_metadata_list,
                 blocks_to_swap_in=scheduler_outputs.blocks_to_swap_in,
                 blocks_to_swap_out=scheduler_outputs.blocks_to_swap_out,
                 blocks_to_copy=scheduler_outputs.blocks_to_copy,
+                virtual_engine=virtual_engine,
                 num_lookahead_slots=scheduler_outputs.num_lookahead_slots,
                 running_queue_size=scheduler_outputs.running_queue_size,
-            )
+                finished_requests_ids=finished_requests_ids)
             output = await self.model_executor.execute_model_async(
                 execute_model_req)
             self.swap_time += output[0].swap_time
@@ -253,8 +289,8 @@ class _AsyncLLMEngine(LLMEngine):
             output = []
         
         et = time.time()
+        execution_time_per_step = et - st
         self.execution_time += et - st
-        throughput_iter = self.scheduler.gpu_computation_iter / (et - st)
         self.total_iteration_time = self.execution_time - self.swap_time
         # print("execute time is:", et - st)
         st = time.time()
@@ -274,9 +310,8 @@ class _AsyncLLMEngine(LLMEngine):
         self.handle_output_time += self.et - st
         # Log stats.
         self.do_log_stats(scheduler_outputs, output)
-        self.scheduler.update_iter_time(self.total_iteration_time /
-                                        self.total_count)
             
+        total_scheduler_metric = self.parse_scheduler_metric()
         if not request_outputs:
             # Stop the execute model loop in parallel workers until there are
             # more requests to process. This avoids waiting indefinitely in
@@ -284,11 +319,12 @@ class _AsyncLLMEngine(LLMEngine):
             # the RPC thread in the workers so that they can process any other
             # queued control plane messages, such as add/remove lora adapters.
             await self.model_executor.stop_remote_worker_execution_loop_async()
-        # print("handle output time is:", self.et - st)
-        # print(f"Total schedule time: {self.schedule_time}, execution time: {self.execution_time}, handle output time: {self.handle_output_time}, swap time: {self.swap_time}, total iteration number is: {self.total_count}")
-        if self.scheduler.total_swap_in_seqs != 0:
+        low_efficient_swap_out_ratio = -1 if total_scheduler_metric.total_swap_in_seqs == 0 else total_scheduler_metric.total_low_eff_swap_out/total_scheduler_metric.total_swap_in_seqs
+        mean_low_efficient_swap_out_extent = -1 if total_scheduler_metric.total_swap_in_seqs == 0 else total_scheduler_metric.total_low_eff_swap_out_diff/total_scheduler_metric.total_swap_in_seqs
+        mean_swap_out_seq_waiting_time = -1 if total_scheduler_metric.total_swap_in_seqs == 0 else total_scheduler_metric.total_swap_out_waiting_time/total_scheduler_metric.total_swap_in_seqs
+        if self.parallel_config.tensor_parallel_size > 1 or self.parallel_config.pipeline_parallel_size >1 :
             logger.info(
-                "Total time: %.5f s, Total schedule time: %.5f s, execution time: %.5f s, "
+                "Total time: %.5f s, Total schedule time: %.5f s, Total execution time: %.5f s, per execution time: %.5f s,"
                 "handle output time: %.5f s, swap time: %.5f s, "
                 "total iteration number: %d, "
                 "swap out block num: %d, swap out seq num: %d, "
@@ -296,62 +332,90 @@ class _AsyncLLMEngine(LLMEngine):
                 "mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f, "
                 "gpu memory iter: %.5f, gpu computation iter: %.5f, sort time: %.5f, "
                 "schedule running time: %.5f, schedule swapped time: %.5f, schedule prefill time: %.5f,"
-                "swap while time: %.5f, prefill while time: %.5f",self.schedule_time+self.execution_time+self.handle_output_time,
+                "swap while time: %.5f, prefill while time: %.5f, prefill token num: %d, decode token num: %d,prepare input time: %.5f,"
+                "sample time: %.5f, single execution time: %.5f"
+                ,self.schedule_time+self.execution_time+self.handle_output_time,
                 self.schedule_time,
                 self.execution_time, 
+                execution_time_per_step,
                 self.handle_output_time, 
                 self.swap_time,
                 self.total_count, 
-                self.scheduler.total_swap_out_blocks,
-                self.scheduler.total_swap_out_seqs,
-                self.scheduler.total_swap_in_blocks,
-                self.scheduler.total_swap_in_seqs, 
-                self.scheduler.total_low_eff_swap_out/self.scheduler.total_swap_in_seqs,
-                self.scheduler.total_low_eff_swap_out_diff/self.scheduler.total_swap_in_seqs,
-                self.scheduler.total_swap_out_waiting_time/self.scheduler.total_swap_in_seqs,
-                self.scheduler.gpu_memory_iter,
-                self.scheduler.gpu_computation_iter,
-                self.scheduler.sort_time_iter,
-                self.scheduler.schedule_running_time,
-                self.scheduler.schedule_swapped_time,
-                self.scheduler.schedule_waiting_time,
-                self.scheduler.swap_while,
-                self.scheduler.prefill_while)
+                total_scheduler_metric.total_swap_out_blocks,
+                total_scheduler_metric.total_swap_out_seqs,
+                total_scheduler_metric.total_swap_in_blocks,
+                total_scheduler_metric.total_swap_in_seqs, 
+                low_efficient_swap_out_ratio,
+                mean_low_efficient_swap_out_extent,
+                mean_swap_out_seq_waiting_time,
+                total_scheduler_metric.gpu_memory_iter,
+                total_scheduler_metric.gpu_computation_iter,
+                total_scheduler_metric.sort_time_iter,
+                total_scheduler_metric.schedule_running_time,
+                total_scheduler_metric.schedule_swapped_time,
+                total_scheduler_metric.schedule_waiting_time,
+                total_scheduler_metric.swap_while,
+                total_scheduler_metric.prefill_while,
+                total_scheduler_metric.prefill_token_num,
+                total_scheduler_metric.decode_token_num,
+                0,
+                0,
+                0,)
         else:
             logger.info(
-                "Total time: %.5f s, Total schedule time: %.5f s, execution time: %.5f s, "
+                "Total time: %.5f s, Total schedule time: %.5f s, Total execution time: %.5f s, per execution time: %.5f s,"
                 "handle output time: %.5f s, swap time: %.5f s, "
                 "total iteration number: %d, "
                 "swap out block num: %d, swap out seq num: %d, "
-                "swap in block num: %d, swap in seq num: %d, low efficient swap out ratio: %.5f,"
+                "swap in block num: %d, swap in seq num: %d, low efficient swap out ratio: %.5f, "
                 "mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f, "
                 "gpu memory iter: %.5f, gpu computation iter: %.5f, sort time: %.5f, "
                 "schedule running time: %.5f, schedule swapped time: %.5f, schedule prefill time: %.5f,"
-                "swap while time: %.5f, prefill while time: %.5f",self.schedule_time+self.execution_time+self.handle_output_time,
+                "swap while time: %.5f, prefill while time: %.5f, prefill token num: %d, decode token num: %d,prepare input time: %.5f,"
+                "sample time: %.5f, single execution time: %.5f"
+                ,self.schedule_time+self.execution_time+self.handle_output_time,
                 self.schedule_time,
-                self.execution_time, self.handle_output_time, self.swap_time,
-                self.total_count, self.scheduler.total_swap_out_blocks,
-                self.scheduler.total_swap_out_seqs,
-                self.scheduler.total_swap_in_blocks,
-                self.scheduler.total_swap_in_seqs, 
-                0.0,
-                0.0,
-                0.0,
-                self.scheduler.gpu_memory_iter,
-                self.scheduler.gpu_computation_iter,
-                self.scheduler.sort_time_iter,
-                self.scheduler.schedule_running_time,
-                self.scheduler.schedule_swapped_time,
-                self.scheduler.schedule_waiting_time,
-                self.scheduler.swap_while,
-                self.scheduler.prefill_while)
+                self.execution_time, 
+                execution_time_per_step,
+                self.handle_output_time, 
+                self.swap_time,
+                self.total_count, 
+                total_scheduler_metric.total_swap_out_blocks,
+                total_scheduler_metric.total_swap_out_seqs,
+                total_scheduler_metric.total_swap_in_blocks,
+                total_scheduler_metric.total_swap_in_seqs, 
+                low_efficient_swap_out_ratio,
+                mean_low_efficient_swap_out_extent,
+                mean_swap_out_seq_waiting_time,
+                total_scheduler_metric.gpu_memory_iter,
+                total_scheduler_metric.gpu_computation_iter,
+                total_scheduler_metric.sort_time_iter,
+                total_scheduler_metric.schedule_running_time,
+                total_scheduler_metric.schedule_swapped_time,
+                total_scheduler_metric.schedule_waiting_time,
+                total_scheduler_metric.swap_while,
+                total_scheduler_metric.prefill_while,
+                total_scheduler_metric.prefill_token_num,
+                total_scheduler_metric.decode_token_num,
+                self.model_executor.driver_worker.model_runner.per_prepare_input_time,
+                self.model_executor.driver_worker.model_runner.per_sample_time,
+                self.model_executor.driver_worker.model_runner.per_execute_time,)
+         # Tracing
+        self.do_tracing(scheduler_outputs)
+
         return request_outputs
+
+    async def stop_remote_worker_execution_loop_async(self) -> None:
+        """Stop the remote worker execution loop."""
+        await self.model_executor.stop_remote_worker_execution_loop_async()
 
     async def process_model_inputs_async(
         self,
         request_id: str,
         inputs: PromptInputs,
         lora_request: Optional[LoRARequest] = None,
+        arrival_time: Optional[float] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
     ) -> LLMInputs:
         if isinstance(inputs, str):
             inputs = {"prompt": inputs}
@@ -367,17 +431,27 @@ class _AsyncLLMEngine(LLMEngine):
         else:
             prompt_token_ids = inputs["prompt_token_ids"]
 
-        return LLMInputs(prompt_token_ids=prompt_token_ids,
-                         prompt=inputs.get("prompt"),
-                         multi_modal_data=inputs.get("multi_modal_data"))
+        if prompt_adapter_request:
+            prompt_token_ids = [
+                0
+            ] * prompt_adapter_request.prompt_adapter_num_virtual_tokens + \
+                prompt_token_ids
+
+        llm_inputs = LLMInputs(prompt_token_ids=prompt_token_ids,
+                               prompt=inputs.get("prompt"),
+                               multi_modal_data=inputs.get("multi_modal_data"))
+
+        return self.input_processor(llm_inputs)
 
     async def add_request_async(
-        self,
-        request_id: str,
-        inputs: PromptInputs,
-        params: Union[SamplingParams, PoolingParams],
-        arrival_time: Optional[float] = None,
-        lora_request: Optional[LoRARequest] = None,
+            self,
+            request_id: str,
+            inputs: PromptInputs,
+            params: Union[SamplingParams, PoolingParams],
+            arrival_time: Optional[float] = None,
+            lora_request: Optional[LoRARequest] = None,
+            trace_headers: Optional[Dict[str, str]] = None,
+            prompt_adapter_request: Optional[PromptAdapterRequest] = None
     ) -> None:
         if lora_request is not None and not self.lora_config:
             raise ValueError(f"Got lora_request {lora_request} but LoRA is "
@@ -386,7 +460,10 @@ class _AsyncLLMEngine(LLMEngine):
             arrival_time = time.time()
 
         processed_inputs = await self.process_model_inputs_async(
-            request_id=request_id, inputs=inputs, lora_request=lora_request)
+            request_id=request_id,
+            inputs=inputs,
+            lora_request=lora_request,
+            prompt_adapter_request=prompt_adapter_request)
 
         self._add_processed_request(
             request_id=request_id,
@@ -394,9 +471,13 @@ class _AsyncLLMEngine(LLMEngine):
             params=params,
             arrival_time=arrival_time,
             lora_request=lora_request,
+            prompt_adapter_request=prompt_adapter_request,
+            trace_headers=trace_headers,
         )
 
     async def check_health_async(self) -> None:
+        if self.tokenizer:
+            self.tokenizer.check_health()
         self.model_executor.check_health()
 
 
@@ -466,17 +547,42 @@ class AsyncLLMEngine:
         """Creates an async LLM engine from the engine arguments."""
         # Create the engine configs.
         engine_config = engine_args.create_engine_config()
+
+        if engine_args.engine_use_ray:
+            from vllm.executor import ray_utils
+            ray_utils.assert_ray_available()
+
         distributed_executor_backend = (
             engine_config.parallel_config.distributed_executor_backend)
 
         if engine_config.device_config.device_type == "neuron":
             from vllm.executor.neuron_executor import NeuronExecutorAsync
             executor_class = NeuronExecutorAsync
+        elif engine_config.device_config.device_type == "tpu":
+            from vllm.executor.tpu_executor import TPUExecutorAsync
+            executor_class = TPUExecutorAsync
         elif engine_config.device_config.device_type == "cpu":
             assert distributed_executor_backend is None, (
                 "Distributed execution is not supported with the CPU backend.")
             from vllm.executor.cpu_executor import CPUExecutorAsync
             executor_class = CPUExecutorAsync
+        elif engine_config.device_config.device_type == "openvino":
+            assert distributed_executor_backend is None, (
+                "Distributed execution is not supported with "
+                "the OpenVINO backend.")
+            from vllm.executor.openvino_executor import OpenVINOExecutorAsync
+            executor_class = OpenVINOExecutorAsync
+        elif engine_config.device_config.device_type == "xpu":
+            if distributed_executor_backend is None:
+                from vllm.executor.xpu_executor import XPUExecutorAsync
+                executor_class = XPUExecutorAsync
+            elif distributed_executor_backend == "ray":
+                initialize_ray_cluster(engine_config.parallel_config)
+                from vllm.executor.ray_xpu_executor import RayXPUExecutorAsync
+                executor_class = RayXPUExecutorAsync
+            else:
+                raise RuntimeError(
+                    "Not supported distributed execution model on XPU device.")
         elif distributed_executor_backend == "ray":
             initialize_ray_cluster(engine_config.parallel_config)
             from vllm.executor.ray_gpu_executor import RayGPUExecutorAsync
@@ -560,7 +666,8 @@ class AsyncLLMEngine:
             # order of the arguments.
             cache_config = kwargs["cache_config"]
             parallel_config = kwargs["parallel_config"]
-            if parallel_config.tensor_parallel_size == 1:
+            if (parallel_config.tensor_parallel_size == 1
+                    and parallel_config.pipeline_parallel_size == 1):
                 num_gpus = cache_config.gpu_memory_utilization
             else:
                 num_gpus = 1
@@ -568,14 +675,15 @@ class AsyncLLMEngine:
                 self._engine_class).remote
         return engine_class(*args, **kwargs)
 
-    async def engine_step(self) -> bool:
+    async def engine_step(self, virtual_engine: int) -> bool:
         """Kick the engine to process the waiting requests.
 
         Returns True if there are in-progress requests."""
         
         new_requests, finished_requests = (
             self._request_tracker.get_new_and_finished_requests())
-        if self.engine.scheduler.reach_ddl:
+        reach_ddls = [scheduler.reach_ddl for scheduler in self.engine.scheduler]
+        if any(reach_ddls):
             new_requests_ids = [r["request_id"] for r in new_requests]
             for request_id in set(new_requests_ids).union(finished_requests):
                 await self._engine_abort([request_id])
@@ -604,23 +712,32 @@ class AsyncLLMEngine:
         if self.engine_use_ray:
             request_outputs = await self.engine.step.remote()  # type: ignore
         else:
-            request_outputs = await self.engine.step_async()
+            request_outputs = await self.engine.step_async(virtual_engine)
 
-        # if request_outputs != None:
-            # Put the outputs into the corresponding streams.
+        # Put the outputs into the corresponding streams.
+        finished = True
         for request_output in request_outputs:
-            # if request_output.request_id not in self._request_tracker._request_streams:
-                # print(f"request_id {request_output.request_id} not in streams. finished_requests: {[r.request_id for r in finished_requests]}, new_requests: {[r.request_id for r in new_requests]}")
             self._request_tracker.process_request_output(
                 request_output, verbose=self.log_requests)
             
         if time.time()-self.engine_start_time > self.max_serving_time:
-            self.engine.scheduler.reach_ddl = True
-        if self.engine.scheduler.reach_ddl:
-            for request in self.engine.scheduler.waiting+self.engine.scheduler.running+self.engine.scheduler.swapped:
+            reach_ddls.append(True) 
+        if any(reach_ddls):
+            all_requests = []
+            for scheduler in self.engine.scheduler:
+                all_requests.extend(list(scheduler.waiting+scheduler.running+scheduler.swapped))
+        
+
+            for request in all_requests:
                 await self._engine_abort([request.request_id])
                 self._request_tracker.process_request_reach_ddl_output(request.request_id, [])
-        return len(request_outputs) > 0
+        finished = True
+        for request_output in request_outputs:
+            self._request_tracker.process_request_output(
+                request_output, verbose=self.log_requests)
+            finished = finished and request_output.finished 
+
+        return not finished
         # else:
         #     # reach ddl:
         #     return False
@@ -633,27 +750,69 @@ class AsyncLLMEngine:
             self.engine.abort_request(request_ids)
 
     async def run_engine_loop(self):
-        has_requests_in_progress = False
+        # if self.engine_use_ray:
+        #     pipeline_parallel_size = 1  # type: ignore
+        # else:
+        #     pipeline_parallel_size = \
+        #         self.engine.parallel_config.pipeline_parallel_size
+        pipeline_parallel_size = 1 if self.engine_use_ray else self.engine.parallel_config.pipeline_parallel_size
+        has_requests_in_progress = [False] * pipeline_parallel_size
         while True:
-            if not has_requests_in_progress:
-                logger.info("Waiting for new requests...")
+            if not any(has_requests_in_progress):
+                logger.debug("Waiting for new requests...")
+                # Stop the execute model loop in parallel workers until there
+                # are more requests to process. This avoids waiting
+                # indefinitely in torch.distributed ops which may otherwise
+                # timeout, and unblocks the RPC thread in the workers so that
+                # they can process any other queued control plane messages,
+                # such as add/remove lora adapters.
+                if self.engine_use_ray:
+                    await (self.engine.stop_remote_worker_execution_loop.
+                           remote()  # type: ignore
+                           )
+                else:
+                    await self.engine.stop_remote_worker_execution_loop_async()
                 await self._request_tracker.wait_for_new_requests()
-                logger.info("Got new requests!")
+                logger.debug("Got new requests!")
+                requests_in_progress = [
+                    asyncio.create_task(self.engine_step(ve))
+                    for ve in range(pipeline_parallel_size)
+                ]
+                has_requests_in_progress = [True] * pipeline_parallel_size
+
             # Abort if iteration takes too long due to unrecoverable errors
             # (eg. NCCL timeouts).
             try:
-                has_requests_in_progress = await asyncio.wait_for(
-                    self.engine_step(), ENGINE_ITERATION_TIMEOUT_S)
-            #     if self.engine.scheduler.reach_ddl:
-            #         raise ReachDDLException("reach ddl")
-            # except ReachDDLException as e:
-            #     raise e
-            except (asyncio.TimeoutError,asyncio.CancelledError) as exc:
-                if exc == asyncio.TimeoutError:
-                    logger.error(
-                        "Engine iteration timed out. This should never happen!")
-                elif exc == asyncio.CancelledError:
-                    logger.error("Engine iteration cancelled due to the max serving time reached.")
+                async with asyncio_timeout(ENGINE_ITERATION_TIMEOUT_S):
+                    done, _ = await asyncio.wait(
+                        requests_in_progress,
+                        return_when=asyncio.FIRST_COMPLETED)
+                    for _ in range(pipeline_parallel_size):
+                        await asyncio.sleep(0)
+                for task in done:
+                    result = task.result()
+                    virtual_engine = requests_in_progress.index(task)
+                    if self.engine_use_ray:
+                        has_unfinished_requests = (
+                            await (self.engine.
+                                   has_unfinished_requests_for_virtual_engine.
+                                   remote(  # type: ignore
+                                       virtual_engine)))
+                    else:
+                        has_unfinished_requests = (
+                            self.engine.
+                            has_unfinished_requests_for_virtual_engine(
+                                virtual_engine))
+                    if result or has_unfinished_requests:
+                        requests_in_progress[virtual_engine] = (
+                            asyncio.create_task(
+                                self.engine_step(virtual_engine)))
+                        has_requests_in_progress[virtual_engine] = True
+                    else:
+                        has_requests_in_progress[virtual_engine] = False
+            except asyncio.TimeoutError as exc:
+                logger.error(
+                    "Engine iteration timed out. This should never happen!")
                 self.set_errored(exc)
                 raise exc
             
@@ -667,6 +826,8 @@ class AsyncLLMEngine:
         params: Union[SamplingParams, PoolingParams],
         arrival_time: Optional[float] = None,
         lora_request: Optional[LoRARequest] = None,
+        trace_headers: Optional[Dict[str, str]] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None
     ) -> AsyncStream:
         if self.log_requests:
             if isinstance(inputs, str):
@@ -702,25 +863,14 @@ class AsyncLLMEngine:
         if arrival_time is None:
             arrival_time = time.time()
 
-        if self.engine_use_ray:
-            processed_inputs = await self.engine.process_model_inputs_async \
-                .remote(  # type: ignore
-                    request_id=request_id,
-                    inputs=inputs,
-                    lora_request=lora_request)
-        else:
-            processed_inputs = await self.engine.process_model_inputs_async(
-                request_id=request_id,
-                inputs=inputs,
-                lora_request=lora_request)
-
         stream = self._request_tracker.add_request(
             request_id,
-            inputs=processed_inputs,
+            inputs=inputs,
             params=params,
             arrival_time=arrival_time,
             lora_request=lora_request,
-        )
+            trace_headers=trace_headers,
+            prompt_adapter_request=prompt_adapter_request)
 
         return stream
 
@@ -730,6 +880,8 @@ class AsyncLLMEngine:
         sampling_params: SamplingParams,
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
+        trace_headers: Optional[Dict[str, str]] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None
     ) -> AsyncIterator[RequestOutput]:
         """Generate outputs for a request.
 
@@ -744,6 +896,9 @@ class AsyncLLMEngine:
             sampling_params: The sampling parameters of the request.
             request_id: The unique id of the request.
             lora_request: LoRA request to use for generation, if any.
+            trace_headers: OpenTelemetry trace headers.
+            prompt_adapter_request: Prompt Adapter request to use 
+                                            for generation, if any.
 
         Yields:
             The output `RequestOutput` objects from the LLMEngine
@@ -797,12 +952,12 @@ class AsyncLLMEngine:
                 inputs,
                 sampling_params,
                 lora_request=lora_request,
+                trace_headers=trace_headers,
+                prompt_adapter_request=prompt_adapter_request,
         ):
             if isinstance(output, list):
                 raise ReachDDLException("reach ddl")
             yield LLMEngine.validate_output(output, RequestOutput)
-
-            
 
     async def encode(
         self,
@@ -810,6 +965,7 @@ class AsyncLLMEngine:
         pooling_params: PoolingParams,
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
+        trace_headers: Optional[Dict[str, str]] = None,
     ) -> AsyncIterator[EmbeddingRequestOutput]:
         """Generate outputs for a request from an embedding model.
 
@@ -824,6 +980,7 @@ class AsyncLLMEngine:
             pooling_params: The pooling parameters of the request.
             request_id: The unique id of the request.
             lora_request: LoRA request to use for generation, if any.
+            trace_headers: OpenTelemetry trace headers.
 
         Yields:
             The output `EmbeddingRequestOutput` objects from the LLMEngine
@@ -875,6 +1032,7 @@ class AsyncLLMEngine:
                 inputs,
                 pooling_params,
                 lora_request=lora_request,
+                trace_headers=trace_headers,
         ):
             yield LLMEngine.validate_output(output, EmbeddingRequestOutput)
 
@@ -885,11 +1043,14 @@ class AsyncLLMEngine:
         params: Union[SamplingParams, PoolingParams],
         *,
         lora_request: Optional[LoRARequest] = None,
+        trace_headers: Optional[Dict[str, str]] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
     ) -> AsyncIterator[Union[RequestOutput, EmbeddingRequestOutput]]:
         """Common logic to process requests with SamplingParams or
         PoolingParams."""
         arrival_time = time.time()
-        if self.engine.scheduler.reach_ddl:
+        reach_ddls = [scheduler.reach_ddl for scheduler in self.engine.scheduler]
+        if any(reach_ddls):
             raise ReachDDLException("Reach DDL")
         stream = await self.add_request(
             request_id,
@@ -897,6 +1058,8 @@ class AsyncLLMEngine:
             params,
             arrival_time=arrival_time,
             lora_request=lora_request,
+            trace_headers=trace_headers,
+            prompt_adapter_request=prompt_adapter_request,
         )
 
         try:
@@ -976,3 +1139,11 @@ class AsyncLLMEngine:
         else:
             await self.engine.check_health_async()
         logger.debug("Health check took %fs", time.perf_counter() - t)
+
+    async def is_tracing_enabled(self) -> bool:
+        if self.engine_use_ray:
+            return await self.engine.is_tracing_enabled.remote(  # type: ignore
+            )
+        else:
+            return self.engine.is_tracing_enabled()
+

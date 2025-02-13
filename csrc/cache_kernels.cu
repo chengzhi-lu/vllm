@@ -1,4 +1,4 @@
-#include <torch/extension.h>
+#include <torch/all.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
 
@@ -21,53 +21,6 @@
 typedef __hip_bfloat16 __nv_bfloat16;
 #endif
 
-class StreamPool {
-public:
-    StreamPool(size_t size) {
-        streams.resize(size);
-        for (size_t i = 0; i < size; ++i) {
-            cudaStreamCreate(&streams[i]);
-        }
-    }
-
-    ~StreamPool() {
-        for (size_t i = 0; i < streams.size(); ++i) {
-            cudaStreamDestroy(streams[i]);
-        }
-    }
-
-    cudaStream_t getStream(size_t i) {
-        return streams[i % streams.size()];
-    }
-
-private:
-    std::vector<cudaStream_t> streams;
-};
-
-static StreamPool* streamPool = nullptr;
-static size_t stream_pool_size = 16; 
-static std::once_flag init_flag;
-void initializeStreamPool() {
-    streamPool = new StreamPool(stream_pool_size);
-}
-
-void parallelMemcpy(const torch::Tensor& block_mapping, size_t num_blocks, int64_t block_size_in_bytes,
-                    char* dst_ptr, char* src_ptr, cudaMemcpyKind memcpy_type, StreamPool& streamPool) {
-    for (size_t i = 0; i < num_blocks; ++i) {
-        int64_t src_block_number = block_mapping[i][0].item<int64_t>();
-        int64_t dst_block_number = block_mapping[i][1].item<int64_t>();
-        int64_t src_offset = src_block_number * block_size_in_bytes;
-        int64_t dst_offset = dst_block_number * block_size_in_bytes;
-        cudaMemcpyAsync(dst_ptr + dst_offset, 
-                        src_ptr + src_offset,
-                        block_size_in_bytes, memcpy_type, streamPool.getStream(i));
-    }
-    // Synchronize all streams
-    for (size_t i = 0; i < num_blocks; ++i) {
-        cudaStreamSynchronize(streamPool.getStream(i));
-    }
-}
-
 void swap_blocks(torch::Tensor& src, torch::Tensor& dst,
                  const torch::Tensor& block_mapping) {
   torch::Device src_device = src.device();
@@ -89,7 +42,7 @@ void swap_blocks(torch::Tensor& src, torch::Tensor& dst,
   // a cpu tensor, otherwise every `item` call will require a gpu-cpu
   // synchronization.
   TORCH_CHECK(block_mapping.device().is_cpu(), "block_mapping must be on CPU");
-  // std::call_once(init_flag, initializeStreamPool);
+
   char* src_ptr = static_cast<char*>(src.data_ptr());
   char* dst_ptr = static_cast<char*>(dst.data_ptr());
 
@@ -107,10 +60,7 @@ void swap_blocks(torch::Tensor& src, torch::Tensor& dst,
     cudaMemcpyAsync(dst_ptr + dst_offset, src_ptr + src_offset,
                     block_size_in_bytes, memcpy_type, stream);
   }
-  
-  // parallelMemcpy(block_mapping, num_blocks, block_size_in_bytes, dst_ptr, src_ptr, memcpy_type, *streamPool);
 }
-
 
 namespace vllm {
 
@@ -145,8 +95,11 @@ __global__ void copy_blocks_kernel(int64_t* key_cache_ptrs,
 
 }  // namespace vllm
 
-void copy_blocks(std::vector<torch::Tensor>& key_caches,
-                 std::vector<torch::Tensor>& value_caches,
+// Note: the key_caches and value_caches vectors are constant but
+// not the Tensors they contain. The vectors need to be const refs
+// in order to satisfy pytorch's C++ operator registration code.
+void copy_blocks(std::vector<torch::Tensor> const& key_caches,
+                 std::vector<torch::Tensor> const& value_caches,
                  const torch::Tensor& block_mapping) {
   int num_layers = key_caches.size();
   TORCH_CHECK(num_layers == value_caches.size());
@@ -305,15 +258,15 @@ void reshape_and_cache(
     torch::Tensor&
         value_cache,  // [num_blocks, num_heads, head_size, block_size]
     torch::Tensor& slot_mapping,  // [num_tokens]
-    const std::string& kv_cache_dtype, const float kv_scale) {
+    const std::string& kv_cache_dtype, const double kv_scale) {
   int num_tokens = key.size(0);
   int num_heads = key.size(1);
   int head_size = key.size(2);
   int block_size = key_cache.size(3);
   int x = key_cache.size(4);
 
-  int key_stride = key.stride(0); // next key index is key_idx + key_stride
-  int value_stride = value.stride(0); //next value index is value_idx + value_stride
+  int key_stride = key.stride(0);
+  int value_stride = value.stride(0);
 
   dim3 grid(num_tokens);
   dim3 block(std::min(num_heads * head_size, 512));
@@ -384,7 +337,7 @@ __global__ void convert_fp8_kernel(const Tin* __restrict__ src_cache,
 
 // Only for testing.
 void convert_fp8(torch::Tensor& dst_cache, torch::Tensor& src_cache,
-                 const float kv_scale, const std::string& kv_cache_dtype) {
+                 const double kv_scale, const std::string& kv_cache_dtype) {
   torch::Device src_device = src_cache.device();
   torch::Device dst_device = dst_cache.device();
   TORCH_CHECK(src_device.is_cuda(), "src must be on a GPU")

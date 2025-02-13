@@ -64,12 +64,12 @@ class DistributedGPUExecutor(GPUExecutor):
                           num_cpu_blocks=num_cpu_blocks)
 
     def execute_model(
-            self,
-            execute_model_req: ExecuteModelRequest) -> List[SamplerOutput]:
+        self, execute_model_req: ExecuteModelRequest
+    ) -> Optional[List[SamplerOutput]]:
         if self.parallel_worker_tasks is None:
             self.parallel_worker_tasks = self._run_workers(
                 "start_worker_execution_loop",
-                async_run_remote_workers_only=True,
+                async_run_tensor_parallel_workers_only=True,
                 **self.extra_execute_model_run_workers_kwargs)
 
         # Only the driver worker returns the sampling results.
@@ -79,12 +79,15 @@ class DistributedGPUExecutor(GPUExecutor):
         if self.parallel_worker_tasks is None:
             return
 
-        self._driver_execute_model()
+        self._driver_execute_model(execute_model_req=None)
         parallel_worker_tasks = self.parallel_worker_tasks
         self.parallel_worker_tasks = None
         # Ensure that workers exit model loop cleanly
         # (this will raise otherwise)
-        self._wait_for_tasks_completion(parallel_worker_tasks)
+        if parallel_worker_tasks is not None:
+            self._wait_for_tasks_completion(parallel_worker_tasks)
+        else:
+            return 
 
     def add_lora(self, lora_request: LoRARequest) -> bool:
         assert lora_request.lora_int_id > 0, "lora_id must be greater than 0."
@@ -97,6 +100,13 @@ class DistributedGPUExecutor(GPUExecutor):
         assert lora_id > 0, "lora_id must be greater than 0."
         return self._run_workers(
             "remove_lora",
+            lora_id=lora_id,
+        )
+
+    def pin_lora(self, lora_id: int) -> bool:
+        assert lora_id > 0, "lora_id must be greater than 0."
+        return self._run_workers(
+            "pin_lora",
             lora_id=lora_id,
         )
 
@@ -116,13 +126,13 @@ class DistributedGPUExecutor(GPUExecutor):
 
     @abstractmethod
     def _driver_execute_model(
-        self,
-        execute_model_req: Optional[ExecuteModelRequest] = None
-    ) -> List[SamplerOutput]:
+        self, execute_model_req: Optional[ExecuteModelRequest]
+    ) -> Optional[List[SamplerOutput]]:
         """Run execute_model in the driver worker.
 
-        Passing None will cause the driver to stop the model execution
-        loop running in each of the remote workers.
+        Passing None will cause the driver to stop the model execution loop
+        running in each of the remote workers. In this case, this method
+        returns None. Otherwise, this method returns the model output.
         """
         raise NotImplementedError
 
@@ -131,17 +141,17 @@ class DistributedGPUExecutor(GPUExecutor):
         self,
         method: str,
         *args,
-        async_run_remote_workers_only: bool = False,
+        async_run_tensor_parallel_workers_only: bool = False,
         max_concurrent_workers: Optional[int] = None,
         **kwargs,
     ) -> Any:
         """Runs the given method on all workers.
 
         Args:
-            async_run_remote_workers_only: If True the method will be run only
-                in the remote workers, not the driver worker. It will also be
-                run asynchronously and return a list of futures rather than
-                blocking on the results.
+            async_run_tensor_parallel_workers_only: If True the method will be
+                run only in the remote TP workers, not the driver worker.
+                It will also be run asynchronously and return a list of futures
+                rather than blocking on the results.
         """
         raise NotImplementedError
 
@@ -174,8 +184,10 @@ class DistributedGPUExecutorAsync(DistributedGPUExecutor, ExecutorAsyncBase):
         self.parallel_worker_tasks = None
         # Ensure that workers exit model loop cleanly
         # (this will raise otherwise)
-        await parallel_worker_tasks
-
+        if parallel_worker_tasks is not None:
+            await parallel_worker_tasks
+        else:
+            return
     @abstractmethod
     async def _driver_execute_model_async(
         self,
