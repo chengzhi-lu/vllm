@@ -1,6 +1,7 @@
 import dataclasses
 import importlib
 import os
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
 
@@ -257,7 +258,12 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                 self.model_runner.
                 make_model_input_from_broadcasted_tensor_dict(broadcast_data))
 
-        self.execute_worker(worker_input)
+        swap_time = 0.0
+        if not self.cache_config.swap_parallelize:
+            st = time.time()
+            self.execute_worker(worker_input)
+            et = time.time()
+            swap_time = et - st
 
         # If there is no input, we don't need to execute the model.
         if worker_input.num_seq_groups == 0:
@@ -279,6 +285,8 @@ class LocalOrDistributedWorkerBase(WorkerBase):
 
         # Worker only supports single-step execution. Wrap the output in a
         # list to conform to interface.
+        for i in range(len(output)):
+            output[i].swap_time = swap_time
         return output
 
 

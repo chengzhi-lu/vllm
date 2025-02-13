@@ -183,7 +183,7 @@ class UncachedBlockAllocator(BlockAllocatorBase):
         self.device = device
         self.block_size = block_size
         self.num_blocks = num_blocks
-        self.num_shared_blocks = num_shared_blocks
+        self.num_shared_blocks = 0 
         self.free_shared_blocks: BlockTable = []
         # Initialize the free blocks.
         self.free_blocks: BlockTable = []
@@ -327,14 +327,6 @@ class BlockSpaceManagerV1(BlockSpaceManager):
     def _get_seq_num_required_blocks(self, seq: Sequence) -> int:
         return 0 if seq is None else seq.n_blocks
 
-        # Mapping: req_id -> BlockTable
-        # Note that each SequenceGroup has a unique
-        # request ID
-        self.cross_block_tables: Dict[str, BlockTable] = {}
-
-    def _get_seq_num_required_blocks(self, seq: Sequence) -> int:
-        return 0 if seq is None \
-            else len(seq.logical_token_blocks)
 
     def can_allocate(self, seq_group: SequenceGroup, shared=False) -> AllocStatus:
         # FIXME(woosuk): Here we assume that all sequences in the group share
@@ -380,8 +372,6 @@ class BlockSpaceManagerV1(BlockSpaceManager):
                            ref_count: int, \
                            shared: bool=False, \
                            is_encoder_decoder: bool = True) -> BlockTable:
-        # Allocate new physical token blocks that will store the prompt tokens.
-        num_prompt_blocks = len(seq.logical_token_blocks)
         # Allocate new physical token blocks that will store the prompt tokens.
         num_prompt_blocks = seq.n_blocks
 
@@ -949,3 +939,4 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         if self.enable_caching:
             for seq in seq_group.seqs_dict.values():
                 self.compute_full_blocks_in_seq(seq)
+

@@ -689,10 +689,12 @@ class LLMEngine:
             request_id=request_id,
             seqs=[seq],
             arrival_time=arrival_time,
+            execution_budget=self.scheduler_config.execution_budget,
             sampling_params=sampling_params,
             lora_request=lora_request,
             trace_headers=trace_headers,
-            prompt_adapter_request=prompt_adapter_request)
+            prompt_adapter_request=prompt_adapter_request,
+            vocab_size= self.model_config.get_vocab_size())
 
         return seq_group
 
@@ -710,7 +712,7 @@ class LLMEngine:
         pooling_params = pooling_params.clone()
         # Create the sequence group.
         seq_group = SequenceGroup(
-             request_id=request_id,
+            request_id=request_id,
             seqs=[seq],
             arrival_time=arrival_time,
             lora_request=lora_request,
@@ -815,11 +817,10 @@ class LLMEngine:
             if seq_group_meta.do_sample:
                 self.output_processor.process_outputs(seq_group, outputs)
 
-        
         # Free the finished sequence groups.
         for scheduler in self.scheduler:
             scheduler.free_finished_seq_groups()
-        self.has_finished_seq = self.scheduler.has_finished_seqs
+
         additional_info = AdditionalInfo(
             num_running_to_waiting=num_running_to_waiting,
             num_waiting_to_running=num_waiting_to_running,
@@ -1016,19 +1017,8 @@ class LLMEngine:
             len(scheduler.waiting) for scheduler in self.scheduler)
 
         # Free internel memory in GPU blocks of the seq in waiting queue
-        num_in_page_fragements_each_seq = 0
         num_in_page_fragements = 0.0
 
-        for seq_group in self.scheduler.running:
-            for seq in seq_group.get_seqs():
-                for token_block in seq.logical_token_blocks:
-                    num_in_page_fragements_each_seq += token_block.get_num_empty_slots(
-                    )
-                if len(seq.logical_token_blocks) > 0:
-                    num_in_page_fragements += num_in_page_fragements_each_seq / float(
-                        len(seq.logical_token_blocks))
-                else:
-                    num_in_page_fragements += 0
 
         # KV Cache Usage in %
         num_total_gpu = self.cache_config.num_gpu_blocks
@@ -1055,8 +1045,9 @@ class LLMEngine:
         num_preemption_iter = (0 if scheduler_outputs is None else
                                scheduler_outputs.preempted)
         num_preemption_tokens_iter = 0
-        for seq_group in self.scheduler.swapped:
-            num_preemption_tokens_iter = seq_group.seq_len
+        for scheduler in self.scheduler:
+            for seq_group in scheduler.swapped:
+                num_preemption_tokens_iter = seq_group.seq_len
         # Request stats
         #   Latency
         time_e2e_requests: List[float] = []
@@ -1269,3 +1260,4 @@ class LLMEngine:
             seq_span.set_attribute(
                 SpanAttributes.LLM_LATENCY_TIME_TO_FIRST_TOKEN, ttft)
             seq_span.set_attribute(SpanAttributes.LLM_LATENCY_E2E, e2e_time)
+

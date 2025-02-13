@@ -243,16 +243,6 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         self.multi_modal_input_mapper = MULTIMODAL_REGISTRY \
             .create_input_mapper(self.model_config)
 
-        # Create processor for multi-modal data
-        if self.vision_language_config is not None:
-            self.multi_modal_input_processor = MULTIMODAL_REGISTRY \
-                .create_input_processor(
-                    self.model_config,
-                    self.vision_language_config,
-                )
-        else:
-            self.multi_modal_input_processor = None
-
         # Lazy initialization
         self.model: nn.Module  # Set after load_model
         # Set after load_model.
@@ -804,13 +794,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                 use_cuda_graph=use_captured_graph,
             )
 
-        if self.lora_config:
-            lora_mapping = LoRAMapping(
-                lora_index_mapping,
-                lora_prompt_mapping,
-            )
-        else:
-            lora_mapping = None
+        lora_mapping = LoRAMapping(lora_index_mapping, lora_prompt_mapping) if self.lora_config else None
 
         if self.prompt_adapter_config:
             prompt_adapter_mapping = PromptAdapterMapping(
@@ -1098,10 +1082,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                                 self.parallel_config))
                         num_kv_heads = self.model_config.get_num_kv_heads(
                             self.parallel_config)
-                        if num_qo_heads // num_kv_heads >= 4:
-                            use_tensor_cores = True
-                        else:
-                            use_tensor_cores = False
+                        use_tensor_cores = num_qo_heads // num_kv_heads >= 4
                         decode_wrapper = \
                             CUDAGraphBatchDecodeWithPagedKVCacheWrapper(
                             decode_workspace_buffer, indptr_buffer,

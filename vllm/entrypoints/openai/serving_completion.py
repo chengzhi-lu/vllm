@@ -484,3 +484,4 @@ class OpenAIServingCompletion(OpenAIServing):
             request, prompt_ids=request.tokens)
 
         return DetokenizeResponse(prompt=input_text)
+

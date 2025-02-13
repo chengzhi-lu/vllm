@@ -84,7 +84,10 @@ class DistributedGPUExecutor(GPUExecutor):
         self.parallel_worker_tasks = None
         # Ensure that workers exit model loop cleanly
         # (this will raise otherwise)
-        self._wait_for_tasks_completion(parallel_worker_tasks)
+        if parallel_worker_tasks is not None:
+            self._wait_for_tasks_completion(parallel_worker_tasks)
+        else:
+            return 
 
     def add_lora(self, lora_request: LoRARequest) -> bool:
         assert lora_request.lora_int_id > 0, "lora_id must be greater than 0."
@@ -181,8 +184,10 @@ class DistributedGPUExecutorAsync(DistributedGPUExecutor, ExecutorAsyncBase):
         self.parallel_worker_tasks = None
         # Ensure that workers exit model loop cleanly
         # (this will raise otherwise)
-        await parallel_worker_tasks
-
+        if parallel_worker_tasks is not None:
+            await parallel_worker_tasks
+        else:
+            return
     @abstractmethod
     async def _driver_execute_model_async(
         self,

@@ -294,69 +294,97 @@ class LlamaModel(nn.Module):
         inputs_embeds: Optional[torch.Tensor] = None,
         swapped_blocks: Optional[Dict[str, torch.Tensor]] = None,
      ) -> Union[torch.Tensor, IntermediateTensors]:
-        if swapped_blocks is not None and self.cache_engine is not None:
-            print("parallelizing swapping and computing")
-            swap_in_blocks = swapped_blocks['blocks_to_swap_in']
-            swap_out_blocks = swapped_blocks['blocks_to_swap_out']
-            with torch.cuda.stream(self.stream_compute):
+        # if swapped_blocks is not None and self.cache_engine is not None:
+        #     print("parallelizing swapping and computing")
+        #     swap_in_blocks = swapped_blocks['blocks_to_swap_in']
+        #     swap_out_blocks = swapped_blocks['blocks_to_swap_out']
+        #     with torch.cuda.stream(self.stream_compute):
+        #         hidden_states = inputs_embeds if inputs_embeds is not None else self.get_input_embeddings(input_ids)
+        #     with torch.cuda.stream(self.stream_swap):
+        #         self.cache_engine.pre_swap_out(swap_out_blocks, 0)
+        #         self.cache_engine.pre_swap_in(swap_in_blocks, 0)
+        #         self.events[0].record(stream=self.stream_swap)
+        #     residual = None
+        #     for i in range(len(self.layers)):
+        #         if i < len(self.layers) -1:
+        #             with torch.cuda.stream(self.stream_swap):
+        #                 self.cache_engine.pre_swap_out(swap_out_blocks, i+1)
+        #                 self.cache_engine.pre_swap_in(swap_in_blocks, i+1)
+        #                 self.events[i+1].record(stream=self.stream_swap)
+        #         with torch.cuda.stream(self.stream_compute):
+        #             self.events[i].wait(stream=self.stream_compute)
+        #             layer = self.layers[i]
+        #             hidden_states, residual = layer(
+        #                 positions,
+        #                 hidden_states,
+        #                 self.cache_engine.gpu_cache[i],
+        #                 attn_metadata,
+        #                 residual,
+        #             )
+        # else:
+        #     print("not parallelizing swapping and computing")
+        #     hidden_states = inputs_embeds if inputs_embeds is not None else self.get_input_embeddings(input_ids)
+        #     residual = None
+        #     for i in range(len(self.layers)):
+        #         layer=self.layers[i]
+        #         hidden_states, residual = layer(
+        #                     positions,
+        #                     hidden_states,
+        #                     kv_caches[i],
+        #                     attn_metadata,
+        #                     residual,
+        #                 ) 
+        
+        # torch.cuda.synchronize()
+   
+        if get_pp_group().is_first_rank:
+            if swapped_blocks is not None and self.cache_engine is not None:
+                swap_in_blocks = swapped_blocks['blocks_to_swap_in']
+                swap_out_blocks = swapped_blocks['blocks_to_swap_out']
+                with torch.cuda.stream(self.stream_compute):
+                    hidden_states = inputs_embeds if inputs_embeds is not None else self.get_input_embeddings(input_ids)
+                with torch.cuda.stream(self.stream_swap):
+                    self.cache_engine.pre_swap_out(swap_out_blocks, 0)
+                    self.cache_engine.pre_swap_in(swap_in_blocks, 0)
+                    self.events[0].record(stream=self.stream_swap)
+                residual = None
+            else:
                 hidden_states = inputs_embeds if inputs_embeds is not None else self.get_input_embeddings(input_ids)
-            with torch.cuda.stream(self.stream_swap):
-                self.cache_engine.pre_swap_out(swap_out_blocks, 0)
-                self.cache_engine.pre_swap_in(swap_in_blocks, 0)
-                self.events[0].record(stream=self.stream_swap)
-            residual = None
-            for i in range(len(self.layers)):
-                if i < len(self.layers) -1:
-                    with torch.cuda.stream(self.stream_swap):
-                        self.cache_engine.pre_swap_out(swap_out_blocks, i+1)
-                        self.cache_engine.pre_swap_in(swap_in_blocks, i+1)
-                        self.events[i+1].record(stream=self.stream_swap)
+                residual = None
+
+        else:
+            assert intermediate_tensors is not None
+            hidden_states = intermediate_tensors["hidden_states"]
+            residual = intermediate_tensors["residual"]
+
+        if swapped_blocks is not None and self.cache_engine is not None:
+            for i in range(self.start_layer, self.end_layer):
+                if i < self.end_layer -1:
+                        with torch.cuda.stream(self.stream_swap):
+                            self.cache_engine.pre_swap_out(swap_out_blocks, i+1)
+                            self.cache_engine.pre_swap_in(swap_in_blocks, i+1)
+                            self.events[i+1].record(stream=self.stream_swap)
                 with torch.cuda.stream(self.stream_compute):
                     self.events[i].wait(stream=self.stream_compute)
                     layer = self.layers[i]
                     hidden_states, residual = layer(
                         positions,
                         hidden_states,
-                        self.cache_engine.gpu_cache[i],
+                        self.cache_engine.gpu_cache[i - self.start_layeri],
                         attn_metadata,
                         residual,
                     )
+            torch.cuda.synchronize()
         else:
-            print("not parallelizing swapping and computing")
-            hidden_states = inputs_embeds if inputs_embeds is not None else self.get_input_embeddings(input_ids)
-            residual = None
-            for i in range(len(self.layers)):
-                layer=self.layers[i]
+            for i in range(self.start_layer, self.end_layer):
+                layer = self.layers[i]
                 hidden_states, residual = layer(
-                            positions,
-                            hidden_states,
-                            kv_caches[i],
-                            attn_metadata,
-                            residual,
-                        ) 
-        
-        torch.cuda.synchronize()
-   
-        if get_pp_group().is_first_rank:
-            if inputs_embeds is not None:
-                hidden_states = inputs_embeds
-            else:
-                hidden_states = self.get_input_embeddings(input_ids)
-            residual = None
-        else:
-            assert intermediate_tensors is not None
-            hidden_states = intermediate_tensors["hidden_states"]
-            residual = intermediate_tensors["residual"]
-
-        for i in range(self.start_layer, self.end_layer):
-            layer = self.layers[i]
-            hidden_states, residual = layer(
-                positions,
-                hidden_states,
-                kv_caches[i - self.start_layer],
-                attn_metadata,
-                residual,
-            )
+                    positions,
+                    hidden_states,
+                    kv_caches[i - self.start_layer],
+                    attn_metadata,
+                    residual,
+                )
 
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({
@@ -406,7 +434,6 @@ class LlamaForCausalLM(nn.Module, SupportsLoRA):
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
         lora_config: Optional[LoRAConfig] = None,
-        cache_engine: Optional[CacheEngine] = None,
     ) -> None:
         super().__init__()
 

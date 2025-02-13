@@ -277,14 +277,16 @@ class LoggingStatLogger(StatLoggerBase):
     def info(self, type: str, obj: SupportsMetricsInfo) -> None:
         raise NotImplementedError
 
-    def log(self, stats: Stats) -> None:
+    def log(self, stats: Stats):
         """Called by LLMEngine.
            Logs to Stdout every self.local_interval seconds."""
 
         # Save tracked stats for token counters.
         self.num_prompt_tokens.append(stats.num_prompt_tokens_iter)
         self.num_generation_tokens.append(stats.num_generation_tokens_iter)
-
+        self.last_num_preemption_iter += stats.num_preemption_iter
+        if stats.num_preemption_iter > 0:
+            logger.debug("Num preemption: %d", self.last_num_preemption_iter)
         # Log locally every local_interval seconds.
         if local_interval_elapsed(stats.now, self.last_local_log,
                                   self.local_interval):
@@ -298,27 +300,27 @@ class LoggingStatLogger(StatLoggerBase):
                 now=stats.now,
                 last_log=self.last_local_log)
 
+            
             # Log to stdout.
             logger.info(
                 "Avg prompt throughput: %.1f tokens/s, "
                 "Avg generation throughput: %.1f tokens/s, "
                 "Running: %d reqs, Swapped: %d reqs, "
+                "Partial Swapped: %d reqs, "
                 "Pending: %d reqs, GPU KV cache usage: %.1f%%, "
-                "CPU KV cache usage: %.1f%%.",
-                prompt_throughput,
-                generation_throughput,
-                stats.num_running_sys,
-                stats.num_swapped_sys,
+                "CPU KV cache usage: %.1f%%, "
+                "Preemption per iter: %d", prompt_throughput,
+                generation_throughput, stats.num_running_sys,
+                stats.num_swapped_sys, stats.num_partial_swapped_sys,
                 stats.num_waiting_sys,
                 stats.gpu_cache_usage_sys * 100,
-                stats.cpu_cache_usage_sys * 100,
-            )
+                stats.cpu_cache_usage_sys * 100, stats.num_preemption_iter)
 
             # Reset tracked stats for next interval.
             self.num_prompt_tokens = []
             self.num_generation_tokens = []
             self.last_local_log = stats.now
-
+            
             if stats.spec_decode_metrics is not None:
                 logger.info(
                     self._format_spec_decode_metrics_str(
@@ -392,7 +394,6 @@ class PrometheusStatLogger(StatLoggerBase):
                           stats.num_prompt_tokens_iter)
         self._log_counter(self.metrics.counter_generation_tokens,
                           stats.num_generation_tokens_iter)
-        
         self._log_histogram(self.metrics.histogram_time_to_first_token,
                             stats.time_to_first_tokens_iter)
         self._log_histogram(self.metrics.histogram_time_per_output_token,
@@ -408,8 +409,6 @@ class PrometheusStatLogger(StatLoggerBase):
         self._log_counter_labels(self.metrics.counter_request_success,
                                  finished_reason_counter,
                                  Metrics.labelname_finish_reason)
-        self._log_counter(self.metrics.counter_total_generation_tokens,
-                          stats.num_total_generation_tokens)
         self._log_histogram(self.metrics.histogram_num_prompt_tokens_request,
                             stats.num_prompt_tokens_requests)
         self._log_histogram(
@@ -441,9 +440,7 @@ class PrometheusStatLogger(StatLoggerBase):
         # Save tracked stats for token counters.
         self.num_prompt_tokens.append(stats.num_prompt_tokens_iter)
         self.num_generation_tokens.append(stats.num_generation_tokens_iter)
-        self.last_num_preemption_iter += stats.num_preemption_iter
-        if stats.num_preemption_iter > 0:
-            logger.debug("Num preemption: %d", self.last_num_preemption_iter)
+
         # Log locally every local_interval seconds.
         if local_interval_elapsed(stats.now, self.last_local_log,
                                   self.local_interval):
@@ -460,21 +457,6 @@ class PrometheusStatLogger(StatLoggerBase):
             self._log_prometheus_interval(
                 prompt_throughput=prompt_throughput,
                 generation_throughput=generation_throughput)
-            
-            # Log to stdout.
-            logger.info(
-                "Avg prompt throughput: %.1f tokens/s, "
-                "Avg generation throughput: %.1f tokens/s, "
-                "Running: %d reqs, Swapped: %d reqs, "
-                "Partial Swapped: %d reqs, "
-                "Pending: %d reqs, GPU KV cache usage: %.1f%%, "
-                "CPU KV cache usage: %.1f%%, "
-                "Preemption per iter: %d", prompt_throughput,
-                generation_throughput, stats.num_running_sys,
-                stats.num_swapped_sys, stats.num_partial_swapped_sys,
-                stats.num_waiting_sys,
-                stats.gpu_cache_usage_sys * 100,
-                stats.cpu_cache_usage_sys * 100, stats.num_preemption_iter)
 
             # Reset tracked stats for next interval.
             self.num_prompt_tokens = []

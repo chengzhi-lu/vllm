@@ -24,12 +24,12 @@ dataset_path="/root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
 result_dir="${pwd}/result"
 declare -a scheduler_swap_policies
 scheduler_swap_policies[0]="tfittradeoff partial"
-scheduler_swap_policies[1]="fcfs full"
+# scheduler_swap_policies[1]="fcfs full"
 # scheduler_swap_policies[3]="tfittradeoff full"
-scheduler_swap_policies[2]="sjf full"
+# scheduler_swap_policies[2]="sjf full"
 # scheduler_swap_policies[5]="srjf full"
-scheduler_swap_policies[3]="sjmlfq full"
-scheduler_swap_policies[4]="las full"
+# scheduler_swap_policies[3]="sjmlfq full"
+# scheduler_swap_policies[4]="las full"
 # scheduler_swap_policies[3]="infer partial"
 # scheduler_swap_policies[4]="inferpreempt full"
 # scheduler_swap_policies[5]="sjmlfq full"
@@ -37,10 +37,10 @@ scheduler_swap_policies[4]="las full"
 preemption_mode="swap"
 gpu_memory_utilization=0.6 # 0.5, 0.7, 0.9
 # max_num_seqs=25
-# max_num_seqs=384
+# max_num_seqs=96
 # max_num_seqs=2048
-max_num_seqs=1024
-# max_num_seqs=128
+# max_num_seqs=256
+max_num_seqs=128
 # max_num_seqs=1024
 swap_space=20
 # swap_space=32
@@ -49,15 +49,15 @@ iter_theshold=15
 max_serving_time=86400 # 86400
 request_duration=240 # 1
 num_shared_blocks=0
-
+TOKENIZERS_PARALLELISM=true
 # request_rates[0]=0.5
 # request_rates[1]=1.0
 # request_rates[0]=2.0
 request_rates[1]=5.0
-request_rates[2]=10.0
+# request_rates[2]=10.0
 # request_rates[4]=10.0
-request_rates[3]=20.0
-request_rates[4]=50.0
+# request_rates[3]=20.0
+# request_rates[4]=50.0
 # request_rates[5]=30.0
 # request_rates[5]=50.0
 # request_rates[5]=100.0
@@ -76,10 +76,10 @@ for waiting_iter in "${waiting_iter_base[@]}"; do
       policy=${element[0]}
       swap_policy=${element[1]}
 
-      CUDA_VISIBLE_DEVICES=$gpu_devices taskset -c 28-29 python3 -m vllm.entrypoints.openai.api_server \
+      CUDA_VISIBLE_DEVICES=$gpu_devices RAY_DEDUP_LOGS=0  taskset -c 28-29 python3 -m vllm.entrypoints.openai.api_server \
       --model $model_name --swap-space $swap_space --preemption-mode $preemption_mode --scheduler-policy $policy --enforce-eager\
-      --enable-chunked-prefill --max-num-batched-tokens $max_tokens --iter-threshold $iter_theshold --max-num-seqs $max_num_seqs --swap-out-tokens-policy $swap_policy --swap-out-partial-rate $swap_out_partial_rate --execution-budget $iter_theshold \
-      --tensor-parallel-size $num_gpus --num-shared-blocks $num_shared_blocks --gpu-memory-utilization $gpu_memory_utilization --disable-sliding-window --waiting-iter-base $waiting_iter --disable-log-requests --max-serving-time $max_serving_time >api_server_${policy}_${swap_policy}.log 2>&1 &
+      --enable-chunked-prefill --max-num-batched-tokens $max_tokens --iter-threshold $iter_theshold --max-num-seqs $max_num_seqs --swap-out-tokens-policy $swap_policy --swap-out-partial-rate $swap_out_partial_rate --execution-budget $iter_theshold --worker-use-ray\
+      --pipeline-parallel-size $num_gpus --num-shared-blocks $num_shared_blocks --gpu-memory-utilization $gpu_memory_utilization --disable-sliding-window --waiting-iter-base $waiting_iter --disable-log-requests --max-serving-time $max_serving_time >api_server_${policy}_${swap_policy}.log 2>&1 &
       pid=$!
 
         for request_rate in "${request_rates[@]}"; do

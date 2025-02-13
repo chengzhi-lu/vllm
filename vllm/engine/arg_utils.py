@@ -88,14 +88,6 @@ class EngineArgs:
     execution_budget:int = 32768 
     max_serving_time: int = 600
 
-    # Related to Vision-language models such as llava
-    image_input_type: Optional[str] = None
-    image_token_id: Optional[int] = None
-    image_input_shape: Optional[str] = None
-    image_feature_size: Optional[int] = None
-    image_processor: Optional[str] = None
-    image_processor_revision: Optional[str] = None
-    disable_image_processor: bool = False
 
     scheduler_delay_factor: float = 0.0
     enable_chunked_prefill: bool = False

@@ -51,7 +51,7 @@ try:
 except ImportError:
     from argparse import ArgumentParser as FlexibleArgumentParser
 
-
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 @dataclass
 class BenchmarkMetrics:
     completed: int

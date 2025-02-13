@@ -1928,76 +1928,6 @@ class Scheduler:
             now=time.time(),
         )
         curr_loras: Set[int] = set()
-
-        remaining_waiting, prefills = (self.waiting,
-                                       SchedulerPrefillOutputs.create_empty())
-        remaining_running, running_scheduled = (
-            self.running, SchedulerRunningOutputs.create_empty())
-        remaining_swapped, swapped_in = (
-            self.swapped, SchedulerSwappedInOutputs.create_empty())
-
-        # Decoding should be always scheduled first by fcfs.
-        fcfs_policy = PolicyFactory.get_policy(policy_name="fcfs")
-        remaining_running, running_scheduled = self._schedule_running(
-            self.running,
-            budget,
-            curr_loras,
-            fcfs_policy,
-            enable_chunking=True)
-
-        # Schedule swapped out requests.
-        # If preemption happens, it means we don't have space for swap-in.
-        if len(running_scheduled.preempted) + len(
-                running_scheduled.swapped_out) == 0:
-            remaining_swapped, swapped_in = self._schedule_swapped(
-                self.swapped, budget, curr_loras, fcfs_policy)
-
-        # Schedule new prefills.
-        remaining_waiting, prefills = self._schedule_prefills(
-            self.waiting, budget, curr_loras, enable_chunking=True)
-
-        assert (budget.num_batched_tokens <=
-                self.scheduler_config.max_num_batched_tokens)
-        assert budget.num_curr_seqs <= self.scheduler_config.max_num_seqs
-
-        # Update waiting requests.
-        self.waiting = remaining_waiting
-        self.waiting.extendleft(running_scheduled.preempted)
-        # Update new running requests.
-        self.running = remaining_running
-        self.running.extend([s.seq_group for s in prefills.seq_groups])
-        self.running.extend(
-            [s.seq_group for s in running_scheduled.decode_seq_groups])
-        self.running.extend(
-            [s.seq_group for s in running_scheduled.prefill_seq_groups])
-        self.running.extend(
-            [s.seq_group for s in swapped_in.decode_seq_groups])
-        self.running.extend(
-            [s.seq_group for s in swapped_in.prefill_seq_groups])
-        # Update swapped requests.
-        self.swapped = remaining_swapped
-        self.swapped.extend(running_scheduled.swapped_out)
-        return SchedulerOutputs(
-            scheduled_seq_groups=(prefills.seq_groups +
-                                  running_scheduled.prefill_seq_groups +
-                                  swapped_in.prefill_seq_groups +
-                                  running_scheduled.decode_seq_groups +
-                                  swapped_in.decode_seq_groups),
-            num_prefill_groups=(len(prefills.seq_groups) +
-                                len(swapped_in.prefill_seq_groups) +
-                                len(running_scheduled.prefill_seq_groups)),
-            num_batched_tokens=budget.num_batched_tokens,
-            blocks_to_swap_in=swapped_in.blocks_to_swap_in,
-            blocks_to_swap_out=running_scheduled.blocks_to_swap_out,
-            blocks_to_copy=running_scheduled.blocks_to_copy +
-            swapped_in.blocks_to_copy,
-            ignored_seq_groups=prefills.ignored_seq_groups +
-            swapped_in.infeasible_seq_groups,
-            num_lookahead_slots=running_scheduled.num_lookahead_slots,
-            running_queue_size=len(self.running),
-            swapped_queue_size=len(self.swapped),
-        )
-        curr_loras: Set[int] = set()
         if not self.reach_ddl:
             remaining_waiting, prefills = (
                 self.waiting, SchedulerPrefillOutputs.create_empty())
@@ -2109,7 +2039,6 @@ class Scheduler:
             assert (budget.num_batched_tokens <=
                     self.scheduler_config.max_num_batched_tokens)
             assert budget.num_curr_seqs <= self.scheduler_config.max_num_seqs
-            print(f"token budget left {self.scheduler_config.max_num_batched_tokens-budget.num_batched_tokens}")
 
             # Update waiting requests.
             self.waiting = remaining_waiting
@@ -2158,6 +2087,7 @@ class Scheduler:
                     if not seq.is_finished()
                 ])
 
+            print(f"scheduled_seq_groups: {len(scheduled_seq_groups)}")
             for seq_group in [
                     s.seq_group for s in (running_scheduled.decode_seq_groups +
                                           swapped_in.decode_seq_groups)
@@ -2189,7 +2119,6 @@ class Scheduler:
             computation_iter += memory_new_generated
 
             self.scheduler_metric.gpu_computation_iter = computation_iter
-
             return SchedulerOutputs(
                 scheduled_seq_groups=scheduled_seq_groups,
                 num_prefill_groups=(len(prefills.seq_groups) +
@@ -2448,7 +2377,10 @@ class Scheduler:
         #     print(f"{seq_group.request_id} can swap in shared blocks")
         #     preemption_mode = PreemptionMode.KV_FREE_RECOMPUTE
         else:
-            preemption_mode = preemption_mode
+            if not self.block_manager.can_swap_out(seq_group) and seq_group_status != SequenceStatus.PARTIAL_SWAPPED:
+                preemption_mode = PreemptionMode.RECOMPUTE
+            else:
+                preemption_mode = preemption_mode
 
         if (self.num_cumulative_preemption % 50 == 0
                 and self.num_cumulative_preemption > 0):
@@ -2468,7 +2400,6 @@ class Scheduler:
                                   blocks_to_swap_out,
                                   swap_out_block_nums,
                                   seq_group_status=seq_group_status)
-        print(preemption_mode)
         return preemption_mode
 
     def _preempt_by_recompute(
