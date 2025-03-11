@@ -788,7 +788,7 @@ if __name__ == "__main__":
         default=None,
         help="Server or API base url if not using http host and port.",
     )
-    parser.add_argument("--host", type=str, default="localhost")
+    parser.add_argument("--host", type=str, default="10.119.46.54")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
         "--endpoint",

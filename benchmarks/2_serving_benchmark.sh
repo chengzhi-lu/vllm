@@ -23,23 +23,23 @@ dataset_path="/root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
 # dataset_path="/root/vllm/dataset/alpaca_data.json"
 result_dir="${pwd}/result"
 declare -a scheduler_swap_policies
-# scheduler_swap_policies[0]="tfittradeoff partial"
+scheduler_swap_policies[0]="tfittradeoff partial"
 # scheduler_swap_policies[1]="fcfs full"
 # scheduler_swap_policies[3]="tfittradeoff full"
-scheduler_swap_policies[2]="sjf full"
+# scheduler_swap_policies[2]="sjf full"
 # scheduler_swap_policies[5]="srjf full"
-scheduler_swap_policies[3]="sjmlfq full"
+# scheduler_swap_policies[3]="sjmlfq full"
 # scheduler_swap_policies[4]="las full"
 # scheduler_swap_policies[3]="infer partial"
 # scheduler_swap_policies[4]="inferpreempt full"
 # scheduler_swap_policies[5]="sjmlfq full"
 
 preemption_mode="swap"
-gpu_memory_utilization=0.6 # 0.5, 0.7, 0.9
+gpu_memory_utilization=0.5 #0.6, 0.5, 0.7, 0.9
+# max_num_seqs=25
 # max_num_seqs=96
 # max_num_seqs=2048
-# max_num_seqs=256
-max_num_seqs=256
+max_num_seqs=384
 # max_num_seqs=128
 # max_num_seqs=1024
 swap_space=20
@@ -47,46 +47,41 @@ swap_space=20
 max_tokens=4096
 iter_theshold=15
 max_serving_time=86400 # 86400
-# request_duration=240 # 1
-total_request_nums=1000
+request_duration=240 # 1
 num_shared_blocks=0
 TOKENIZERS_PARALLELISM=true
-# request_rates[0]=0.5
+# request_rates[0]=0.1
 # request_rates[1]=1.0
 # request_rates[0]=2.0
 # request_rates[1]=5.0
 # request_rates[2]=10.0
 # request_rates[4]=10.0
-request_rates[3]=20
+request_rates[3]=20.0
 # request_rates[4]=50.0
 # request_rates[5]=30.0
 # request_rates[5]=50.0
 # request_rates[5]=100.0
 
 # request_rates=(2.0)
-
 swap_out_partial_rates=(0.5)
 waiting_iter_base=(0.1)
-gpu_devices=0,1,2,3
 # gpu_devices=0
 num_gpus=$(echo "$gpu_devices" | tr ',' '\n' | wc -l)
-parallel_type="pp"
+
 for waiting_iter in "${waiting_iter_base[@]}"; do
   for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do
     for scheduler_swap_policy in "${scheduler_swap_policies[@]}"; do
       element=(${scheduler_swap_policy})
       policy=${element[0]}
       swap_policy=${element[1]}
-
-      CUDA_VISIBLE_DEVICES=$gpu_devices RAY_DEDUP_LOGS=0  taskset -c 28-29 python3 -m vllm.entrypoints.openai.api_server \
+      RAY_DEDUG_LOGS=0 NCCL_DEBUG=INFO NCCL_SOCKET_IFNAME=bond0 taskset -c 28-29 python3 -m vllm.entrypoints.openai.api_server \
       --model $model_name --swap-space $swap_space --preemption-mode $preemption_mode --scheduler-policy $policy --enforce-eager\
-      --enable-chunked-prefill --max-num-batched-tokens $max_tokens --iter-threshold $iter_theshold --max-num-seqs $max_num_seqs --swap-out-tokens-policy $swap_policy --swap-out-partial-rate $swap_out_partial_rate --execution-budget $iter_theshold --worker-use-ray\
-      --pipeline-parallel-size $num_gpus --num-shared-blocks $num_shared_blocks --gpu-memory-utilization $gpu_memory_utilization --disable-sliding-window --waiting-iter-base $waiting_iter --disable-log-requests --max-serving-time $max_serving_time >api_server_${policy}_${swap_policy}.log 2>&1 &
+      --enable-chunked-prefill --max-num-batched-tokens $max_tokens --iter-threshold $iter_theshold --max-num-seqs $max_num_seqs --swap-out-tokens-policy $swap_policy --swap-out-partial-rate $swap_out_partial_rate --execution-budget $iter_theshold --distributed-executor-backend ray\
+      --pipeline-parallel-size 8 --num-shared-blocks $num_shared_blocks --gpu-memory-utilization $gpu_memory_utilization --disable-sliding-window --waiting-iter-base $waiting_iter --disable-log-requests --max-serving-time $max_serving_time >api_server_${policy}_${swap_policy}.log 2>&1 &
       pid=$!
 
         for request_rate in "${request_rates[@]}"; do
-          for i in {0..0}; do
-            request_duration=$((total_request_nums/request_rate))
+          for i in {0..1}; do
             taskset -c 30-49 python3 benchmark_serving.py --execution-counter $COUNTER --dataset-path $dataset_path \
               --dataset-name $dataset_name --request-rate $request_rate \
               --num-prompts 3000 --request-duration $request_duration --sharegpt-output-len 2000 --model $model_name --scheduler-policy $policy \
@@ -94,9 +89,8 @@ for waiting_iter in "${waiting_iter_base[@]}"; do
               --metadata swap_space=$swap_space preemption_mode=$preemption_mode \
               scheduler_policy=$policy gpu_memory_utilization=$gpu_memory_utilization \
               max_num_seqs=$max_num_seqs max_tokens=$max_tokens swap_policy=$swap_policy \
-              iter_theshold=$iter_theshold swap_out_partial_rate=$swap_out_partial_rate \
-              parallel_type=$parallel_type waiting_iter_base=$waiting_iter \
-              >> benchmark-${policy}.log 2>&1
+              iter_theshold=$iter_theshold swap_out_partial_rate=$swap_out_partial_rate waiting_iter_base=$waiting_iter \
+              >> benchmark-${policy}_pp_mm.log 2>&1
             
             sleep 5
             python3 parse_log.py --policy $policy --swap-policy $swap_policy --result-dir $result_dir \

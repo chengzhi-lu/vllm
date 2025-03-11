@@ -153,6 +153,8 @@ set(VLLM_EXT_SRC
   "csrc/moe_align_block_size_kernels.cu"
   "csrc/torch_bindings.cpp")
 
+
+
 if(VLLM_GPU_LANG STREQUAL "CUDA")
   include(FetchContent)
   SET(CUTLASS_ENABLE_HEADERS_ONLY=ON)
@@ -201,7 +203,7 @@ define_gpu_extension_target(
   INCLUDE_DIRECTORIES ${CUTLASS_INCLUDE_DIR};${CUTLASS_TOOLS_UTIL_INCLUDE_DIR}
   USE_SABI 3
   WITH_SOABI)
-
+  
 #
 # _moe_C extension
 #
@@ -307,3 +309,18 @@ if(VLLM_GPU_LANG STREQUAL "CUDA" OR VLLM_GPU_LANG STREQUAL "HIP")
     add_dependencies(default _punica_C)
   endif()
 endif()
+
+set(VLLM_DP_EXT_SRC "csrc/dp_engine.cpp")
+
+define_gpu_extension_target(
+  _dp_C
+  DESTINATION vllm
+  LANGUAGE "CXX"
+  SOURCES ${VLLM_DP_EXT_SRC}
+  COMPILE_FLAGS "-O;;-Wall"  # 添加优化选项
+  ARCHITECTURES ""
+  USE_SABI 3
+  WITH_SOABI)
+
+# 将新目标加入默认构建
+add_dependencies(default _dp_C)

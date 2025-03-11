@@ -337,6 +337,7 @@ class LlamaModel(nn.Module):
         
         # torch.cuda.synchronize()
    
+
         if get_pp_group().is_first_rank:
             if swapped_blocks is not None and self.cache_engine is not None:
                 swap_in_blocks = swapped_blocks['blocks_to_swap_in']
@@ -364,6 +365,7 @@ class LlamaModel(nn.Module):
                             self.cache_engine.pre_swap_out(swap_out_blocks, i+1)
                             self.cache_engine.pre_swap_in(swap_in_blocks, i+1)
                             self.events[i+1].record(stream=self.stream_swap)
+            for i in range(self.start_layer, self.end_layer):
                 with torch.cuda.stream(self.stream_compute):
                     self.events[i].wait(stream=self.stream_compute)
                     layer = self.layers[i]

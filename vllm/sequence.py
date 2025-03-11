@@ -287,7 +287,7 @@ class Sequence:
         self.tokens: Optional[List[str]] = None
         
         self.eos_token_prob: List[float] = []
-        self.eos_token_prob_diff: float = 1
+        self.eos_token_prob_diff: float =  1.0
         self.eos_token_prob_pos: List[int] = []
 
         # Swapped out block raio
@@ -295,7 +295,7 @@ class Sequence:
 
         self.eos_prob_estimation_window = 20
         self.min_eos_rank = -1
-        self.default_eos_token_prob = -1000.0
+        self.default_eos_token_prob = 0.1
 
     @property
     def n_blocks(self) -> int:
@@ -342,12 +342,21 @@ class Sequence:
             return self.eos_token_prob
         
     def get_eos_token_prob_diff(self) -> float:
-        if len(self.eos_token_prob) >= self.eos_prob_estimation_window and self.eos_token_prob_diff == 1:
+        if len(self.eos_token_prob) >= self.eos_prob_estimation_window and self.eos_token_prob_diff == 1.0:
             self.eos_token_prob_diff = (
                 max(self.eos_token_prob[: self.eos_prob_estimation_window])
-                - min(self.eos_token_prob[: self.eos_prob_estimation_window])
+                - min(self.eos_token_prob[:self.eos_prob_estimation_window])
             ) / self.eos_prob_estimation_window
         return self.eos_token_prob_diff
+
+    def get_tmp_eos_token_prob(self) -> float:
+        if len(self.eos_token_prob) > 0:
+            tmp_eos_token_prob_diff= (
+               (max(self.eos_token_prob) - min(self.eos_token_prob))/len(self.eos_token_prob)
+            )
+        else:
+            tmp_eos_token_prob_diff = 0.0
+        return tmp_eos_token_prob_diff
 
     def get_eos_token_pos(self) -> List[int]:
         if len(self.eos_token_prob_pos) < self.eos_prob_estimation_window:
@@ -549,7 +558,7 @@ class SequenceGroup:
         self.swap_time_unit = 0.00065
         self.expected_length = 0.0
         self.waiting_iter_base = waiting_iter_base
-        self.priority_rate = 1
+        self.priority_rate = 1.0
         if self.sampling_params:
             self.max_length = self.sampling_params.max_tokens
         else:
@@ -558,6 +567,7 @@ class SequenceGroup:
         self.swap_out_moment = None
         self.swap_in_moment = None
         self.vocab_size = vocab_size
+        self.token_chunk_size = 0
         
 
     @property
@@ -698,10 +708,11 @@ class SequenceGroup:
     @property
     def total_token_block_size(self) -> int:
         _total_token_block_size = sum([seq.n_blocks for seq in self.seqs_dict.values()])
-        if self.is_prefill():
-            return _total_token_block_size + 1
-        else:
-            return _total_token_block_size + len(self.get_seqs())
+        return _total_token_block_size
+        # if self.is_prefill():
+        #     return _total_token_block_size + 1
+        # else:
+        #     return _total_token_block_size + len(self.get_seqs())
     
     def num_seqs(self, status: Optional[SequenceStatus] = None) -> int:
         # Optimization. We don't need to call get_seqs if we don't need to

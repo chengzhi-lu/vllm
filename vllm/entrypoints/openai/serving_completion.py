@@ -145,7 +145,6 @@ class OpenAIServingCompletion(OpenAIServing):
                 if not is_tracing_enabled and contains_trace_headers(
                         raw_request.headers):
                     log_tracing_disabled_warning()
-
                 generator = self.engine.generate(
                     {
                         "prompt": prompt_text,

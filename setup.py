@@ -93,6 +93,7 @@ class CMakeExtension(Extension):
         self.cmake_lists_dir = os.path.abspath(cmake_lists_dir)
 
 
+
 class cmake_build_ext(build_ext):
     # A dict of extension directories that have been configured.
     did_config: Dict[str, bool] = {}
@@ -219,6 +220,7 @@ class cmake_build_ext(build_ext):
         targets = []
         # Build all the extensions
         for ext in self.extensions:
+            
             self.configure(ext)
             targets.append(remove_prefix(ext.name, "vllm."))
 
@@ -445,6 +447,7 @@ if _is_cuda() or _is_hip():
 
 if _build_custom_ops():
     ext_modules.append(CMakeExtension(name="vllm._C"))
+    ext_modules.append(CMakeExtension(name="vllm._dp_C"))
 
     if _install_punica():
         ext_modules.append(CMakeExtension(name="vllm._punica_C"))

@@ -284,7 +284,10 @@ class _AsyncLLMEngine(LLMEngine):
                 finished_requests_ids=finished_requests_ids)
             output = await self.model_executor.execute_model_async(
                 execute_model_req)
-            self.swap_time += output[0].swap_time
+            if len(output) > 0 and output[0]:
+                self.swap_time += output[0].swap_time
+            else:
+                self.swap_time +=0
         else:
             output = []
         
@@ -682,7 +685,7 @@ class AsyncLLMEngine:
         
         new_requests, finished_requests = (
             self._request_tracker.get_new_and_finished_requests())
-        reach_ddls = [scheduler.reach_ddl for scheduler in self.engine.scheduler]
+        reach_ddls = [scheduler.reach_ddl for scheduler in self.engine.scheduler] if not self.engine_use_ray else [False]
         if any(reach_ddls):
             new_requests_ids = [r["request_id"] for r in new_requests]
             for request_id in set(new_requests_ids).union(finished_requests):
@@ -862,7 +865,6 @@ class AsyncLLMEngine:
 
         if arrival_time is None:
             arrival_time = time.time()
-
         stream = self._request_tracker.add_request(
             request_id,
             inputs=inputs,
@@ -1049,7 +1051,10 @@ class AsyncLLMEngine:
         """Common logic to process requests with SamplingParams or
         PoolingParams."""
         arrival_time = time.time()
-        reach_ddls = [scheduler.reach_ddl for scheduler in self.engine.scheduler]
+        try:
+            reach_ddls = [scheduler.reach_ddl for scheduler in self.engine.scheduler]
+        except Exception as e:
+            raise e
         if any(reach_ddls):
             raise ReachDDLException("Reach DDL")
         stream = await self.add_request(

@@ -398,7 +398,12 @@ class RayGPUExecutorAsync(RayGPUExecutor, DistributedGPUExecutorAsync):
         results = await asyncio.gather(*tasks)
 
         # Only the last PP stage has the final results.
-        return results[-1]
+        for result in results:
+            if not result:
+                continue
+            if result[0] is not None:
+                return result
+        # return results[-1]
 
     async def _start_worker_execution_loop(self):
         coros = [

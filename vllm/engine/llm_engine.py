@@ -925,7 +925,6 @@ class LLMEngine:
         else:
             output = []
         et = time.time()
-        # print(f"execute time: {et - st}")
         self.execution_time += et - st
         self.total_iteration_time = self.execution_time - self.swap_time
         st = time.time()
@@ -956,7 +955,7 @@ class LLMEngine:
         self.et = time.time()
         # print(f"process time: {self.et - st}")
         self.handle_output_time += self.et - st
-        #logger.info(
+        # logger.info(
         #    "Total schedule time: %.1f s, execution time: %.1f s, "
         #    "handle output time: %.1f s, swap time: %.1f s, "
         #    "total iteration number: %d, "
@@ -967,7 +966,7 @@ class LLMEngine:
         #    self.total_count,
         #    self.scheduler.total_swap_out_blocks, self.scheduler.total_swap_out_seqs,
         #    self.scheduler.total_swap_in_blocks, self.scheduler.total_swap_in_seqs
-        #)
+        # )
         return request_outputs
 
     def add_logger(self, logger_name: str, logger: StatLoggerBase) -> None:

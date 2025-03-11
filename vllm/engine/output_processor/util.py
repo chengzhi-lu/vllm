@@ -15,7 +15,9 @@ def create_output_by_sequence_group(
         [] for _ in range(num_seq_groups)
     ]
     for step in outputs:
-        for i, sequence_group_output in enumerate(step):
-            output_by_sequence_group[i].append(sequence_group_output)
-
+        try:
+            for i, sequence_group_output in enumerate(step):
+                output_by_sequence_group[i].append(sequence_group_output)
+        except Exception as e:
+            raise e
     return output_by_sequence_group

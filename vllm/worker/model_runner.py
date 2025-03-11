@@ -1336,6 +1336,10 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         else:
             model_executable = self.model
 
+
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
         multi_modal_kwargs = model_input.multi_modal_kwargs or {}
         seqlen_agnostic_kwargs = {
             "finished_requests_ids": model_input.finished_requests_ids,
@@ -1349,6 +1353,8 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             intermediate_tensors=intermediate_tensors,
             **multi_modal_kwargs,
             **seqlen_agnostic_kwargs)
+        
+        
 
         # Compute the logits in the last pipeline stage.
         if not get_pp_group().is_last_rank:
@@ -1356,15 +1362,24 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
 
         logits = self.model.compute_logits(hidden_or_intermediate_states,
                                            model_input.sampling_metadata)
-
+        
+        end.record()
+        torch.cuda.synchronize()
+        logger.info(f"Model execution time: {start.elapsed_time(end)} ms")  # noqa: G004
         if not self.is_driver_worker:
             return []
 
+        st = torch.cuda.Event(enable_timing=True)
+        et = torch.cuda.Event(enable_timing=True)
+        st.record()
         # Sample the next token.
         output: SamplerOutput = self.model.sample(
             logits=logits,
             sampling_metadata=model_input.sampling_metadata,
         )
+        et.record()
+        torch.cuda.synchronize()
+        logger.info(f"Sampling time: {st.elapsed_time(et)} ms")  # noqa: G004
 
         if self.return_hidden_states:
             # we only need to pass hidden states of most recent token
