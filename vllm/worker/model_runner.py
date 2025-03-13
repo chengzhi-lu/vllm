@@ -1336,7 +1336,6 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         else:
             model_executable = self.model
 
-
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
         start.record()
@@ -1364,8 +1363,6 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                                            model_input.sampling_metadata)
         
         end.record()
-        torch.cuda.synchronize()
-        logger.info(f"Model execution time: {start.elapsed_time(end)} ms")  # noqa: G004
         if not self.is_driver_worker:
             return []
 
@@ -1379,7 +1376,10 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         )
         et.record()
         torch.cuda.synchronize()
-        logger.info(f"Sampling time: {st.elapsed_time(et)} ms")  # noqa: G004
+        num_prefill_tokens = prefill_meta.num_prefill_tokens if prefill_meta is not None else 0
+        batch_size = decode_meta.num_decode_tokens if decode_meta is not None else 0
+        seq_lens = model_input.seq_lens if model_input.seq_lens is not None else 0
+        logger.info(f"Prefill token nums: {num_prefill_tokens}, Decode batch size: {batch_size}, Decode Seq Lens: {seq_lens}, Model execution time: {start.elapsed_time(end)} ms, Sampling time: {st.elapsed_time(et)} ms")  # noqa: G004
 
         if self.return_hidden_states:
             # we only need to pass hidden states of most recent token
