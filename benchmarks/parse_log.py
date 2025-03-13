@@ -78,6 +78,12 @@ def parse_args():
         default=1.0,
         help="The rate at which we swap out partial models.",
     )
+    parser.add_argument(
+        "--parallel-type",
+        type=str,
+        default="single",
+        help="The type of parallelism to use. ",
+    )
     args = parser.parse_args()
     base_dir = args.result_dir
     model_id = args.model
@@ -85,13 +91,14 @@ def parse_args():
     swap_policy = args.swap_policy
     execution_counter = args.execution_counter
     request_rate = args.request_rate
+    parallel_type = args.parallel_type
     days = datetime.now().strftime("%Y%m%d")
     seconds = datetime.now().strftime("%H%M%S")
     base_model_id = model_id.split("/")[-1]
     dir_name = f"{base_dir}/{days}/{execution_counter}"
-    file_name = f"{request_rate}qps-{base_model_id}-{seconds}-{policy}.csv"
+    file_name = f"{request_rate}qps-{base_model_id}-{seconds}-{policy}-{swap_policy}-{parallel_type}.csv"
     result_path = f"{dir_name}/{file_name}"
-    log_file_path = f"api_server_{policy}_{swap_policy}.log"
+    log_file_path = f"api_server_{model_id}_{parallel_type}_{policy}_{swap_policy}.log"
     return log_file_path, result_path
 
 
