@@ -31,6 +31,7 @@ class ExecutorBase(ABC):
         multimodal_config: Optional[MultiModalConfig],
         speculative_config: Optional[SpeculativeConfig],
         prompt_adapter_config: Optional[PromptAdapterConfig],
+        is_aux_model: bool=False
     ) -> None:
         self.model_config = model_config
         self.cache_config = cache_config
@@ -43,14 +44,20 @@ class ExecutorBase(ABC):
         self.speculative_config = speculative_config
         self.prompt_adapter_config = prompt_adapter_config
 
-        self._init_executor()
+        if is_aux_model:
+            self._init_aux_executor()
+        else:
+            self._init_executor()
 
+    @abstractmethod
+    def _init_aux_executor(self) -> None:
+        pass
     @abstractmethod
     def _init_executor(self) -> None:
         pass
 
     @abstractmethod
-    def determine_num_available_blocks(self) -> Tuple[int, int]:
+    def determine_num_available_blocks(self, is_aux_model:bool=False) -> Tuple[int, int]:
         """Determine the number of available blocks for the GPU KV cache and
         swappable CPU KV cache.
 
@@ -68,6 +75,13 @@ class ExecutorBase(ABC):
     @abstractmethod
     def initialize_cache(self, num_gpu_blocks: int,
                          num_cpu_blocks: int) -> None:
+        """Initialize the KV cache with the given size in blocks.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def initialize_cache_empty(self, num_gpu_blocks: int,
+                               num_cpu_blocks: int) -> None:
         """Initialize the KV cache with the given size in blocks.
         """
         raise NotImplementedError
@@ -144,13 +158,14 @@ class ExecutorAsyncBase(ExecutorBase):
         multimodal_config: Optional[MultiModalConfig],
         speculative_config: Optional[SpeculativeConfig],
         prompt_adapter_config: Optional[PromptAdapterConfig],
+        is_aux_model: bool=False
     ) -> None:
         self.pp_locks: Optional[List[asyncio.Lock]] = None
 
         super().__init__(model_config, cache_config, parallel_config,
                          scheduler_config, device_config, load_config,
                          lora_config, multimodal_config, speculative_config,
-                         prompt_adapter_config)
+                         prompt_adapter_config, is_aux_model)
 
     @abstractmethod
     async def execute_model_async(

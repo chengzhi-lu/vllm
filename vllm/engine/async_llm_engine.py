@@ -239,11 +239,6 @@ class _AsyncLLMEngine(LLMEngine):
             total_scheduler_metric.total_running_block_size += scheduler.scheduler_metric.total_running_block_size
         return total_scheduler_metric
 
-
-            
-
-
-
     async def step_async(
         self, virtual_engine: int
     ) -> List[Union[RequestOutput, EmbeddingRequestOutput]]:
@@ -281,7 +276,8 @@ class _AsyncLLMEngine(LLMEngine):
                 virtual_engine=virtual_engine,
                 num_lookahead_slots=scheduler_outputs.num_lookahead_slots,
                 running_queue_size=scheduler_outputs.running_queue_size,
-                finished_requests_ids=finished_requests_ids)
+                finished_requests_ids=finished_requests_ids,
+                use_aux_model=self.scheduler_config.policy=='opt')
             output = await self.model_executor.execute_model_async(
                 execute_model_req)
             if len(output) > 0 and output[0]:

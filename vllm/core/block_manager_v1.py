@@ -278,7 +278,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         num_gpu_blocks: int,
         num_cpu_blocks: int,
         num_shared_blocks: int,
-        watermark: float = 0.03,
+        watermark: float = 0.00,
         sliding_window: Optional[int] = None,
         enable_caching: bool = False,
     ) -> None:
@@ -434,10 +434,29 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             # A SequenceGroup has only a single encoder sequence (at most),
             # thus allocate with a ref count of 1
             block_table = self._allocate_sequence(seq_group.get_encoder_seq(),
-                                                  1, is_encoder_decoder)
+                                                  1, shared=False, is_encoder_decoder=is_encoder_decoder)
             # Assign the cross-attention block table for the SequenceGroup.
             self.cross_block_tables[seq_group.request_id] = block_table
+    def fake_allocate(self, seq_group: SequenceGroup) -> None:
+        seq = seq_group.get_seqs(status=SequenceStatus.WAITING)[0]
 
+        # Allocate new physical token blocks that will store the prompt tokens.
+        num_prompt_blocks = seq.n_blocks
+
+        block_table: BlockTable = []
+
+        for logical_idx in range(num_prompt_blocks):
+            block_table.append(-1)
+
+        # Assign the block table for each sequence.
+        for seq in seq_group.get_seqs(status=SequenceStatus.WAITING):
+                self.block_tables[seq.seq_id] = block_table.copy()
+    
+    def get_fake_block_table_and_delete(self, seq: Sequence) -> List[int]:
+        block_table = self.block_tables[seq.seq_id]
+        ret = [-1 for block in block_table]
+        del self.block_tables[seq.seq_id]
+        return ret
     def can_append_slots(self,
                          seq_group: SequenceGroup,
                          num_lookahead_slots: int = 0) -> bool:

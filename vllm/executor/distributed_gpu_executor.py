@@ -24,7 +24,7 @@ class DistributedGPUExecutor(GPUExecutor):
 
         super().__init__(*args, **kwargs)
 
-    def determine_num_available_blocks(self) -> Tuple[int, int]:
+    def determine_num_available_blocks(self, is_aux_model=False) -> Tuple[int, int]:
         """Determine the number of available KV blocks.
 
         This invokes `determine_num_available_blocks` on each worker and takes
@@ -35,7 +35,7 @@ class DistributedGPUExecutor(GPUExecutor):
             - tuple[num_gpu_blocks, num_cpu_blocks]
         """
         # Get the maximum number of blocks that can be allocated on GPU and CPU.
-        num_blocks = self._run_workers("determine_num_available_blocks", )
+        num_blocks = self._run_workers("determine_num_available_blocks", is_aux_model)
 
         # Since we use a shared centralized controller, we take the minimum
         # number of blocks across all workers to make sure all the memory
@@ -53,7 +53,7 @@ class DistributedGPUExecutor(GPUExecutor):
         # NOTE: We log here to avoid multiple logs when number of workers is
         # greater than one. We could log in the engine, but not all executors
         # have GPUs.
-        logger.info("# GPU blocks: %d, # CPU blocks: %d", num_gpu_blocks,
+        logger.debug("# GPU blocks: %d, # CPU blocks: %d", num_gpu_blocks,
                     num_cpu_blocks)
 
         self.cache_config.num_gpu_blocks = num_gpu_blocks
@@ -63,14 +63,36 @@ class DistributedGPUExecutor(GPUExecutor):
                           num_gpu_blocks=num_gpu_blocks,
                           num_cpu_blocks=num_cpu_blocks)
 
+    def initialize_cache_empty(self, num_gpu_blocks: int,
+                         num_cpu_blocks: int) -> None:
+        """Initialize the KV cache in all workers.
+        """
+        assert num_cpu_blocks == 0 and num_gpu_blocks == 0
+        # NOTE: We log here to avoid multiple logs when number of workers is
+        # greater than one. We could log in the engine, but not all executors
+        # have GPUs.
+        logger.debug(f"# GPU blocks: {num_gpu_blocks}, "
+                    f"# CPU blocks: {num_cpu_blocks}")
+
+        self.cache_config.num_gpu_blocks = num_gpu_blocks
+        self.cache_config.num_cpu_blocks = num_cpu_blocks
+        self._run_workers("initialize_cache",
+                          num_gpu_blocks=num_gpu_blocks,
+                          num_cpu_blocks=num_cpu_blocks,
+                           allow_illegal=True)
+
     def execute_model(
         self, execute_model_req: ExecuteModelRequest
     ) -> Optional[List[SamplerOutput]]:
         if self.parallel_worker_tasks is None:
+            logger.debug(f"self._run_worker:{self._run_workers}")
+            logger.info(f"self.parallel_worker_tasks is {self.parallel_worker_tasks}")
             self.parallel_worker_tasks = self._run_workers(
                 "start_worker_execution_loop",
                 async_run_tensor_parallel_workers_only=True,
                 **self.extra_execute_model_run_workers_kwargs)
+            if execute_model_req.use_aux_model:
+                self.parallel_worker_tasks = None
 
         # Only the driver worker returns the sampling results.
         return self._driver_execute_model(execute_model_req)
@@ -171,7 +193,9 @@ class DistributedGPUExecutorAsync(DistributedGPUExecutor, ExecutorAsyncBase):
             # Start model execution loop running in the parallel workers
             self.parallel_worker_tasks = asyncio.create_task(
                 self._start_worker_execution_loop())
-
+            if execute_model_req.use_aux_model:
+                self.parallel_worker_tasks = None
+        
         # Only the driver worker returns the sampling results.
         return await self._driver_execute_model_async(execute_model_req)
 

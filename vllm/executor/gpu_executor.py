@@ -14,6 +14,18 @@ logger = init_logger(__name__)
 
 class GPUExecutor(ExecutorBase):
 
+
+    def _init_aux_executor(self) -> None:
+        """Initialize the worker and load the model.
+
+        If speculative decoding is enabled, we instead create the speculative
+        worker.
+        """
+
+        self.driver_worker = self._create_worker()
+        self.driver_worker.init_device()
+        self.driver_worker.load_model()
+
     def _init_executor(self) -> None:
         """Initialize the worker and load the model.
         """
@@ -71,7 +83,7 @@ class GPUExecutor(ExecutorBase):
                                                       distributed_init_method))
         return wrapper.worker
 
-    def determine_num_available_blocks(self) -> Tuple[int, int]:
+    def determine_num_available_blocks(self, is_aux_model:bool=False) -> Tuple[int, int]:
         """Determine the number of available KV blocks by invoking the
         underlying worker.
         """
@@ -87,6 +99,13 @@ class GPUExecutor(ExecutorBase):
                     num_cpu_blocks)
 
         self.driver_worker.initialize_cache(num_gpu_blocks, num_cpu_blocks)
+    
+    def initialize_cache_empty(self, num_gpu_blocks: int, num_cpu_blocks) -> None:
+        assert num_gpu_blocks == 0 and num_cpu_blocks == 0
+        logger.info(f"Init Aux Model with empty Blocks, "
+                    f"# GPU blocks: {num_gpu_blocks}, "
+                    f"# CPU blocks: {num_cpu_blocks}")
+        self.driver_worker.initialize_cache(num_gpu_blocks, num_cpu_blocks, allow_illegal=True)
 
     def execute_model(
         self, execute_model_req: ExecuteModelRequest

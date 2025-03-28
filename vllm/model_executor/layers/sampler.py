@@ -3,6 +3,7 @@ import itertools
 from typing import Dict, List, Optional, Tuple
 
 import time
+from narwhals import Boolean
 import torch
 import torch.nn as nn
 
@@ -52,6 +53,9 @@ class Sampler(nn.Module):
         self,
         logits: torch.Tensor,
         sampling_metadata: SamplingMetadata,
+        pred_scores: Optional[torch.Tensor] = None,
+        aux_model_scores: Optional[torch.Tensor] = None,
+        skip_penalty: Boolean=False,
     ) -> Optional[SamplerOutput]:
         """
         Args:
@@ -66,7 +70,7 @@ class Sampler(nn.Module):
          do_min_p) = SamplingTensors.from_sampling_metadata(
              sampling_metadata, vocab_size, logits.device, logits.dtype)
         # Apply presence and frequency penalties.
-        if do_penalties:
+        if do_penalties and not skip_penalty:
             logits = _apply_penalties(logits, sampling_tensors.prompt_tokens,
                                       sampling_tensors.output_tokens,
                                       sampling_tensors.presence_penalties,
@@ -110,7 +114,10 @@ class Sampler(nn.Module):
                                      sampling_metadata,
                                      prompt_logprobs,
                                      sample_logprobs,
-                                     on_device_tensors=on_device_tensors)
+                                     on_device_tensors=on_device_tensors,
+                                     pred_scores=pred_scores, 
+                                     aux_model_scores=aux_model_scores,
+                                     )
     @property
     def _should_modify_greedy_probs_inplace(self) -> bool:
         """Whether or not the sampler should modify the probability distribution
@@ -1011,6 +1018,9 @@ def _build_sampler_output(
     sample_logprobs: List[SampleLogprobs],
     on_device_tensors: Optional[Tuple[torch.Tensor, torch.Tensor,
                                       torch.Tensor]],
+    pred_scores: Optional[torch.Tensor] = None,
+    aux_model_scores: Optional[torch.Tensor] = None,
+    
 ) -> SamplerOutput:
     """Construct Python objects with the output of sampling.
 
@@ -1022,6 +1032,7 @@ def _build_sampler_output(
     """
 
     sampler_output: List[CompletionSequenceGroupOutput] = []
+    pred_idx = 0
     for (seq_group, sample_result, group_prompt_logprobs,
          group_sample_logprobs) in zip(sampling_metadata.seq_groups,
                                        sample_results, prompt_logprobs,
@@ -1035,7 +1046,7 @@ def _build_sampler_output(
             seq_outputs.append(
                 SequenceOutput(seq_ids[parent_id], next_token_id, logprobs))
         sampler_output.append(
-            CompletionSequenceGroupOutput(seq_outputs, group_prompt_logprobs))
+            CompletionSequenceGroupOutput(seq_outputs, group_prompt_logprobs, pred_scores[pred_idx].item() if pred_scores is not None else None, aux_model_scores[pred_idx] if aux_model_scores is not None else None))
 
     # If not specified, store None values in SamplerOutput.
     if on_device_tensors is not None:

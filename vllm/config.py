@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, ClassVar, List, Optional, Tuple, Union
 
 import torch
 from transformers import PretrainedConfig
+from vllm.config_predictor import PredictorConfig, PrefillPredictorConfig
 
 from vllm.logger import init_logger
 from vllm.model_executor.layers.quantization import QUANTIZATION_METHODS
@@ -34,6 +35,7 @@ _PP_SUPPORTED_MODELS = [
     "MistralForCausalLM",
     "Phi3ForCausalLM",
     "GPT2LMHeadModel",
+    "OPTForSequenceClassification"
 ]
 
 
@@ -119,6 +121,8 @@ class ModelConfig:
         skip_tokenizer_init: bool = False,
         served_model_name: Optional[Union[str, List[str]]] = None,
         multimodal_config: Optional["MultiModalConfig"] = None,
+        predictor_model_config: str = '',
+        prefill_predictor_model_config: str = '',
     ) -> None:
         self.model = model
         self.tokenizer = tokenizer
@@ -144,7 +148,8 @@ class ModelConfig:
         self.max_logprobs = max_logprobs
         self.disable_sliding_window = disable_sliding_window
         self.skip_tokenizer_init = skip_tokenizer_init
-
+        self.predictor_model_config = None if predictor_model_config == '' else PredictorConfig.from_json(predictor_model_config)
+        self.prefill_predictor_model_config = None if prefill_predictor_model_config == '' else PrefillPredictorConfig.from_json(prefill_predictor_model_config)
         self.hf_config = get_config(self.model, trust_remote_code, revision,
                                     code_revision, rope_scaling, rope_theta)
         self.hf_text_config = get_hf_text_config(self.hf_config)
@@ -650,6 +655,7 @@ class ParallelConfig:
 
     def __init__(
         self,
+        parallel_type: str,
         pipeline_parallel_size: int,
         tensor_parallel_size: int,
         worker_use_ray: Optional[bool] = None,
@@ -659,7 +665,9 @@ class ParallelConfig:
         ray_workers_use_nsight: bool = False,
         placement_group: Optional["PlacementGroup"] = None,
         distributed_executor_backend: Optional[str] = None,
+        llm_model_executor: Optional["llm_model_executor"] = None
     ) -> None:
+        self.parallel_type = parallel_type
         self.pipeline_parallel_size = pipeline_parallel_size
         self.tensor_parallel_size = tensor_parallel_size
         self.distributed_executor_backend = distributed_executor_backend
@@ -668,7 +676,7 @@ class ParallelConfig:
         self.tokenizer_pool_config = tokenizer_pool_config
         self.ray_workers_use_nsight = ray_workers_use_nsight
         self.placement_group = placement_group
-
+        self.llm_model_executor = llm_model_executor
         self.world_size = pipeline_parallel_size * self.tensor_parallel_size
         if worker_use_ray:
             if self.distributed_executor_backend is None:
@@ -811,6 +819,7 @@ class SchedulerConfig:
         self.embedding_mode = embedding_mode
         self.preemption_mode = preemption_mode
         self.waiting_iter_base= waiting_iter_base
+        self.fake_allocate = False 
         self._verify_args()
 
     def _verify_args(self) -> None:
@@ -830,7 +839,7 @@ class SchedulerConfig:
                 "be greater than or equal to max_num_seqs "
                 f"({self.max_num_seqs}).")
         if self.policy not in ["fcfs", "ljf", "las", "sjf", "srjf", "utf", "random", \
-                                "wtf","bff",'infer', 'sjmlfq', 'inferpreempt','tfittradeoff']:
+                                "wtf","bff",'infer', 'sjmlfq', 'inferpreempt','tfittradeoff','opt']:
             raise NotImplementedError(
                 f"Scheduler policy {self.policy} is not implemented."
             )
@@ -1129,6 +1138,7 @@ class SpeculativeConfig:
                 f"other value than 1")
 
         draft_parallel_config = ParallelConfig(
+            parallel_type='single',
             pipeline_parallel_size=target_parallel_config.
             pipeline_parallel_size,
             tensor_parallel_size=speculative_draft_tensor_parallel_size,

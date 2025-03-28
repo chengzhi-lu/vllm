@@ -49,6 +49,7 @@ _GENERATION_MODELS = {
     "MiniCPMForCausalLM": ("minicpm", "MiniCPMForCausalLM"),
     "OlmoForCausalLM": ("olmo", "OlmoForCausalLM"),
     "OPTForCausalLM": ("opt", "OPTForCausalLM"),
+    "OPTForSequenceClassification" : ("opt", "OPTForSequenceClassification"), 
     "OrionForCausalLM": ("orion", "OrionForCausalLM"),
     "PersimmonForCausalLM": ("persimmon", "PersimmonForCausalLM"),
     "PaliGemmaForConditionalGeneration":
