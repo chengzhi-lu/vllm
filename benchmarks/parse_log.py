@@ -98,7 +98,7 @@ def parse_args():
     dir_name = f"{base_dir}/{days}/{execution_counter}"
     file_name = f"{request_rate}qps-{base_model_id}-{seconds}-{policy}-{swap_policy}-{parallel_type}.csv"
     result_path = f"{dir_name}/{file_name}"
-    log_file_path = f"api_server_{model_id}_{parallel_type}_{policy}_{swap_policy}.log"
+    log_file_path = f"logs/api_server_{base_model_id}_{parallel_type}_{policy}_{swap_policy}.log"
     return log_file_path, result_path
 
 

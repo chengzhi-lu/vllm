@@ -11,6 +11,7 @@ from vllm.config import (CacheConfig, DecodingConfig, DeviceConfig, LoadConfig,
                          ObservabilityConfig, ParallelConfig,
                          PromptAdapterConfig, SchedulerConfig,
                          SpeculativeConfig)
+from vllm.core.batch_solver import BatchSolver
 from vllm.core.scheduler import (ScheduledSequenceGroup, Scheduler,
                                  SchedulerOutputs)
 from vllm.engine.arg_utils import EngineArgs
@@ -270,6 +271,9 @@ class LLMEngine:
             load_config=load_config,
             prompt_adapter_config=prompt_adapter_config,
         )
+        self.batch_solver = BatchSolver(parallel_type=parallel_config.parallel_type,
+                                         pipeline_parallel_size=max(parallel_config.pipeline_parallel_size, parallel_config.tensor_parallel_size),
+                                         model_id=model_config.model)
 
         if not self.model_config.embedding_mode:
             self._initialize_kv_caches()
@@ -321,9 +325,11 @@ class LLMEngine:
         # GPU and CPU blocks, which are profiled in the distributed executor.
         self.scheduler = [
             Scheduler(scheduler_config, cache_config, lora_config,
-                      parallel_config.pipeline_parallel_size)
+                      parallel_config.pipeline_parallel_size, self.batch_solver)
             for _ in range(parallel_config.pipeline_parallel_size)
         ]
+        for index, sche in enumerate(self.scheduler):
+            sche.set_virtual_engine(index) 
 
         # Metric Logging.
         if self.log_stats:
@@ -363,6 +369,23 @@ class LLMEngine:
                     self.get_tokenizer_for_seq,
                 ),
             ))
+        if self.model_config.prefill_predictor_model_config:
+            from vllm import AUXLLM
+            for sche in self.scheduler:
+                sche.aux_model = AUXLLM(
+                    model=self.model_config.prefill_predictor_model_config.model.path,
+                    tokenizer=self.model_config.prefill_predictor_model_config.model.pred_model,
+                    swap_space=0,
+                    gpu_memory_utilization=0.0,
+                    enforce_eager=True,
+                    scheduler_policy='fcfs',
+                    enable_chunked_prefill=False,
+                    max_model_len=self.model_config.prefill_predictor_model_config.model.max_length,
+                    tensor_parallel_size=self.parallel_config.tensor_parallel_size,
+                    pipeline_parallel_size=self.parallel_config.pipeline_parallel_size,
+                    placement_group=self.parallel_config.placement_group,
+                    llm_model_executor=self.model_executor,
+                )
 
     def _initialize_kv_caches(self) -> None:
         """Initialize the KV cache in the worker(s).
@@ -715,6 +738,7 @@ class LLMEngine:
             request_id=request_id,
             seqs=[seq],
             arrival_time=arrival_time,
+            execution_budget=0,
             lora_request=lora_request,
             pooling_params=pooling_params,
             waiting_iter_base=self.scheduler_config.waiting_iter_base,

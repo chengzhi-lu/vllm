@@ -492,8 +492,9 @@ class LlamaForCausalLM(nn.Module, SupportsLoRA):
         self,
         logits: torch.Tensor,
         sampling_metadata: SamplingMetadata,
+        pred_scores =None,
     ) -> Optional[SamplerOutput]:
-        next_tokens = self.sampler(logits, sampling_metadata)
+        next_tokens = self.sampler(logits, sampling_metadata, pred_scores=pred_scores)
         return next_tokens
 
     def make_empty_intermediate_tensors(
