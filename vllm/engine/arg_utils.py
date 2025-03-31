@@ -37,6 +37,7 @@ class EngineArgs:
     max_model_len: Optional[int] = None
     worker_use_ray: bool = False
     distributed_executor_backend: Optional[str] = None
+    parallel_type: str = 'single'
     pipeline_parallel_size: int = 1
     tensor_parallel_size: int = 1
     max_parallel_loading_workers: Optional[int] = None
@@ -112,6 +113,13 @@ class EngineArgs:
     otlp_traces_endpoint: Optional[str] = None
 
     qlora_adapter_name_or_path: Optional[str] = None
+
+    predictor_model_config: str = ''
+    prefill_predictor_model_config: str = ''
+    enable_starvation_prevent: bool = False
+    placement_group: Optional[str] = None
+    llm_model_executor: Optional[str] = None 
+
 
     def __post_init__(self):
         if self.tokenizer is None:
@@ -260,6 +268,10 @@ class EngineArgs:
             '--worker-use-ray',
             action='store_true',
             help='Deprecated, use --distributed-executor-backend=ray.')
+        parser.add_argument('--parallel-type',
+                            type=str,
+                            default=EngineArgs.parallel_type,
+                            help='Parallelization type.')
         parser.add_argument('--pipeline-parallel-size',
                             '-pp',
                             type=int,
@@ -516,6 +528,18 @@ class EngineArgs:
             "'infer', or 'random', default is 'fcfs'",
         )
 
+        parser.add_argument('--predictor-model-config',
+                            type=str,
+                            default="",
+                            help='predictor model config')
+        parser.add_argument('--prefill-predictor-model-config',
+                            type=str,
+                            default="",
+                            help='predictor model config')
+        
+        parser.add_argument('--enable-starvation-prevent',
+                            action="store_true")
+
         parser.add_argument(
             "--swap-out-tokens-policy",
             type=str,
@@ -686,6 +710,15 @@ class EngineArgs:
             default=None,
             help='Target URL to which OpenTelemetry traces will be sent.')
 
+        parser.add_argument('--placement-group',
+                            type=str,
+                            default=None,
+                            help='Never Set This')
+        parser.add_argument('--llm-model-executor',
+                            type=str,
+                            default=None,
+                            help='Never Set This')
+
         return parser
 
     @classmethod
@@ -741,7 +774,10 @@ class EngineArgs:
             disable_sliding_window=self.disable_sliding_window,
             skip_tokenizer_init=self.skip_tokenizer_init,
             served_model_name=self.served_model_name,
-            multimodal_config=multimodal_config)
+            multimodal_config=multimodal_config,
+            predictor_model_config=self.predictor_model_config, 
+            prefill_predictor_model_config=self.prefill_predictor_model_config
+            )
         cache_config = CacheConfig(
             block_size=self.block_size,
             gpu_memory_utilization=self.gpu_memory_utilization,
@@ -754,6 +790,7 @@ class EngineArgs:
             num_shared_blocks=self.num_shared_blocks
             )
         parallel_config = ParallelConfig(
+            parallel_type=self.parallel_type,
             pipeline_parallel_size=self.pipeline_parallel_size,
             tensor_parallel_size=self.tensor_parallel_size,
             worker_use_ray=self.worker_use_ray,
@@ -765,7 +802,9 @@ class EngineArgs:
                 self.tokenizer_pool_extra_config,
             ),
             ray_workers_use_nsight=self.ray_workers_use_nsight,
-            distributed_executor_backend=self.distributed_executor_backend)
+            distributed_executor_backend=self.distributed_executor_backend,
+            placement_group=self.placement_group, 
+            llm_model_executor=self.llm_model_executor)
 
         speculative_config = SpeculativeConfig.maybe_create_spec_config(
             target_model_config=model_config,

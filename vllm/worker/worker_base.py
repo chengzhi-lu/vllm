@@ -33,7 +33,7 @@ class WorkerBase(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def determine_num_available_blocks(self) -> Tuple[int, int]:
+    def determine_num_available_blocks(self, is_aux_model:bool=False) -> Tuple[int, int]:
         """Determine the number of available blocks for the GPU KV cache and
         swappable CPU KV cache.
 
@@ -61,8 +61,9 @@ class WorkerBase(ABC):
         You can stop the loop by executing a driver worker with an empty output.
         See `stop_remote_worker_execution_loop` for more details.
         """
-        while True:
-            output = self.execute_model(execute_model_req=None)
+        self.use_aux_model = False
+        while True and not self.use_aux_model:
+            output = self.execute_model(execute_model_req=None) # If the worker is not the driver worker, this iteration will keep running and waiting for the data recieved from the driver worker.
             if output is None:
                 return None
 
@@ -219,7 +220,10 @@ class LocalOrDistributedWorkerBase(WorkerBase):
     ) -> Optional[List[SamplerOutput]]:
         """Executes at least one model step on the given sequences, unless no
         sequences are provided."""
+        logger.debug("start execute model")
+        logger.debug(f"is driver worker {self.is_driver_worker}")
         if self.is_driver_worker:
+            logger.debug(f"if execute_model_req is None {execute_model_req is None}")
             if execute_model_req is None:
                 if self.do_metadata_broadcast:
                     # This signals that there's no more requests to process for
@@ -238,20 +242,25 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                     execute_model_req.virtual_engine,
                     execute_model_req.finished_requests_ids))
             num_steps = execute_model_req.num_steps
-
-            if self.do_metadata_broadcast:
+            self.use_aux_model = execute_model_req.use_aux_model
+            if self.do_metadata_broadcast and (not execute_model_req.is_aux_model or execute_model_req.is_tp):
                 broadcast_data = worker_input.as_broadcastable_tensor_dict()
                 broadcast_data.update(
                     model_input.as_broadcastable_tensor_dict())
                 broadcast_data["num_steps"] = num_steps
+                broadcast_data["use_aux_model"]=execute_model_req.use_aux_model
+                logger.debug("Broadcasted metadata to other workers")
                 broadcast_tensor_dict(broadcast_data, src=0)
         else:
             assert self.do_metadata_broadcast
+            logger.debug("Waiting for metadata from driver worker")
             broadcast_data = broadcast_tensor_dict(src=0)
+            logger.debug("Received metadata from driver worker")
             if not broadcast_data:
                 return None
-
             num_steps = broadcast_data.pop("num_steps")
+            self.use_aux_model =broadcast_data.pop("use_aux_model")
+            logger.debug(self.use_aux_model)
             worker_input = WorkerInput.from_broadcasted_tensor_dict(
                 broadcast_data)
             model_input = (
@@ -264,22 +273,22 @@ class LocalOrDistributedWorkerBase(WorkerBase):
             self.execute_worker(worker_input)
             et = time.time()
             swap_time = et - st
-
         # If there is no input, we don't need to execute the model.
         if worker_input.num_seq_groups == 0:
             return []
 
         intermediate_tensors = None
-        if not get_pp_group().is_first_rank:
+        if not get_pp_group().is_first_rank and not execute_model_req.is_aux_model:
             intermediate_tensors = IntermediateTensors(
                 get_pp_group().recv_tensor_dict())
-
         output = self.model_runner.execute_model(
             model_input, self.kv_cache[worker_input.virtual_engine]
             if self.kv_cache is not None else None, intermediate_tensors,
             num_steps)
+        logger.debug(not get_pp_group().is_last_rank and not execute_model_req.is_aux_model)
 
-        if not get_pp_group().is_last_rank:
+    
+        if not get_pp_group().is_last_rank and not execute_model_req.is_aux_model:
             get_pp_group().send_tensor_dict(output.tensors)
             return [None]
 
@@ -305,6 +314,7 @@ class WorkerWrapperBase:
         self.worker_module_name = worker_module_name
         self.worker_class_name = worker_class_name
         self.worker = None
+        self.aux_worker = None
         if trust_remote_code:
             # note: lazy import to avoid importing torch before initializing
             from vllm.utils import init_cached_hf_modules
@@ -318,6 +328,15 @@ class WorkerWrapperBase:
             # suppress the warning in `update_environment_variables`
             del os.environ[key]
         update_environment_variables(envs)
+
+    def init_aux_worker(self, *args, **kwargs):
+        """
+        Here we inject some common logic before initializing the worker.
+        Arguments are passed to the worker class constructor.
+        """
+        mod = importlib.import_module(self.worker_module_name)
+        worker_class = getattr(mod, self.worker_class_name)
+        self.aux_worker = worker_class(*args, **kwargs)
 
     def init_worker(self, *args, **kwargs):
         """
@@ -333,6 +352,27 @@ class WorkerWrapperBase:
         worker_class = getattr(mod, self.worker_class_name)
         self.worker = worker_class(*args, **kwargs)
 
+    def execute_aux_method(self, method, *args, **kwargs):
+        logger.debug(f"Waiting for the method {method} ")
+        try:
+            if hasattr(self, method):
+                logger.debug(f"Executing method {method} in worker")
+                executor = getattr(self, method)
+            else:
+                logger.debug(f"Executing method {method} in aux worker")
+                executor = getattr(self.aux_worker, method)
+            return executor(*args, **kwargs)
+        except Exception as e:
+            # if the driver worker also execute methods,
+            # exceptions in the rest worker may cause deadlock in rpc like ray
+            # see https://github.com/vllm-project/vllm/issues/3455
+            # print the error and inform the user to solve the error
+            msg = (f"Error executing method {method}. "
+                   "This might cause deadlock in distributed execution.")
+            logger.exception(msg)
+            raise e
+    
+    
     def execute_method(self, method, *args, **kwargs):
         try:
             target = self if self.worker is None else self.worker

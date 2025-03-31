@@ -111,14 +111,6 @@ def sample_sharegpt_requests(
         else:
             print("No JSON file found in the current directory.")
         
-        # prompts = data['prompts']
-        # output_lens = data['output_lens']
-        # for prompt in prompts:
-        #     index= prompts.index(prompt)
-        #     prompt_token_ids = tokenizer(prompt).input_ids
-        #     prompt_len = len(prompt_token_ids)
-        #     output_len = output_lens[index]
-        #     filtered_dataset.append((prompt, prompt_len, output_len))
     for i in range(len(dataset)):
         if len(filtered_data_prompts) == num_requests:
             break
@@ -293,6 +285,18 @@ async def get_request_duration(
             continue
         interval = np.random.exponential(1.0 / request_rate)
         await asyncio.sleep(interval)
+
+
+def save_output(outputs: List[RequestFuncOutput], filename: str) -> None:
+    with open(filename, "a+") as f:
+        for output in outputs:
+            if output.success:
+                result={
+                    "prompt": output.prompt,
+                    "generated": output.generated_text,
+                }
+                f.write(json.dumps(result))
+            
 
 def calculate_metrics(
     input_requests: List[Tuple[str, int, int]],
@@ -514,7 +518,8 @@ async def benchmark(
         pbar.close()
 
     benchmark_duration = time.perf_counter() - benchmark_start_time
-
+    
+    
     metrics, actual_output_lens = calculate_metrics(
         input_requests=input_requests,
         outputs=outputs,
@@ -765,6 +770,12 @@ def main(args: argparse.Namespace):
                 prompt_output_lens_file_name = os.path.join(args.result_dir, dir_name,"prompt", prompt_output_lens_file_name)  # noqa: E501
             with open(prompt_output_lens_file_name, "w") as prompt_output_lens_file_name_outfile:
                 json.dump(prompt_output_lens_json, prompt_output_lens_file_name_outfile)
+    save_output(
+        outputs=outputs,
+        filename=f"output-{args.dataset_name}-{base_model_id}.jsonl"
+    )
+
+
 
 if __name__ == "__main__":
     st = time.time()
@@ -788,7 +799,7 @@ if __name__ == "__main__":
         default=None,
         help="Server or API base url if not using http host and port.",
     )
-    parser.add_argument("--host", type=str, default="10.119.46.52")
+    parser.add_argument("--host", type=str, default="10.119.46.54")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
         "--endpoint",
@@ -953,12 +964,11 @@ if __name__ == "__main__":
     parser.add_argument("--scheduler-policy",
                         type=str,
                         default="fcfs",
-                        choices=["fcfs", "infer","sjmlfq", "inferpreempt","sjf", "srjf", "tfittradeoff", "las"],
+                        choices=["fcfs", "infer","sjmlfq", "inferpreempt","sjf", "srjf", "tfittradeoff", "las", 'opt'],
                         help="Specify the scheduler policy.")
     parser.add_argument("--execution-counter",
                         type=int,
                         default=0,
                         help="Specify the execution counter.")
-    
     args = parser.parse_args()
     main(args)

@@ -309,6 +309,7 @@ class Sequence:
     def prompt_token_ids(self) -> List[int]:
         return self.inputs["prompt_token_ids"]
 
+
     @property
     def multi_modal_data(self) -> "MultiModalDataDict":
         return self.inputs.get("multi_modal_data") or {}
@@ -568,6 +569,13 @@ class SequenceGroup:
         self.swap_in_moment = None
         self.vocab_size = vocab_size
         self.token_chunk_size = 0
+        self.type = ""
+        self.pred_score = None
+        self.pscore = None
+        self.aux_model_score = None
+        self.lst_process_time = arrival_time
+        self.running_info = {"swap_out" : 0, "swap_blocks" : 0}
+        self.process_time = 0
         
 
     @property
@@ -601,6 +609,16 @@ class SequenceGroup:
     def prompt_adapter_num_virtual_tokens(self) -> int:
         return self.prompt_adapter_request.prompt_adapter_num_virtual_tokens\
                          if self.prompt_adapter_request else 0
+
+    def need_aux_model_score(self) -> bool:
+        return self.aux_model_score is None 
+    
+    def set_aux_model_score(self, aux_model_score) -> None:
+        self.aux_model_score = aux_model_score
+
+    def set_pred_score(self, pred_score):
+        self.pred_score = pred_score
+
 
     def get_last_latency(self, now: float) -> Optional[float]:
         """Sets the last token time for Request level timings."""
@@ -910,20 +928,28 @@ class CompletionSequenceGroupOutput(SequenceGroupOutput):
         self,
         samples: List[SequenceOutput],
         prompt_logprobs: Optional[PromptLogprobs],
+        pred_score: Optional[float] = None,
+        aux_model_score: Optional[float] = None,
     ) -> None:
         self.samples = samples
         # Prompt logprob for each prompt query token.
         self.prompt_logprobs = prompt_logprobs
+        self.pred_score = pred_score
+        self.aux_model_score = aux_model_score
 
     def __repr__(self) -> str:
         return (f"CompletionSequenceGroupOutput(samples={self.samples}, "
-                f"prompt_logprobs={self.prompt_logprobs})")
+                f"prompt_logprobs={self.prompt_logprobs}), "
+                f"aux_model_score={self.aux_model_score}, "
+                f"pred_score={self.pred_score})")
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, CompletionSequenceGroupOutput):
             raise NotImplementedError()
         return (self.samples == other.samples
-                and self.prompt_logprobs == other.prompt_logprobs)
+                and self.prompt_logprobs == other.prompt_logprobs 
+                   and self.pred_score == other.pred_score
+                      and self.aux_model_score == other.aux_model_score)
 
 
 class EmbeddingSequenceGroupOutput(SequenceGroupOutput):
@@ -1127,6 +1153,9 @@ class ExecuteModelRequest:
     num_steps: int = 1
     # Finished request ids since last step.
     finished_requests_ids: List[str] = field(default_factory=list)
+    is_aux_model: bool = False
+    use_aux_model: bool = False
+    is_tp: bool=False
 
     def clone(
         self, seq_group_metadata_list: List[SequenceGroupMetadata]

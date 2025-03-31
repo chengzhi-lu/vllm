@@ -1237,7 +1237,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         self,
         seq_group_metadata_list: List[SequenceGroupMetadata],
         virtual_engine: int = 0,
-        finished_requests_ids: Optional[List[str]] = None
+        finished_requests_ids: Optional[List[str]] = None,
     ) -> ModelInputForGPUWithSamplingMetadata:
         """Prepare the model input based on a given sequence group, including
         metadata for the sampling step.
@@ -1336,11 +1336,11 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         else:
             model_executable = self.model
 
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
-        st = torch.cuda.Event(enable_timing=True)
-        et = torch.cuda.Event(enable_timing=True)
-        start.record()
+        # start = torch.cuda.Event(enable_timing=True)
+        # end = torch.cuda.Event(enable_timing=True)
+        # st = torch.cuda.Event(enable_timing=True)
+        # et = torch.cuda.Event(enable_timing=True)
+        # start.record()
         multi_modal_kwargs = model_input.multi_modal_kwargs or {}
         seqlen_agnostic_kwargs = {
             "finished_requests_ids": model_input.finished_requests_ids,
@@ -1355,30 +1355,37 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             **multi_modal_kwargs,
             **seqlen_agnostic_kwargs)
         
+        pred_scores = None
+        if type(hidden_or_intermediate_states) == tuple and len(hidden_or_intermediate_states) == 2:
+            hidden_or_intermediate_states, pred_scores = hidden_or_intermediate_states
+        else:
+            hidden_or_intermediate_states = hidden_or_intermediate_states
+            if not get_pp_group().is_last_rank:
+                return hidden_or_intermediate_states
         
 
         # Compute the logits in the last pipeline stage.
-        if not get_pp_group().is_last_rank:
-            return hidden_or_intermediate_states
+            
 
         logits = self.model.compute_logits(hidden_or_intermediate_states,
                                            model_input.sampling_metadata)
         
-        end.record()
+        # end.record()
         if not self.is_driver_worker:
             return []
-        st.recode()
+        # st.record()
         # Sample the next token.
         output: SamplerOutput = self.model.sample(
             logits=logits,
             sampling_metadata=model_input.sampling_metadata,
+            pred_scores=pred_scores
         )
-        et.record()
-        torch.cuda.synchronize()
-        num_prefill_tokens = prefill_meta.num_prefill_tokens if prefill_meta is not None else 0
-        batch_size = decode_meta.num_decode_tokens if decode_meta is not None else 0
-        seq_lens = model_input.seq_lens if model_input.seq_lens is not None else 0
-        logger.info(f"Prefill token nums: {num_prefill_tokens}, Decode batch size: {batch_size}, Decode Seq Lens: {seq_lens}, Model execution time: {start.elapsed_time(end)} ms, Sampling time: {st.elapsed_time(et)} ms")  # noqa: G004
+        # et.record()
+        # torch.cuda.synchronize()
+        # num_prefill_tokens = prefill_meta.num_prefill_tokens if prefill_meta is not None else 0
+        # batch_size = decode_meta.num_decode_tokens if decode_meta is not None else 0
+        # seq_lens = model_input.seq_lens if model_input.seq_lens is not None else 0
+        # logger.info(f"Prefill token nums: {num_prefill_tokens}, Decode batch size: {batch_size}, Decode Seq Lens: {seq_lens}, Model execution time: {start.elapsed_time(end)} ms, Sampling time: {st.elapsed_time(et)} ms")  # noqa: G004
 
         if self.return_hidden_states:
             # we only need to pass hidden states of most recent token

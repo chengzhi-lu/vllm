@@ -12,12 +12,12 @@ TOKENIZERS_PARALLELISM="true"
 # 模型和数据集配置
 model_names=(
   "meta-llama/Llama-2-13b-chat-hf"
-  # "meta-llama/Llama-2-70b-chat-hf"
+  "meta-llama/Llama-2-70b-chat-hf"
 )
 parallel_types=(
   "single"
-  # "tp"
-  # "pp"
+  "tp"
+  "pp"
 )
 datasets=(
   "sharegpt /root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
@@ -36,13 +36,14 @@ num_shared_blocks=0
 # 测试策略组合
 scheduler_swap_policies=(
   "tfittradeoff partial"
-  # "fcfs full"
-  # "sjf full" 
-  # "sjmlfq full"
-  "las full"
+  "fcfs full"
+  "sjf full"
+  "sjmlfq full"
+  # "las full"
 )
 
-request_rates=(1 2 4 8 16 32)
+request_rates=(2 4 8 16 32)
+# request_rates=(8)
 swap_out_partial_rates=(0.5)
 
 # --------------------------
@@ -66,18 +67,28 @@ start_server() {
   local parallel_type=$4
   local model_name=$5
 
-  local log_file="api_server_${model_name##*/}_${parallel_type}_${policy}_${swap_policy}.log"
+  local log_file="logs/api_server_${model_name##*/}_${parallel_type}_${policy}_${swap_policy}.log"
   
-  echo "启动服务器: model=${model_name##*/} type=$parallel_type policy=$policy"
   local parallel_args=""
   # GPU分配逻辑
-    if [[ "$parallel_type" == @("pp"|"tp") ]]; then
-        gpu_devices="0,1,2,3"
-    elif [[ "$parallel_type" == "single" && "$model_name" == "meta-llama/Llama-2-13b-chat-hf" ]]; then
-        gpu_devices="0"
-    else
-        continue
-    fi
+  if [[ "$parallel_type" == @("pp"|"tp") ]]; then
+      gpu_devices="0,1,2,3"
+  elif [[ "$parallel_type" == "single" && "$model_name" == "meta-llama/Llama-2-13b-chat-hf" ]]; then
+      gpu_devices="0"
+  elif [[ "$parallel_type" == "single" && "$model_name" == "meta-llama/Llama-2-70b-chat-hf" ]]; then
+      echo "70b模型不支持单卡"
+  else
+      gpu_devices="0,1,2,3"
+  fi
+  case "$policy" in
+    "tfittradeoff")
+        max_num_seqs=192
+        ;;
+    *)
+        max_num_seqs=512
+        ;;
+  esac
+  echo "启动服务器: model=${model_name##*/} type=$parallel_type policy=$policy batch size=$max_num_seqs"
   IFS=',' read -ra gpu_array <<< "$gpu_devices"
   num_gpus=${#gpu_array[@]}
 
@@ -96,6 +107,7 @@ start_server() {
   CUDA_VISIBLE_DEVICES=$gpu_devices RAY_DEDUP_LOGS=0 taskset -c 28-29 python3 -m vllm.entrypoints.openai.api_server \
     --model "$model_name" \
     $parallel_args \
+    --parallel-type $parallel_type\
     --swap-space "$swap_space" \
     --preemption-mode "$preemption_mode" \
     --scheduler-policy "$policy" \
@@ -110,9 +122,7 @@ start_server() {
     --disable-sliding-window \
     --disable-log-requests \
     --max-serving-time "$max_serving_time" > "$log_file" 2>&1 &
-  server_pid=$!
 
-  sleep 20  # 等待服务器初始化
 }
 
 run_benchmark() {
@@ -127,7 +137,7 @@ run_benchmark() {
   local total_request_nums=1024
 
   local request_duration=$((total_request_nums / request_rate))
-  local log_file="benchmark_${model_name##*/}_${parallel_type}_${policy}_rate${request_rate}.log"
+  local log_file="logs/benchmark_${model_name##*/}_${parallel_type}_${policy}_rate${request_rate}.log"
 
   echo "运行基准测试: model=${model_name##*/} rate=$request_rate"
   taskset -c 30-49 python3 benchmark_serving.py \
@@ -164,19 +174,32 @@ run_benchmark() {
     --parallel-type "$parallel_type"
 }
 
+
+terminate_server() {
+  local parallel_type=$1
+  kill -9 `ps -aux|grep "vllm.entrypoints.openai.api_server" | grep -v grep | awk '{print $2}'` 2>/dev/null
+  if [[ "$parallel_type" == @("pp"|"tp") ]]; then
+      kill -9 `ps -aux|grep "ray" | grep -v grep | awk '{print $2}'` 2>/dev/null
+  fi
+}
+
 # --------------------------
 # 主执行流程
 # --------------------------
-
 for ptype in "${parallel_types[@]}"; do
     for swap_out_partial_rate in "${swap_out_partial_rates[@]}"; do
       for scheduler_swap_policy in "${scheduler_swap_policies[@]}"; do
         IFS=' ' read -r policy swap_policy <<< "$scheduler_swap_policy"
-        
         for dataset in "${datasets[@]}"; do
           IFS=' ' read -r dataset_name dataset_path <<< "$dataset"
           
           for model_name in "${model_names[@]}"; do
+            # 跳过70b模型的single并行类型
+            if [[ "$model_name" == "meta-llama/Llama-2-70b-chat-hf" && "$ptype" == "single" ]]; then
+              echo "跳过 llama2-70b 的 single 并行类型测试"
+              continue
+            fi
+            
             # 启动服务
             start_server "$policy" "$swap_policy" "$swap_out_partial_rate" \
             "$ptype" "$model_name"
@@ -186,13 +209,15 @@ for ptype in "${parallel_types[@]}"; do
               run_benchmark "$policy" "$swap_policy" "$swap_out_partial_rate" \
                  "$request_rate" "$dataset_path" "$dataset_name" \
                 "$model_name" "$ptype"
-              sleep 15
+              sleep 5
             done
             
             # 停止服务器
-            echo "停止服务器: PID=$server_pid"
-            kill "$server_pid" && wait "$server_pid" 2>/dev/null
-            sleep 10
+            echo "停止服务器"
+            terminate_server "$ptype"
+
+            sleep 5
+          done
         done
       done
     done

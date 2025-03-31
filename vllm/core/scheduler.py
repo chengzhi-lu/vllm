@@ -8,8 +8,9 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Deque, Dict, Iterable, List, Optional, Set, Tuple, Union
-
+from vllm.utils import merge_dicts
 from vllm.config import CacheConfig, LoRAConfig, SchedulerConfig
+from vllm.core.batch_solver import BatchSolver
 from vllm.core.interfaces import AllocStatus, BlockSpaceManager
 from vllm.core.policy import Policy, PolicyFactory, PolicyInfo
 from vllm.logger import init_logger
@@ -107,6 +108,7 @@ class SchedulingBudget:
         return (self.num_batched_tokens + num_new_tokens <= self.token_budget
                 and self.num_curr_seqs + num_new_seqs <= self.max_num_seqs)
 
+
     def remaining_token_budget(self):
         return self.token_budget - self.num_batched_tokens
 
@@ -137,6 +139,12 @@ class SchedulingBudget:
         if req_id in self._request_ids_num_curr_seqs:
             self._request_ids_num_curr_seqs.remove(req_id)
             self._num_curr_seqs -= num_curr_seqs
+        
+    def update_token_budget(self, new_token_budget: int):
+        self.token_budget = new_token_budget
+    
+    def update_max_num_seqs(self, new_max_num_seqs: int):
+        self.max_num_seqs = new_max_num_seqs
 
     @property
     def num_batched_tokens(self):
@@ -183,6 +191,9 @@ class SchedulerOutputs:
     num_running_to_waiting: int
     recomputed_token_nums: int
 
+    need_score: bool 
+    allow_both_swap: bool 
+
     def __post_init__(self):
         # Swap in and swap out should never happen at the same time.
         # assert not (self.blocks_to_swap_in and self.blocks_to_swap_out)
@@ -192,7 +203,8 @@ class SchedulerOutputs:
             self._sort_by_lora_ids()
 
         self.num_prompt_adapters: int = len(self.prompt_adapter_requests)
-
+        assert self.allow_both_swap or (not (self.blocks_to_swap_in and self.blocks_to_swap_out))
+        
     def is_empty(self) -> bool:
         # NOTE: We do not consider the ignored sequence groups.
         return (not self.scheduled_seq_groups and not self.blocks_to_swap_in
@@ -361,6 +373,7 @@ class Scheduler:
         cache_config: CacheConfig,
         lora_config: Optional[LoRAConfig],
         pipeline_parallel_size: int = 1,
+        batch_solver: Optional[BatchSolver] = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.cache_config = cache_config
@@ -467,6 +480,15 @@ class Scheduler:
         self.partial_swap_out_flag = self.scheduler_config.swap_out_tokens_policy == "partial"
         self.partial_swapped_rate = self.scheduler_config.swap_out_partial_rate
         self.scheduler_metric=SchedulerMetric()
+        self.batch_solver = batch_solver
+        self.aux_model = None
+        self.need_score = True
+        self.tbound = -1
+        self.starv = -1
+        self.fake_allocate = self.scheduler_config.fake_allocate
+        self.prompt_limit = min(self.scheduler_config.max_model_len,
+                               self.scheduler_config.max_num_batched_tokens)
+        self.virtual_engine = 0
 
     @property
     def lora_enabled(self) -> bool:
@@ -480,6 +502,13 @@ class Scheduler:
     def add_seq_group(self, seq_group: SequenceGroup) -> None:
         # Add sequence groups to the waiting queue.
         self.waiting.append(seq_group)
+        seq_group.idle = 0
+        seq_group.runs = 0
+        seq_group.pri = 0
+
+
+    def set_virtual_engine(self, virtual_engine: int):
+        self.virtual_engine= virtual_engine
 
     def abort_seq_group(self, request_id: Union[str, Iterable[str]]) -> None:
         """Aborts a sequence group with the given ID.
@@ -677,6 +706,419 @@ class Scheduler:
             budget.add_num_seqs(seq_group.request_id, num_running_seqs)
         if curr_loras is not None and seq_group.lora_int_id > 0:
             curr_loras.add(seq_group.lora_int_id)
+    
+    def _get_ordered_requests(self):
+
+        need_aux_scores = []
+        for r in self.waiting:
+            if r.need_aux_model_score():
+                need_aux_scores.append(r)
+        if need_aux_scores: 
+            if int(os.environ.get('OPT_TIME', 0)):
+                t0 = time.time()
+            self.aux_model.obtain_aux_scores(need_aux_scores, self.virtual_engine)
+            if int(os.environ.get('OPT_TIME', 0)):
+                t1 = time.time()       
+                print("OPT-TIME: ", t1 - t0)
+        
+        if self.starv != -1:
+            for r in list(self.waiting) + list(self.running) + list(self.swapped):
+                if r.idle >= self.starv:
+                    r.pri = -1
+                    r.idle = 0
+                    r.runs = self.period
+                    #print('[promote] ', r.request_id)
+                elif r.pri == -1 and r.runs <= 0:
+                    r.pri = 0
+                    #print('[demote] ', r.request_id)
+
+            ret = list(sorted(list(self.waiting) + list(self.running) + list(self.swapped), key=lambda req: (req.pri, -req.aux_model_score )))
+        else:
+            ret = list(sorted(list(self.waiting) + list(self.running) + list(self.swapped), key=lambda req:  -req.aux_model_score ))
+
+        return ret 
+
+    def _general_schedule(self):
+
+        ordered_requests = self._get_ordered_requests()
+        original_len = len(self.swapped) + len(self.running) + len(self.waiting)
+
+        #print("budget: ", self.scheduler_config.max_num_batched_tokens, self.scheduler_config.max_num_seqs, len(self.running), len(self.waiting), len(self.swapped))
+
+        budget = SchedulingBudget(
+            token_budget=self.scheduler_config.max_num_batched_tokens,
+            max_num_seqs=self.scheduler_config.max_num_seqs,
+        )
+        final_budget = SchedulingBudget(
+            token_budget=self.scheduler_config.max_num_batched_tokens,
+            max_num_seqs=self.scheduler_config.max_num_seqs,
+        )
+        curr_loras: Set[int] = set()
+
+        remaining_waiting, prefills = (self.waiting,
+                                       SchedulerPrefillOutputs.create_empty())
+        remaining_running, running_scheduled = (
+            self.running, SchedulerRunningOutputs.create_empty())
+        remaining_swapped, swapped_in = (
+            self.swapped, SchedulerSwappedInOutputs.create_empty())
+
+        enable_chunking = True 
+        selected_seq_groups = []
+        exe_waiting = []
+        exe_swapped_prefill_seq_groups = []
+        exe_swapped_decode_seq_groups = []
+        exe_running_prefill_seq_groups = []
+        exe_running_decode_seq_groups = []
+        gpu_block_required = 0
+        
+
+        for seq_group in ordered_requests:            
+            seq = seq_group.get_seqs()[0]
+            if seq_group in remaining_running:
+                num_new_tokens = self._get_num_new_tokens(
+                seq_group, SequenceStatus.RUNNING, enable_chunking, budget)
+                if num_new_tokens == 0:
+                    #print(seq_group.get_seqs())
+                    assert budget.remaining_token_budget() == 0
+                    break
+
+                assert seq_group not in remaining_swapped, f" runs {seq_group}"
+                assert seq_group not in remaining_waiting, f" wait {seq_group}"
+                num_new_seqs = seq_group.get_max_num_running_seqs()
+                if (num_new_tokens == 0
+                        or not budget.can_schedule(num_new_tokens=num_new_tokens,
+                                                num_new_seqs=num_new_seqs)):
+                    break
+                budget.add_num_batched_tokens(seq_group.request_id,
+                                              num_new_tokens)
+                budget.add_num_seqs(seq_group.request_id, num_new_seqs)
+
+                seq_group.num_new_tokens = num_new_tokens
+                seq_group.num_new_seqs = num_new_seqs
+
+                selected_seq_groups.append(seq_group)
+                gpu_block_required += num_new_seqs
+
+                #x1.append(seq_group)
+
+            elif seq_group in remaining_swapped:
+                num_new_seqs = seq_group.get_max_num_running_seqs()
+                num_new_tokens = self._get_num_new_tokens(seq_group,
+                                                        SequenceStatus.SWAPPED,
+                                                        enable_chunking, budget)
+                num_swapped_seqs = seq_group.num_seqs(status=SequenceStatus.SWAPPED)
+                if (num_new_tokens == 0
+                        or not budget.can_schedule(num_new_tokens=num_new_tokens,
+                                                num_new_seqs=num_new_seqs)):
+                    break
+
+
+                seq_group.num_new_tokens = num_new_tokens
+                seq_group.num_new_seqs = num_new_seqs
+
+                budget.add_num_batched_tokens(seq_group.request_id, num_new_tokens)
+                budget.add_num_seqs(seq_group.request_id, num_new_seqs)
+                selected_seq_groups.append(seq_group)
+                gpu_block_required += (len(self.block_manager._get_physical_blocks(seq_group)) + num_swapped_seqs)
+
+                
+            elif seq_group in remaining_waiting:
+                waiting_seqs = seq_group.get_seqs(status=SequenceStatus.WAITING)
+                num_new_tokens = self._get_num_new_tokens(seq_group,
+                                                      SequenceStatus.WAITING,
+                                                      enable_chunking, budget)
+                if num_new_tokens > self.prompt_limit:
+                    assert False, "req exceed prompt limit"
+                #can allocate later
+                num_new_seqs = seq_group.get_max_num_running_seqs()
+                if (num_new_tokens == 0
+                        or not budget.can_schedule(num_new_tokens=num_new_tokens,
+                                                num_new_seqs=num_new_seqs)):
+                    #print('not appending')
+                    break
+
+                seq_group.num_new_tokens = num_new_tokens
+                seq_group.num_new_seqs = num_new_seqs
+                #print("append seq group: ", seq_group)
+                selected_seq_groups.append(seq_group)
+                budget.add_num_batched_tokens(seq_group.request_id, num_new_tokens)
+                budget.add_num_seqs(seq_group.request_id, num_new_seqs)
+                gpu_block_required += seq_group.total_token_block_size
+            else:
+                
+                assert False, "seqgroup not in all lists"
+
+        for seq_group in selected_seq_groups:
+            ordered_requests.remove(seq_group)
+        
+        #print("before remain: ", len(selected_seq_groups), len(ordered_requests), budget.num_curr_seqs)
+
+        _, execute_pinned_requests, preempted, swapped_out, blocks_to_swap_out, blocks_to_swap_in = self.reserve_free_blocks(gpu_block_required, selected_seq_groups, ordered_requests, remaining_running, final_budget)
+        blocks_to_copy = []
+
+        for seq_group in execute_pinned_requests:
+            if seq_group in remaining_waiting:
+                remaining_waiting.remove(seq_group)
+                if self.block_manager.can_allocate(seq_group) == AllocStatus.OK:
+                    self._allocate_and_set_running(seq_group)
+                    exe_waiting.append(ScheduledSequenceGroup(seq_group=seq_group,
+                                       token_chunk_size=seq_group.num_new_tokens))
+                    
+                    #final_budget.add_num_batched_tokens(seq_group.request_id, seq_group.num_new_tokens)
+                    #final_budget.add_num_seqs(seq_group.request_id, seq_group.num_new_seqs)
+                    del seq_group.num_new_tokens
+                    del seq_group.num_new_seqs
+                else:
+                    assert False, "can not append new req"
+            elif seq_group in remaining_running:
+                remaining_running.remove(seq_group)
+                if self.block_manager.can_append_slots(seq_group):
+                    self._append_slots(seq_group, blocks_to_copy)
+
+                    is_prefill = seq_group.is_prefill()
+                    #print("prefill run: ", is_prefill)
+                    if is_prefill:
+                        exe_running_prefill_seq_groups.append(
+                            ScheduledSequenceGroup(
+                                seq_group=seq_group,
+                                token_chunk_size=seq_group.num_new_tokens))
+                    else:
+                        exe_running_decode_seq_groups.append(
+                            ScheduledSequenceGroup(seq_group=seq_group,
+                                                token_chunk_size=1))
+
+                    #final_budget.add_num_batched_tokens(seq_group.request_id, seq_group.num_new_tokens)
+                    #final_budget.add_num_seqs(seq_group.request_id, seq_group.num_new_seqs)
+                    del seq_group.num_new_tokens
+                    del seq_group.num_new_seqs
+
+                else:
+                    assert False
+
+            elif seq_group in remaining_swapped:
+                remaining_swapped.remove(seq_group)
+                if self.block_manager.can_append_slots(seq_group):
+                    self._append_slots(seq_group, blocks_to_copy)
+
+                    is_prefill = seq_group.is_prefill()
+                    #print("swapped: ", seq_group, is_prefill)
+                    if is_prefill:
+                        exe_swapped_prefill_seq_groups.append(
+                            ScheduledSequenceGroup(seq_group,
+                                                token_chunk_size=seq_group.num_new_tokens))
+                    else:
+                        assert seq_group.num_new_tokens == 1
+                        exe_swapped_decode_seq_groups.append(
+                            ScheduledSequenceGroup(seq_group, token_chunk_size=1))
+
+                    #final_budget.add_num_batched_tokens(seq_group.request_id, seq_group.num_new_tokens)
+                    #final_budget.add_num_seqs(seq_group.request_id, seq_group.num_new_seqs)
+                    del seq_group.num_new_tokens
+                    del seq_group.num_new_seqs
+
+                else:
+                    assert False
+            else:
+                assert False 
+        #print("prefill decode: ", len(exe_running_decode_seq_groups), len(exe_running_prefill_seq_groups), len(remaining_running))
+        #assert len(remaining_running) == 0
+        prefills = SchedulerPrefillOutputs(
+            seq_groups=exe_waiting,
+            ignored_seq_groups=[],
+            kv_free_seq_groups=[],
+            num_lookahead_slots=self._get_num_lookahead_slots(is_prefill=True))
+        swapped_in = SchedulerSwappedInOutputs(
+            decode_seq_groups=exe_swapped_decode_seq_groups,
+            prefill_seq_groups=exe_swapped_prefill_seq_groups,
+            blocks_to_swap_in=blocks_to_swap_in,
+            blocks_to_copy=blocks_to_copy,
+            num_lookahead_slots=self._get_num_lookahead_slots(
+                is_prefill=False), 
+            infeasible_seq_groups=[])
+        running_scheduled = SchedulerRunningOutputs(
+            decode_seq_groups=exe_running_decode_seq_groups,
+            prefill_seq_groups=exe_running_prefill_seq_groups,
+            preempted=preempted,
+            swapped_out=swapped_out,
+            blocks_to_swap_out=blocks_to_swap_out,
+            blocks_to_copy=blocks_to_copy,
+            num_lookahead_slots=self._get_num_lookahead_slots(
+                is_prefill=False))
+
+        assert (final_budget.num_batched_tokens <=
+                self.scheduler_config.max_num_batched_tokens)
+        assert budget.num_curr_seqs <= self.scheduler_config.max_num_seqs, f" num req: {budget.num_curr_seqs} {self.scheduler_config.max_num_seqs}"
+
+        #print("extend: ", len(remaining_running), len(prefills.seq_groups), len(running_scheduled.decode_seq_groups), len(running_scheduled.prefill_seq_groups), len(running_scheduled.prefill_seq_groups), len(swapped_in.decode_seq_groups), len(swapped_in.prefill_seq_groups))
+        # Update waiting requests.
+        self.waiting = remaining_waiting
+        self.waiting.extendleft(running_scheduled.preempted)
+        # Update new running requests.
+        self.running = remaining_running
+        self.running.extend([s.seq_group for s in prefills.seq_groups])
+        self.running.extend(
+            [s.seq_group for s in running_scheduled.decode_seq_groups])
+        self.running.extend(
+            [s.seq_group for s in running_scheduled.prefill_seq_groups])
+        self.running.extend(
+            [s.seq_group for s in swapped_in.decode_seq_groups])
+        self.running.extend(
+            [s.seq_group for s in swapped_in.prefill_seq_groups])
+        # Update swapped requests.
+        self.swapped = remaining_swapped
+        self.swapped.extend(running_scheduled.swapped_out)
+
+        all_pri = list(self.swapped) + list(self.running) + list(self.waiting)
+        assert len(self.swapped) + len(self.running) + len(self.waiting) == original_len
+        ret = SchedulerOutputs(
+            scheduled_seq_groups=(prefills.seq_groups +
+                                  running_scheduled.prefill_seq_groups +
+                                  swapped_in.prefill_seq_groups +
+                                  running_scheduled.decode_seq_groups +
+                                  swapped_in.decode_seq_groups),
+            num_prefill_groups=(len(prefills.seq_groups) +
+                                len(swapped_in.prefill_seq_groups) +
+                                len(running_scheduled.prefill_seq_groups)),
+            num_batched_tokens=final_budget.num_batched_tokens,
+            blocks_to_swap_in=swapped_in.blocks_to_swap_in,
+            blocks_to_swap_out=running_scheduled.blocks_to_swap_out,
+            blocks_to_copy=running_scheduled.blocks_to_copy + swapped_in.blocks_to_copy,
+            ignored_seq_groups=prefills.ignored_seq_groups,
+            num_lookahead_slots=running_scheduled.num_lookahead_slots,
+            running_queue_size=0,
+            preempted=0,
+            num_waiting_to_running=0,
+            num_running_to_waiting=0,
+            recomputed_token_nums=0,
+            need_score=self.need_score,
+            allow_both_swap=True
+        )
+        running_this_step = [r.seq_group for r in ret.scheduled_seq_groups]
+        for seq in all_pri:
+            if seq in running_this_step:
+                if seq.pri == -1:
+                    seq.runs -= 1
+                seq.idle = 0
+            else:
+                seq.idle += 1
+        
+        return ret
+
+
+    def reserve_free_blocks(self, num_blocks_needed, pinned_requests: List[SequenceGroup], priority_requests, remaining_running, final_budget):
+
+        blocks_to_swap_out: List[Tuple[int, int]]  = []
+        blocks_to_swap_in: List[Tuple[int, int]] = []
+        
+        preempted = []
+        swapped_out = []
+
+        num_swap_out_blocks_needed = (
+            num_blocks_needed
+            - self.block_manager.gpu_allocator.get_num_free_blocks() \
+            + self.block_manager.watermark_blocks
+        )
+        swap_out_needed = num_swap_out_blocks_needed > 0
+
+        # the pinned requests we really execute
+        execute_pinned_requests = pinned_requests.copy()
+        # the pinned requests we put back due to swapped out
+        swapped_pinned_requests: List[SequenceGroup] = []
+
+        # swap out low priority requests if GPU blocks are not enough
+        if swap_out_needed:
+            pinned_request_ids = set(
+                [request.request_id for request in pinned_requests]
+            )
+            # swap out from the lowest priority request
+            for request in reversed(priority_requests): 
+                # pinned request must have already been popped from MLFQ,
+                assert request.request_id not in pinned_request_ids
+                if num_swap_out_blocks_needed <= 0:
+                    break
+                if (len(request.get_seqs(status=SequenceStatus.RUNNING))):
+                    num_swap_out_blocks_needed -= len(self.block_manager._get_physical_blocks(request))
+                    preempted_mode = self._preempt(request, blocks_to_swap_out, preemption_mode = PreemptionMode.SWAP)
+                    if preempted_mode == PreemptionMode.RECOMPUTE:
+                        preempted.append(request)
+                    else:
+                        swapped_out.append(request)
+                    if request in remaining_running:
+                        assert request not in execute_pinned_requests
+                        remaining_running.remove(request)
+                    else:
+                        execute_pinned_requests.remove(request)
+
+            if num_swap_out_blocks_needed > 0:
+                # if we still need to swap out blocks, swap out pinned requests
+                # location of pinned requests may be in CPU/GPU or none now
+                while num_swap_out_blocks_needed > 0 and len(execute_pinned_requests) > 0:
+                    request = execute_pinned_requests.pop(-1)
+                    swapped_pinned_requests.append(request)
+                    if (len(request.get_seqs(status=SequenceStatus.RUNNING))):
+                        num_swap_out_blocks_needed -= request.num_seqs(status=SequenceStatus.RUNNING)
+                        num_swap_out_blocks_needed -= len(self.block_manager._get_physical_blocks(request))
+                        preempted_mode = self._preempt(request, blocks_to_swap_out, preemption_mode = PreemptionMode.SWAP)
+                        
+                        remaining_running.remove(request)
+                        if preempted_mode == PreemptionMode.RECOMPUTE:
+                            preempted.append(request)
+                        else:
+                            swapped_out.append(request)
+
+                    elif (len(request.get_seqs(status=SequenceStatus.SWAPPED))):
+
+                        num_swap_out_blocks_needed -= (len(self.block_manager._get_physical_blocks(request)) + request.num_seqs(status=SequenceStatus.SWAPPED))
+                    else:
+                        num_swap_out_blocks_needed -= request.get_seqs()[0].n_blocks  
+                        
+
+            # swap block is required by waiting request and we already put it back
+            assert num_swap_out_blocks_needed <= 0
+
+        # swap in pinned requests if needed
+        for seq_group in execute_pinned_requests:
+            if (len(seq_group.get_seqs(status=SequenceStatus.SWAPPED))):
+                self._swap_in(seq_group, blocks_to_swap_in)
+
+            final_budget.add_num_batched_tokens(seq_group.request_id, seq_group.num_new_tokens)
+            final_budget.add_num_seqs(seq_group.request_id, seq_group.num_new_seqs)
+
+        if not swap_out_needed:
+            for request in priority_requests:                 
+
+                if (len(request.get_seqs(status=SequenceStatus.SWAPPED))):
+
+                    num_new_seqs = request.get_max_num_running_seqs()
+                    num_new_tokens = self._get_num_new_tokens(request,
+                                                        SequenceStatus.SWAPPED,
+                                                        enable_chunking=True, budget=final_budget)
+
+
+                    # swap in the request if there are enough free blocks
+                    if (
+                        self.block_manager.can_swap_in(request)
+                    ) and (num_swap_out_blocks_needed + len(self.block_manager._get_physical_blocks(request)) + request.num_seqs(status=SequenceStatus.SWAPPED)) < 0 \
+                        and (num_new_tokens > 0 and final_budget.can_schedule(num_new_tokens=num_new_tokens, num_new_seqs=num_new_seqs)):
+                        
+                        #print("Xswap in : ", request, request.is_prefill(), request.get_max_num_running_seqs(), sum(seq.get_num_new_tokens() for seq in request.get_seqs(status=SequenceStatus.SWAPPED)))
+                        request.num_new_seqs = request.get_max_num_running_seqs()
+                        request.num_new_tokens = sum(seq.get_num_new_tokens() for seq in request.get_seqs(status=SequenceStatus.SWAPPED))
+                        self._swap_in(request, blocks_to_swap_in)
+
+                        final_budget.add_num_batched_tokens(seq_group.request_id, seq_group.num_new_tokens)
+                        final_budget.add_num_seqs(seq_group.request_id, seq_group.num_new_seqs)
+
+                        execute_pinned_requests.append(request)
+                        num_swap_out_blocks_needed += (len(self.block_manager._get_physical_blocks(request)) + request.num_seqs(status=SequenceStatus.SWAPPED))
+                    else:
+                        break
+                # reduce the quata no matter if the request needs swapping in
+                #swap_quata -= 1
+
+
+        return swapped_pinned_requests, execute_pinned_requests, preempted, swapped_out, blocks_to_swap_out, blocks_to_swap_in
+
 
     def _schedule_preemption(
         self,
@@ -771,10 +1213,10 @@ class Scheduler:
         swapped_queue_set = set(swapped_queue)
         running_queue_set = set(running_queue)
         waiting_queue_set = set(waiting_queue)
+        if self.scheduler_config.policy == 'tfittradeoff':
+            budget.update_max_num_seqs(1024)
+        decode_seqs:List[int]= []
         for sg in total_queue:
-            block_size =sg.total_token_block_size  
-            tmp_total_block_size += block_size
-            num_new_seqs = sg.get_max_num_running_seqs()
             if sg in swapped_queue_set:
                 seq_status= SequenceStatus.SWAPPED
             elif sg in running_queue_set:
@@ -785,7 +1227,15 @@ class Scheduler:
                                                         seq_status,
                                                         self.enable_chunking,
                                                         budget)
-            if tmp_total_block_size <= gpu_block_capacity and num_new_tokens > 0 \
+            if seq_status != SequenceStatus.WAITING:
+                block_size =sg.total_token_block_size  
+                tmp_total_block_size += block_size
+            else:
+                block_size = max(min(sg.total_token_block_size, gpu_block_capacity - tmp_total_block_size),1)
+                tmp_total_block_size += block_size
+            num_new_seqs = sg.get_max_num_running_seqs()
+            
+            if tmp_total_block_size <= gpu_block_capacity and num_new_tokens > 0 and budget.remaining_token_budget() >= 0 \
                 and budget.can_schedule(
                     num_new_tokens=num_new_tokens,
                     num_new_seqs=num_new_seqs
@@ -795,6 +1245,11 @@ class Scheduler:
                 sg.token_chunk_size = num_new_tokens
                 budget.add_num_batched_tokens(sg.request_id, num_new_tokens)
                 budget.add_num_seqs(sg.request_id, num_new_seqs)
+                if not sg.is_prefill():
+                    decode_seqs.append(sg.seq_len)
+                    new_token_budget= self.batch_solver.get_best_token_limits(self.scheduler_config.policy,decode_seqs)
+                    if new_token_budget != 0:
+                        budget.update_token_budget(new_token_budget)
             else:
                 budget.subtract_num_batched_tokens(sg.request_id,
                                                     num_new_tokens)
@@ -802,6 +1257,7 @@ class Scheduler:
                 tmp_total_block_size -= block_size
                 sg.update_waiting_iter_nums()
                 selected_swapped_seq_groups.append(sg)
+
 
         for seq_group in selected_swapped_seq_groups:
             self._preempt_seq(
@@ -844,7 +1300,6 @@ class Scheduler:
             num_lookahead_slots_prefill,
             ignored_seq_groups=scheduler_preemtion.ignored_seq_groups)
 
-        print(budget._num_batched_tokens, budget._num_curr_seqs, len(running_queue), len(swapped_queue), len(waiting_queue))
         return (running_queue, swapped_queue, waiting_queue,
                 running_scheduler_output, swapped_scheduler_output,
                 waiting_scheduler_output, recomputed_token_nums)
@@ -1558,22 +2013,25 @@ class Scheduler:
                 waiting_queue.popleft()
                 continue
 
-            # If the sequence group cannot be allocated, stop.
-            can_allocate = self.block_manager.can_allocate(seq_group)
-            if can_allocate == AllocStatus.LATER:
-                leftover_waiting_sequences.appendleft(seq_group)
-                waiting_queue.popleft()
-                continue
-            elif can_allocate == AllocStatus.NEVER:
-                logger.warning(
-                    "Input prompt (%d tokens) is too long"
-                    " and exceeds the capacity of block_manager",
-                    num_new_tokens)
-                for seq in waiting_seqs:
-                    seq.status = SequenceStatus.FINISHED_IGNORED
-                ignored_seq_groups.append(seq_group)
-                waiting_queue.popleft()
-                continue
+            if self.fake_allocate:
+                can_allocate = AllocStatus.OK
+            else:
+                # If the sequence group cannot be allocated, stop.
+                can_allocate = self.block_manager.can_allocate(seq_group)
+                if can_allocate == AllocStatus.LATER:
+                    leftover_waiting_sequences.appendleft(seq_group)
+                    waiting_queue.popleft()
+                    continue
+                elif can_allocate == AllocStatus.NEVER:
+                    logger.warning(
+                        "Input prompt (%d tokens) is too long"
+                        " and exceeds the capacity of block_manager",
+                        num_new_tokens)
+                    for seq in waiting_seqs:
+                        seq.status = SequenceStatus.FINISHED_IGNORED
+                    ignored_seq_groups.append(seq_group)
+                    waiting_queue.popleft()
+                    continue
 
             lora_int_id = 0
             if self.lora_enabled:
@@ -1599,7 +2057,11 @@ class Scheduler:
             if curr_loras is not None and lora_int_id > 0:
                 curr_loras.add(lora_int_id)
             waiting_queue.popleft()
-            self._allocate_and_set_running(seq_group)
+
+            if self.fake_allocate:
+                self._fake_allocate_and_set_running(seq_group)
+            else:
+                self._allocate_and_set_running(seq_group)
 
             if seq_group.swap_out_moment is not None:
                 self.scheduler_metric.total_swap_out_waiting_time += time.time(
@@ -1728,6 +2190,8 @@ class Scheduler:
             num_running_to_waiting=0,
             num_waiting_to_running=0,
             recomputed_token_nums=0,
+            need_score=False,
+            allow_both_swap=self.allow_both_swap
         )
 
     def _reallocate_shared_block_size(self,num_shared_blocks):
@@ -1854,9 +2318,10 @@ class Scheduler:
                     policy_info=policy_info,
                     enable_chunking=True)
 
-            assert (budget.num_batched_tokens <=
-                    self.scheduler_config.max_num_batched_tokens)
-            assert budget.num_curr_seqs <= self.scheduler_config.max_num_seqs
+            if self.scheduler_config.policy != "tfittradeoff":
+                assert (budget.num_batched_tokens <=
+                        self.scheduler_config.max_num_batched_tokens)
+                assert budget.num_curr_seqs <= self.scheduler_config.max_num_seqs
 
             # Update waiting requests.
             self.waiting = remaining_waiting
@@ -1957,6 +2422,8 @@ class Scheduler:
                 num_waiting_to_running=len(
                     running_scheduled.prefill_seq_groups),
                 recomputed_token_nums=recomputed_token_nums,
+                need_score=False,
+                allow_both_swap=self.allow_both_swap
             )
         else:
             ignored_seq_groups: List[SequenceGroup] = []
@@ -1984,13 +2451,19 @@ class Scheduler:
                 num_running_to_waiting=0,
                 num_waiting_to_running=0,
                 recomputed_token_nums=0,
+                need_score=False,
+                allow_both_swap=self.allow_both_swap
             )
 
     def _schedule(self) -> SchedulerOutputs:
         """Schedule queued requests."""
-        if self.scheduler_config.chunked_prefill_enabled:
+        if self.scheduler_config.policy == "opt":
+            return self._general_schedule()
+        if self.scheduler_config.chunked_prefill_enabled :
+            self.allow_both_swap = True
             return self._schedule_chunked_prefill()
         else:
+            self.allow_both_swap = True
             return self._schedule_default()
 
     def _can_append_slots(self, seq_group: SequenceGroup) -> bool:
@@ -2047,7 +2520,10 @@ class Scheduler:
             for seq in seq_group.get_seqs(status=SequenceStatus.RUNNING):
                 seq_id = seq.seq_id
                 seq_data[seq_id] = seq.data
-                block_tables[seq_id] = self.block_manager.get_block_table(seq,shared)
+                if self.fake_allocate:
+                    block_tables[seq_id] = self.block_manager.get_fake_block_table_and_delete(seq)
+                else:
+                    block_tables[seq_id] = self.block_manager.get_block_table(seq,shared)
                 self.block_manager.access_all_blocks_in_seq(seq, now)
 
             common_computed_block_nums = (
@@ -2131,6 +2607,12 @@ class Scheduler:
             else:
                 seq.set_seq_type(SequenceType.NORMAL)
             seq.status_transmit = SequenceStatus.WAITING_TO_RUNNING
+
+
+    def _fake_allocate_and_set_running(self, seq_group: SequenceGroup)-> None:
+        self.block_manager.fake_allocate(seq_group)
+        for seq in seq_group.get_seqs(status=SequenceStatus.WAITING):
+            seq.status = SequenceStatus.RUNNING
 
     def _append_slots(
         self,
@@ -2255,7 +2737,6 @@ class Scheduler:
             status=SequenceStatus.SWAPPED) + seq_group.get_seqs(
                 status=SequenceStatus.PARTIAL_SWAPPED)
 
-        # asyncio.run(self._async_swap(blocks_to_swap_in,[],[]))
 
         for seq in seqs:
             seq.status = SequenceStatus.RUNNING

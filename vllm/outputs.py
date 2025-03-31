@@ -34,6 +34,8 @@ class CompletionOutput:
     finish_reason: Optional[str] = None
     stop_reason: Union[int, str, None] = None
     lora_request: Optional[LoRARequest] = None
+    pred_score: Optional[float] = None,
+    aux_model_score: Optional[float] = None
 
     def finished(self) -> bool:
         return self.finish_reason is not None
@@ -45,7 +47,8 @@ class CompletionOutput:
                 f"cumulative_logprob={self.cumulative_logprob}, "
                 f"logprobs={self.logprobs}, "
                 f"finish_reason={self.finish_reason}, "
-                f"stop_reason={self.stop_reason})")
+                f"stop_reason={self.stop_reason}),"
+                f"aux_model_score={self.aux_model_score})")
 
 
 @dataclass
@@ -103,6 +106,8 @@ class RequestOutput:
         num_waiting_to_running: Optional[int] = None,
         recomputed_token_nums: Optional[int] = None,
         num_preemption_iter: Optional[int] = None,
+        pred_score: Optional[float] = None,
+        aux_model_score: Optional[float] = None,
     ) -> None:
         self.request_id = request_id
         self.prompt = prompt
@@ -119,6 +124,8 @@ class RequestOutput:
         self.num_waiting_to_running = num_waiting_to_running
         self.recomputed_token_nums = recomputed_token_nums
         self.num_preemption_iter = num_preemption_iter
+        self.pred_score = pred_score
+        self.aux_model_score = aux_model_score
 
     @classmethod
     def from_seq_group(cls, seq_group: SequenceGroup, token_chunk_size: int,
@@ -148,14 +155,16 @@ class RequestOutput:
         # logprobs are not requested.
         include_logprobs = seq_group.sampling_params.logprobs is not None
         text_buffer_length = seq_group.sampling_params.output_text_buffer_length
+        aux_model_score = seq_group.aux_model_score
+        pred_score = seq_group.pred_score
         outputs = [
             CompletionOutput(seqs.index(seq),
                              seq.get_output_text_to_return(text_buffer_length),
                              seq.get_output_token_ids(),
                              seq.get_cumulative_logprob(),
                              seq.output_logprobs if include_logprobs else None,
-                             SequenceStatus.get_finished_reason(seq.status),
-                             seq.stop_reason) for seq in top_n_seqs
+                             SequenceStatus.get_finished_reason(seq.status), None,
+                             seq.stop_reason,pred_score,aux_model_score) for seq in top_n_seqs
         ]
         wasted_block_size = 0
         total_block_size = 0
