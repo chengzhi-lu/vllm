@@ -260,7 +260,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                 return None
             num_steps = broadcast_data.pop("num_steps")
             self.use_aux_model =broadcast_data.pop("use_aux_model")
-            logger.info(self.use_aux_model)
+            logger.debug(self.use_aux_model)
             worker_input = WorkerInput.from_broadcasted_tensor_dict(
                 broadcast_data)
             model_input = (

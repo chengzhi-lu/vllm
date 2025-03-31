@@ -15,9 +15,9 @@ model_names=(
   "meta-llama/Llama-2-70b-chat-hf"
 )
 parallel_types=(
-  # "single"
+  "single"
   "tp"
-  # "pp"
+  "pp"
 )
 datasets=(
   "sharegpt /root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
@@ -43,7 +43,7 @@ scheduler_swap_policies=(
   "opt full"
 )
 
-request_rates=(8 16 32)
+request_rates=(2 4 8 16 32)
 # request_rates=(8)
 swap_out_partial_rates=(0.5)
 
@@ -87,7 +87,7 @@ start_server() {
         max_num_seqs=192
         ;;
     *)
-        max_num_seqs=16
+        max_num_seqs=512
         ;;
   esac
   echo "启动服务器: model=${model_name##*/} type=$parallel_type policy=$policy batch size=$max_num_seqs"
@@ -149,7 +149,7 @@ run_benchmark() {
   local dataset_name=$6
   local model_name=$7
   local parallel_type=$8
-  local total_request_nums=32
+  local total_request_nums=1024
 
   local request_duration=$((total_request_nums / request_rate))
   local log_file="logs/benchmark_${model_name##*/}_${parallel_type}_${policy}_rate${request_rate}.log"

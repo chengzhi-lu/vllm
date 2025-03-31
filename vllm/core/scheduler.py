@@ -1235,9 +1235,6 @@ class Scheduler:
                 tmp_total_block_size += block_size
             num_new_seqs = sg.get_max_num_running_seqs()
             
-            
-           
-
             if tmp_total_block_size <= gpu_block_capacity and num_new_tokens > 0 and budget.remaining_token_budget() >= 0 \
                 and budget.can_schedule(
                     num_new_tokens=num_new_tokens,
@@ -2194,7 +2191,7 @@ class Scheduler:
             num_waiting_to_running=0,
             recomputed_token_nums=0,
             need_score=False,
-            allow_both_swap=False
+            allow_both_swap=self.allow_both_swap
         )
 
     def _reallocate_shared_block_size(self,num_shared_blocks):
@@ -2426,7 +2423,7 @@ class Scheduler:
                     running_scheduled.prefill_seq_groups),
                 recomputed_token_nums=recomputed_token_nums,
                 need_score=False,
-                allow_both_swap=False
+                allow_both_swap=self.allow_both_swap
             )
         else:
             ignored_seq_groups: List[SequenceGroup] = []
@@ -2455,7 +2452,7 @@ class Scheduler:
                 num_waiting_to_running=0,
                 recomputed_token_nums=0,
                 need_score=False,
-                allow_both_swap=False
+                allow_both_swap=self.allow_both_swap
             )
 
     def _schedule(self) -> SchedulerOutputs:
@@ -2463,8 +2460,10 @@ class Scheduler:
         if self.scheduler_config.policy == "opt":
             return self._general_schedule()
         if self.scheduler_config.chunked_prefill_enabled :
+            self.allow_both_swap = True
             return self._schedule_chunked_prefill()
         else:
+            self.allow_both_swap = True
             return self._schedule_default()
 
     def _can_append_slots(self, seq_group: SequenceGroup) -> bool:

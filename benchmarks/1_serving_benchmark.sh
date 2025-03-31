@@ -15,9 +15,9 @@ model_names=(
   "meta-llama/Llama-2-70b-chat-hf"
 )
 parallel_types=(
-  # "single"
+  "single"
   "tp"
-  # "pp"
+  "pp"
 )
 datasets=(
   "sharegpt /root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
@@ -35,8 +35,8 @@ num_shared_blocks=0
 
 # 测试策略组合
 scheduler_swap_policies=(
-  # "tfittradeoff partial"
-  # "fcfs full"
+  "tfittradeoff partial"
+  "fcfs full"
   "sjf full"
   "sjmlfq full"
   # "las full"

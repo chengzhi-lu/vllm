@@ -474,7 +474,7 @@ class AUXLLMEngine:
             for output in step_outputs:
                 if output.finished:
                     aux_model_scores[output.request_id] = output.outputs[0].aux_model_score
-        print(aux_model_scores)
+        # print(aux_model_scores)
         for seq_group_original in seq_groups: 
             assert seq_group_original.need_aux_model_score()
             seq_group_original.set_aux_model_score(aux_model_scores[seq_group_original.request_id])
