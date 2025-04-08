@@ -78,7 +78,6 @@ def initialize_ray_cluster(
             the default Ray cluster address.
     """
     assert_ray_available()
-
     # Connect to a ray cluster.
     if is_hip() or is_xpu():
         ray.init(address=ray_address,

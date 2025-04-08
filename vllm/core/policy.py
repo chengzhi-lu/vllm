@@ -123,12 +123,13 @@ class TFITTradeoff(Policy):
         return priority
 
     def _get_swapped_priority(self, seq_group: SequenceGroup, policy_info: PolicyInfo):
-        waiting_time = max(policy_info.now - seq_group.get_last_execute_time(), 0.001)
+        # waiting_time = max(policy_info.now - seq_group.get_last_execute_time(), 0.001)
+        waiting_time = seq_group.metrics.waiting_iter_nums
         if seq_group.priority_rate < 1: 
             tmp_priority_rate = seq_group.priority_rate 
-            priority = waiting_time**5 / seq_group.seq_len * tmp_priority_rate
+            priority = waiting_time**3 / seq_group.seq_len * tmp_priority_rate
         elif not seq_group.is_prefill():
-            priority = waiting_time**5 / seq_group.seq_len
+            priority = waiting_time**2 / seq_group.seq_len
         else:
             priority = waiting_time/(seq_group.seq_len)
         return priority

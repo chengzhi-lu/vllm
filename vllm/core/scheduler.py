@@ -16,6 +16,7 @@ from vllm.core.policy import Policy, PolicyFactory, PolicyInfo
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
 from vllm.prompt_adapter.request import PromptAdapterRequest
+import numpy as np
 from vllm.sequence import (Sequence, SequenceData, SequenceGroup,
                            SequenceGroupMetadata, SequenceStatus, SequenceType)
 
@@ -1202,8 +1203,8 @@ class Scheduler:
         selected_swapped_seq_groups: List[SequenceGroup] = []
         now = time.time()
         num_new_tokens = 0
+        all_seq_group_queue = running_queue + swapped_queue + waiting_queue
         if self.scheduler_config.policy != 'tfittradeoff':
-            all_seq_group_queue = running_queue + swapped_queue + waiting_queue
             total_queue = policy.sort_by_priority(now, all_seq_group_queue)
         else:
             total_waiting_queue = swapped_queue + waiting_queue
@@ -1213,7 +1214,7 @@ class Scheduler:
         swapped_queue_set = set(swapped_queue)
         running_queue_set = set(running_queue)
         waiting_queue_set = set(waiting_queue)
-        if self.scheduler_config.policy == 'tfittradeoff':
+        if budget.max_num_seqs != 1024:
             budget.update_max_num_seqs(1024)
         decode_seqs:List[int]= []
         for sg in total_queue:
@@ -1250,6 +1251,8 @@ class Scheduler:
                     new_token_budget= self.batch_solver.get_best_token_limits(self.scheduler_config.policy,decode_seqs)
                     if new_token_budget != 0:
                         budget.update_token_budget(new_token_budget)
+                    else:
+                        budget.update_token_budget(budget._num_batched_tokens)
             else:
                 budget.subtract_num_batched_tokens(sg.request_id,
                                                     num_new_tokens)

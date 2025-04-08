@@ -11,6 +11,8 @@ class BatchSolver:
         self.sample_time_params = np.array([0, 0])
         self.profile_dir = "/root/vllm/vllm/core/profile_data/"
         self.profile_result = self._read_params()
+        if self.profile_result is None:
+            return None
         self.get_profiled_info()
         self._get_params(parallel_type=parallel_type, pipeline_parallel_size=pipeline_parallel_size, model_id=model_id)
 
@@ -37,6 +39,8 @@ class BatchSolver:
 
     def _read_params(self):
         data_frames = []
+        if self.profile_dir is None or not os.path.exists(self.profile_dir) or not os.path.isdir(self.profile_dir):
+            return None 
         for file_name in os.listdir(self.profile_dir):
             if file_name.endswith(".csv"):
                 try:
@@ -131,7 +135,3 @@ class BatchSolver:
             token_limit = 0
 
         return token_limit
-
-if __name__=='__main__':
-    batch_solver=BatchSolver('tp',4,'meta-llama/Llama-2-70b-chat-hf')
-    batch_solver.get_best_token_limits('tfittradeoff',[0,0,0])

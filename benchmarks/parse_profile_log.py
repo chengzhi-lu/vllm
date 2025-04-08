@@ -36,10 +36,10 @@ def parse_profile_line(line):
 
 
 def prefill_model(df):
-    if os.path.exists(os.path.join(dir_name, "prefill_profile.csv")):
-        history_result = pd.read_csv(os.path.join(dir_name, "prefill_profile.csv"))
+    if os.path.exists(os.path.join(profile_result_dir, "prefill_profile.csv")):
+        history_result = pd.read_csv(os.path.join(profile_result_dir, "prefill_profile.csv"))
     else:
-        history_result = pd.DataFrame(columns=["model_type", "parallel_type", "num_instances", "a", "b", "c"])
+        history_result = pd.DataFrame(columns=["model_id", "parallel_type", "num_instances", "a", "b", "c"])
     prefill_df = df[df["decode_batch_size"] == 0]
     prefill_df = prefill_df[["prefill_tokens", "model_execution_time"]].groupby(["prefill_tokens"]).mean().reset_index()
     X = prefill_df[1:]["prefill_tokens"].values
@@ -48,7 +48,7 @@ def prefill_model(df):
     a, b, c = coefficients
     new_profile_result = pd.DataFrame(
         {
-            "model_type": [model_id],
+            "model_id": [model_id],
             "parallel_type": [parallel_type],
             "num_instances": num_instances,
             "a": [a],
@@ -57,14 +57,14 @@ def prefill_model(df):
         }
     )
     history_result = pd.concat([history_result, new_profile_result])
-    history_result.to_csv(os.path.join(dir_name, "prefill_profile.csv"), index=False)
+    history_result.to_csv(os.path.join(profile_result_dir, "prefill_profile.csv"), index=False)
 
 
 def decode_model(df):
-    if os.path.exists(os.path.join(dir_name, "decode_profile.csv")):
-        history_result = pd.read_csv(os.path.join(dir_name, "decode_profile.csv"))
+    if os.path.exists(os.path.join(profile_result_dir, "decode_profile.csv")):
+        history_result = pd.read_csv(os.path.join(profile_result_dir, "decode_profile.csv"))
     else:
-        history_result = pd.DataFrame(columns=["model_type", "parallel_type", "num_instances", "a", "b", "c"])
+        history_result = pd.DataFrame(columns=["model_id", "parallel_type", "num_instances", "a", "b", "c"])
     decode_df = df[df["prefill_tokens"] == 0]
     decode_df = decode_df[decode_df['decode_seq_lens'].apply(len) > 0]
     def save_eval(x):
@@ -92,7 +92,7 @@ def decode_model(df):
     popt, pcov = curve_fit(func, X, y)
     new_profile_result = pd.DataFrame(
         {
-            "model_type": [model_id],
+            "model_id": [model_id],
             "parallel_type": [parallel_type],
             "num_instances": num_instances,
             "a": [popt[0]],
@@ -101,14 +101,14 @@ def decode_model(df):
         }
     )
     history_result = pd.concat([history_result, new_profile_result])
-    history_result.to_csv(os.path.join(dir_name, "decode_profile.csv"), index=False)
+    history_result.to_csv(os.path.join(profile_result_dir, "decode_profile.csv"), index=False)
 
 
 def sample_model(df):
-    if os.path.exists(os.path.join(dir_name, "sample_profile.csv")):
-        history_result = pd.read_csv(os.path.join(dir_name, "sample_profile.csv"))
+    if os.path.exists(os.path.join(profile_result_dir, "sample_profile.csv")):
+        history_result = pd.read_csv(os.path.join(profile_result_dir, "sample_profile.csv"))
     else:
-        history_result = pd.DataFrame(columns=["model_type", "parallel_type", "num_instances", "a", "b"])
+        history_result = pd.DataFrame(columns=["model_id", "parallel_type", "num_instances", "a", "b"])
 
     def func(x, a, b):
         return a * x + b
@@ -120,7 +120,7 @@ def sample_model(df):
     popt, pcov = curve_fit(func, X, y)
     new_profile_result = pd.DataFrame(
         {
-            "model_type": [model_id],
+            "model_id": [model_id],
             "parallel_type": [parallel_type],
             "num_instances": num_instances,
             "a": [popt[0]],
@@ -128,7 +128,7 @@ def sample_model(df):
         }
     )
     history_result = pd.concat([history_result, new_profile_result])
-    history_result.to_csv(os.path.join(dir_name, "sample_profile.csv"), index=False)
+    history_result.to_csv(os.path.join(profile_result_dir, "sample_profile.csv"), index=False)
 
 
 def parse_log():
@@ -191,9 +191,10 @@ if __name__ == "__main__":
     seconds = datetime.now().strftime("%H%M%S")
     base_model_id = model_id.split("/")[-1]
     dir_name = f"{base_dir}/{days}/{execution_counter}"
+    profile_result_dir = "/root/vllm/vllm/core/profile_data"
     file_name = f"{request_rate}qps-{base_model_id}-{seconds}-{policy}_profile.csv"
     result_path = f"{dir_name}/{file_name}"
     model=model_id.split("/")[1]
-    log_path = f"result/profile/api_server_{policy}_{swap_policy}_{model}_{parallel_type}_profile.log"
+    log_path = f"logs/api_server_{model}_{parallel_type}_{policy}_{swap_policy}.log"
 
     parse_log()
