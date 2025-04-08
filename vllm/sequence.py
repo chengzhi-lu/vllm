@@ -293,7 +293,7 @@ class Sequence:
         # Swapped out block raio
         self.swapped_out_block_nums: int = 0
 
-        self.eos_prob_estimation_window = 20
+        self.eos_prob_estimation_window = 15
         self.min_eos_rank = -1
         self.default_eos_token_prob = 0.1
 
