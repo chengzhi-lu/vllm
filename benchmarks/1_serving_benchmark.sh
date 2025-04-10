@@ -39,7 +39,7 @@ scheduler_swap_policies=(
   # "fcfs full"
   # "sjf full"
   "sjmlfq full"
-  "opt full"
+  # "opt full"
 )
 
 request_rates=(8 16 32 64)
@@ -104,7 +104,7 @@ for ptype in "${parallel_types[@]}"; do
               host=""
               export RAY_ADDRESS=""
             fi
-            
+
             # 启动服务
             start_server "$policy" "$swap_policy" "$swap_out_partial_rate" \
             "$ptype" "$model_name"
