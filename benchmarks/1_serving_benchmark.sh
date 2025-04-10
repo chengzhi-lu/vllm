@@ -35,9 +35,9 @@ num_shared_blocks=0
 max_request_nums=4096
 # 测试策略组合
 scheduler_swap_policies=(
-  # "tfittradeoff partial"
-  # "fcfs full"
-  # "sjf full"
+  "tfittradeoff partial"
+  "fcfs full"
+  "sjf full"
   "sjmlfq full"
   "opt full"
 )
@@ -90,35 +90,37 @@ for ptype in "${parallel_types[@]}"; do
         IFS=' ' read -r policy swap_policy <<< "$scheduler_swap_policy"
         for dataset in "${datasets[@]}"; do
           IFS=' ' read -r dataset_name dataset_path <<< "$dataset"
-          
+            
           for model_name in "${model_names[@]}"; do
             # 跳过70b模型的single并行类型
             if [[ "$model_name" == "meta-llama/Llama-2-70b-chat-hf" && "$ptype" == "single" ]]; then
               echo "跳过 llama2-70b 的 single 并行类型测试"
               continue
             fi
-            
+              
             if [[ "$ptype" == "pp" ]]; then
               host="10.119.46.54"
             else
               host=""
               export RAY_ADDRESS=""
             fi
-            
+              
             # 启动服务
             start_server "$policy" "$swap_policy" "$swap_out_partial_rate" \
             "$ptype" "$model_name"
-            
+              
             # 运行基准测试
-            for request_rate in "${request_rates[@]}"; do
-              run_benchmark "$policy" "$swap_policy" "$swap_out_partial_rate" \
-                 "$request_rate" "$dataset_path" "$dataset_name" \
-                "$model_name" "$ptype" "$max_request_nums"
-              sleep 5
-              parse_result "$policy" "$swap_policy" "$swap_out_partial_rate" \
-                "$request_rate" "$model_name" "$ptype"
+            for i in {1..3}; do
+              for request_rate in "${request_rates[@]}"; do
+                run_benchmark "$policy" "$swap_policy" "$swap_out_partial_rate" \
+                  "$request_rate" "$dataset_path" "$dataset_name" \
+                  "$model_name" "$ptype" "$max_request_nums"
+                sleep 5
+                parse_result "$policy" "$swap_policy" "$swap_out_partial_rate" \
+                  "$request_rate" "$model_name" "$ptype"
+              done
             done
-            
+              
             # 停止服务器
             echo "停止服务器"
             terminate_server "$ptype"
@@ -129,5 +131,4 @@ for ptype in "${parallel_types[@]}"; do
     done
   done
 done
-
 echo "所有测试完成，结果保存在: $result_dir"

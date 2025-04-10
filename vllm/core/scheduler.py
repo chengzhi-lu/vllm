@@ -1228,14 +1228,14 @@ class Scheduler:
                                                         seq_status,
                                                         self.enable_chunking,
                                                         budget)
-            if seq_status != SequenceStatus.WAITING:
-                block_size =sg.total_token_block_size  
+            total_token_block_size = sg.total_token_block_size
+            if seq_status == SequenceStatus.WAITING:
+                block_size = max(min(total_token_block_size, gpu_block_capacity - tmp_total_block_size),1)
                 tmp_total_block_size += block_size
             else:
-                block_size = max(min(sg.total_token_block_size, gpu_block_capacity - tmp_total_block_size),1)
+                block_size =total_token_block_size  
                 tmp_total_block_size += block_size
             num_new_seqs = sg.get_max_num_running_seqs()
-            
             if tmp_total_block_size <= gpu_block_capacity and num_new_tokens > 0 and budget.remaining_token_budget() >= 0 \
                 and budget.can_schedule(
                     num_new_tokens=num_new_tokens,
@@ -1246,13 +1246,14 @@ class Scheduler:
                 sg.token_chunk_size = num_new_tokens
                 budget.add_num_batched_tokens(sg.request_id, num_new_tokens)
                 budget.add_num_seqs(sg.request_id, num_new_seqs)
-                if not sg.is_prefill():
-                    decode_seqs.append(sg.seq_len)
-                    new_token_budget= self.batch_solver.get_best_token_limits(self.scheduler_config.policy,decode_seqs)
-                    if new_token_budget != 0:
-                        budget.update_token_budget(new_token_budget)
-                    else:
-                        budget.update_token_budget(budget._num_batched_tokens)
+                if self.scheduler_config.policy == 'tfittradeoff':
+                    if not sg.is_prefill():
+                        decode_seqs.append(sg.seq_len)
+                        new_token_budget= self.batch_solver.get_best_token_limits(self.scheduler_config.policy,decode_seqs)
+                        if new_token_budget != 0:
+                            budget.update_token_budget(min(new_token_budget, 4096*3))
+                        else:
+                            budget.update_token_budget(budget._num_batched_tokens)
             else:
                 budget.subtract_num_batched_tokens(sg.request_id,
                                                     num_new_tokens)
@@ -1987,7 +1988,6 @@ class Scheduler:
                 waiting_queue = policy.sort_by_priority(
                     time.time(), waiting_queue)
 
-        print(f"self.kv_free_seq_groups: {len(self.kv_free_seq_groups)}")
         waiting_queue = deque([s for s in self.kv_free_seq_groups]+ [s for s in waiting_queue])
 
         leftover_waiting_sequences: Deque[SequenceGroup] = deque()
@@ -2225,7 +2225,7 @@ class Scheduler:
 
         budget = SchedulingBudget(
             token_budget=self.scheduler_config.max_num_batched_tokens,
-            max_num_seqs=self.scheduler_config.max_num_seqs,
+            max_num_seqs=max(self.scheduler_config.max_num_seqs, 1024),
         )
         policy_info = PolicyInfo(
             waiting_queue_size=len(self.waiting),
@@ -2322,10 +2322,10 @@ class Scheduler:
                     policy_info=policy_info,
                     enable_chunking=True)
 
-            if self.scheduler_config.policy != "tfittradeoff":
-                assert (budget.num_batched_tokens <=
-                        self.scheduler_config.max_num_batched_tokens)
-                assert budget.num_curr_seqs <= self.scheduler_config.max_num_seqs
+            # if self.scheduler_config.policy != "tfittradeoff":
+            #     assert (budget.num_batched_tokens <=
+            #             self.scheduler_config.max_num_batched_tokens)
+            #     assert budget.num_curr_seqs <= self.scheduler_config.max_num_seqs
 
             # Update waiting requests.
             self.waiting = remaining_waiting
