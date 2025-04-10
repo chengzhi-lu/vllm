@@ -743,11 +743,11 @@ def main(args: argparse.Namespace):
 
         # Merge with benchmark result
         result_json = {**result_json, **benchmark_result}
-
+        parallel_type = result_json["parallel_type"]
         # Save to file
         base_model_id = model_id.split("/")[-1]
         dir_name = f"{days}/{args.execution_counter}"
-        file_name = f"{backend}-{args.request_rate}qps-{base_model_id}-{seconds}-{args.scheduler_policy}.json"  #noqa
+        file_name = f"{backend}-{args.request_rate}qps-{base_model_id}-{seconds}-{parallel_type}-{args.scheduler_policy}.json"  #noqa
         if args.result_dir:
             if not os.path.exists(os.path.join(args.result_dir, dir_name)):
                 os.makedirs(os.path.join(args.result_dir, dir_name))
