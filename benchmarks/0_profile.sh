@@ -19,6 +19,11 @@ datasets=(
     "sharegpt /root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
     # "alpaca /root/vllm/dataset/alpaca_data.json"
 )
+parallel_types=("pp")
+datasets=(
+    "sharegpt /root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
+    # "alpaca /root/vllm/dataset/alpaca_data.json"
+)
 
 # 服务器配置
 swap_space=20
@@ -66,6 +71,16 @@ copy_result() {
   ssh lucz@10.119.46.53 'docker cp /home/lucz/github/profile_data vllm_lucz:/root/vllm/vllm/core/'
 }
 
+run_benchmark() {
+  local policy=$1
+  local swap_policy=$2
+  local swap_out_partial_rate=$3
+  local request_rate=$4
+  local dataset_path=$5
+  local dataset_name=$6
+  local model_name=$7
+  local parallel_type=$8
+  local total_request_nums=1024
 
 # --------------------------
 # 主执行流程
