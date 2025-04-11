@@ -15,8 +15,8 @@ model_names=(
   # "meta-llama/Llama-2-70b-chat-hf"
 )
 parallel_types=(
-  # "single"
-  "tp"
+  "single"
+  # "tp"
   # "pp"
 )
 datasets=(
@@ -25,24 +25,25 @@ datasets=(
 )
 
 # 服务器配置
-swap_space=10
+swap_space=20
 preemption_mode="swap"
 gpu_memory_utilization=0.9
-max_tokens=4096
+max_tokens=16384
 max_num_seqs=256
 max_serving_time=86400
 num_shared_blocks=0
-max_request_nums=4096
+
+request_duration=90
 # 测试策略组合
 scheduler_swap_policies=(
   "tfittradeoff partial"
-  "fcfs full"
-  "sjf full"
-  "sjmlfq full"
-  "opt full"
+  # "fcfs full"
+  # "sjf full"
+  # "sjmlfq full"
+  # "opt full"
 )
 
-request_rates=(8 16 32 64)
+request_rates=(16)
 # request_rates=(8)
 swap_out_partial_rates=(0.5)
 
@@ -108,10 +109,11 @@ for ptype in "${parallel_types[@]}"; do
             # 启动服务
             start_server "$policy" "$swap_policy" "$swap_out_partial_rate" \
             "$ptype" "$model_name"
-              
+            
             # 运行基准测试
-            for i in {1..3}; do
+            for i in {1..1}; do
               for request_rate in "${request_rates[@]}"; do
+                max_request_nums=$((request_duration * request_rate))
                 run_benchmark "$policy" "$swap_policy" "$swap_out_partial_rate" \
                   "$request_rate" "$dataset_path" "$dataset_name" \
                   "$model_name" "$ptype" "$max_request_nums"
