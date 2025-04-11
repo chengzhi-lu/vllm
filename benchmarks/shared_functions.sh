@@ -132,7 +132,7 @@ run_benchmark() {
     --dataset-path "$dataset_path" \
     --dataset-name "$dataset_name" \
     --request-rate "$request_rate" \
-    --num-prompts 3000 \
+    --num-prompts 8192 \
     --request-duration "$request_duration" \
     --sharegpt-output-len 2000 \
     --model "$model_name" \

@@ -127,11 +127,11 @@ class TFITTradeoff(Policy):
         waiting_time = seq_group.metrics.waiting_iter_nums
         if seq_group.priority_rate < 1: 
             tmp_priority_rate = seq_group.priority_rate 
-            priority = waiting_time**3 / seq_group.seq_len * tmp_priority_rate
+            priority = (waiting_time+seq_group.seq_len) / seq_group.max_length* tmp_priority_rate
         elif not seq_group.is_prefill():
-            priority = waiting_time**2 / seq_group.seq_len
+            priority = (waiting_time+seq_group.seq_len) / seq_group.max_length
         else:
-            priority = waiting_time/(seq_group.seq_len)
+            priority = (waiting_time+seq_group.seq_len) /(seq_group.max_length)
         return priority
 
     def _get_waiting_priority(self, seq_group: SequenceGroup, policy_info: PolicyInfo):
