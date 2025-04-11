@@ -43,7 +43,7 @@ scheduler_swap_policies=(
   # "opt full"
 )
 
-request_rates=(16)
+request_rates=(1 2 4 8 16 32 64)
 # request_rates=(8)
 swap_out_partial_rates=(0.5)
 
