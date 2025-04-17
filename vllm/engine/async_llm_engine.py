@@ -722,6 +722,7 @@ class AsyncLLMEngine:
                             seq_group_file_path = self.engine.scheduler_config.trace_file_path.replace(".csv", "_seq_group.csv")
                             logger.info(f"finished one request rate, len(trace_data): {len(trace_data)}, len(seq_group_traces): {len(seq_group_traces)}")
                             trace_data.to_csv(self.engine.scheduler_config.trace_file_path, index=False, mode='a')
+                            seq_group_file_path = self.engine.scheduler_config.trace_file_path.replace(".csv", "_seq_group.csv")
                             seq_group_traces.to_csv(seq_group_file_path, index=False, mode='a')
 
 

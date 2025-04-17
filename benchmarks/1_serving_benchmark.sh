@@ -15,9 +15,9 @@ model_names=(
   "meta-llama/Llama-2-70b-chat-hf"
 )
 parallel_types=(
-  # "single"
+  "single"
   # "tp"
-  "pp"
+  # "pp"
 )
 datasets=(
   "sharegpt /root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
@@ -43,7 +43,7 @@ scheduler_swap_policies=(
   "opt full"
 )
 
-request_rates=(1 2 4 8 16 32 64 128)
+request_rates=(1 2 4 8 16 32 64)
 # request_rates=(8)
 swap_out_partial_rates=(0.5)
 
