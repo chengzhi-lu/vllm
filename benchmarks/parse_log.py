@@ -30,15 +30,15 @@ def parse_log():
         selected_lines = [
             parse_line(line) for line in lines if "generation" in line
         ]
-        selected_detaile_lines = [
-            parse_detailed_line(line) for line in lines
-            if "iteration number" in line
-        ]
+        # selected_detaile_lines = [
+        #     parse_detailed_line(line) for line in lines
+        #     if "iteration number" in line
+        # ]
     df = pd.DataFrame(selected_lines)
-    detailed_df = pd.DataFrame(selected_detaile_lines)
+    # detailed_df = pd.DataFrame(selected_detaile_lines)
     df.to_csv(result_path, index=False)
-    detailed_df.to_csv(result_path.replace(".csv", "_detailed.csv"),
-                       index=False)
+    # detailed_df.to_csv(result_path.replace(".csv", "_detailed.csv"),
+                    #    index=False)
 
 
 def parse_args():
@@ -89,13 +89,11 @@ def parse_args():
     model_id = args.model
     policy = args.policy
     swap_policy = args.swap_policy
-    execution_counter = args.execution_counter
     request_rate = args.request_rate
     parallel_type = args.parallel_type
-    days = datetime.now().strftime("%Y%m%d")
     seconds = datetime.now().strftime("%H%M%S")
     base_model_id = model_id.split("/")[-1]
-    dir_name = f"{base_dir}/{days}/{execution_counter}"
+    dir_name = f"{base_dir}"
     file_name = f"{request_rate}qps-{base_model_id}-{seconds}-{policy}-{swap_policy}-{parallel_type}.csv"
     result_path = f"{dir_name}/{file_name}"
     log_file_path = f"logs/api_server_{base_model_id}_{parallel_type}_{policy}_{swap_policy}.log"

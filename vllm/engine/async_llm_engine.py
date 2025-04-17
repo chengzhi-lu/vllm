@@ -4,6 +4,7 @@ from functools import partial
 from typing import (AsyncIterator, Callable, Dict, Iterable, List, Optional,
                     Set, Tuple, Type, Union)
 
+import copy
 from transformers import PreTrainedTokenizer
 
 import vllm.envs as envs
@@ -20,7 +21,7 @@ from vllm.outputs import EmbeddingRequestOutput, RequestOutput
 from vllm.pooling_params import PoolingParams
 from vllm.prompt_adapter.request import PromptAdapterRequest
 from vllm.sampling_params import SamplingParams
-from vllm.sequence import ExecuteModelRequest, SamplerOutput
+from vllm.sequence import ExecuteModelRequest, RequestMetrics, SamplerOutput
 from vllm.usage.usage_lib import UsageContext
 
 logger = init_logger(__name__)
@@ -252,18 +253,18 @@ class _AsyncLLMEngine(LLMEngine):
         the sequences and returns the newly generated results.
         """
         reach_ddl = self.scheduler[virtual_engine].reach_ddl
+        if virtual_engine not in self.total_count:
+            self.total_count[virtual_engine] = 0
+        self.total_count[virtual_engine]= self.total_count[virtual_engine] + 1
         if reach_ddl:
             return []
         st = time.time()
-        if self.et != 0:
-            logger.debug("interval time is:", st - self.et)  
         seq_group_metadata_list, scheduler_outputs = self.scheduler[
             virtual_engine].schedule()
         et = time.time()
-        self.schedule_time += et - st
-        self.total_count += 1
-        # print("schedule time is:", et - st)
+        self.schedule_time[virtual_engine] = et - st
         st = time.time()
+        self.swap_time[virtual_engine]=0
         if not scheduler_outputs.is_empty() and len(seq_group_metadata_list) > 0:
             # Execute the model.
             finished_requests_ids = self.scheduler[
@@ -281,17 +282,14 @@ class _AsyncLLMEngine(LLMEngine):
             output = await self.model_executor.execute_model_async(
                 execute_model_req)
             if len(output) > 0 and output[0]:
-                self.swap_time += output[0].swap_time
+                self.swap_time[virtual_engine] = output[0].swap_time
             else:
-                self.swap_time +=0
+                self.swap_time[virtual_engine] =0
         else:
             output = []
         
         et = time.time()
-        execution_time_per_step = et - st
-        self.execution_time += et - st
-        self.total_iteration_time = self.execution_time - self.swap_time
-        # print("execute time is:", et - st)
+        self.execution_time[virtual_engine] = et - st
         st = time.time()
         request_outputs = self._process_model_outputs(
             output,
@@ -306,11 +304,10 @@ class _AsyncLLMEngine(LLMEngine):
             
             # request_outputs = None
         self.et = time.time()
-        self.handle_output_time += self.et - st
+        self.handle_output_time[virtual_engine] = self.et - st
         # Log stats.
         self.do_log_stats(scheduler_outputs, output)
             
-        total_scheduler_metric = self.parse_scheduler_metric()
         if not request_outputs:
             # Stop the execute model loop in parallel workers until there are
             # more requests to process. This avoids waiting indefinitely in
@@ -318,88 +315,16 @@ class _AsyncLLMEngine(LLMEngine):
             # the RPC thread in the workers so that they can process any other
             # queued control plane messages, such as add/remove lora adapters.
             await self.model_executor.stop_remote_worker_execution_loop_async()
-        low_efficient_swap_out_ratio = -1 if total_scheduler_metric.total_swap_in_seqs == 0 else total_scheduler_metric.total_low_eff_swap_out/total_scheduler_metric.total_swap_in_seqs
-        mean_low_efficient_swap_out_extent = -1 if total_scheduler_metric.total_swap_in_seqs == 0 else total_scheduler_metric.total_low_eff_swap_out_diff/total_scheduler_metric.total_swap_in_seqs
-        mean_swap_out_seq_waiting_time = -1 if total_scheduler_metric.total_swap_in_seqs == 0 else total_scheduler_metric.total_swap_out_waiting_time/total_scheduler_metric.total_swap_in_seqs
-        if self.parallel_config.tensor_parallel_size > 1 or self.parallel_config.pipeline_parallel_size >1 :
-            logger.info(
-                "Total time: %.5f s, Total schedule time: %.5f s, Total execution time: %.5f s, per execution time: %.5f s,"
-                "handle output time: %.5f s, swap time: %.5f s, "
-                "total iteration number: %d, "
-                "swap out block num: %d, swap out seq num: %d, "
-                "swap in block num: %d, swap in seq num: %d, low efficient swap out ratio: %.5f, "
-                "mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f, "
-                "gpu memory iter: %.5f, gpu computation iter: %.5f, sort time: %.5f, "
-                "schedule running time: %.5f, schedule swapped time: %.5f, schedule prefill time: %.5f,"
-                "swap while time: %.5f, prefill while time: %.5f, prefill token num: %d, decode token num: %d,prepare input time: %.5f,"
-                "sample time: %.5f, single execution time: %.5f"
-                ,self.schedule_time+self.execution_time+self.handle_output_time,
-                self.schedule_time,
-                self.execution_time, 
-                execution_time_per_step,
-                self.handle_output_time, 
-                self.swap_time,
-                self.total_count, 
-                total_scheduler_metric.total_swap_out_blocks,
-                total_scheduler_metric.total_swap_out_seqs,
-                total_scheduler_metric.total_swap_in_blocks,
-                total_scheduler_metric.total_swap_in_seqs, 
-                low_efficient_swap_out_ratio,
-                mean_low_efficient_swap_out_extent,
-                mean_swap_out_seq_waiting_time,
-                total_scheduler_metric.gpu_memory_iter,
-                total_scheduler_metric.gpu_computation_iter,
-                total_scheduler_metric.sort_time_iter,
-                total_scheduler_metric.schedule_running_time,
-                total_scheduler_metric.schedule_swapped_time,
-                total_scheduler_metric.schedule_waiting_time,
-                total_scheduler_metric.swap_while,
-                total_scheduler_metric.prefill_while,
-                total_scheduler_metric.prefill_token_num,
-                total_scheduler_metric.decode_token_num,
-                0,
-                0,
-                0,)
-        else:
-            logger.info(
-                "Total time: %.5f s, Total schedule time: %.5f s, Total execution time: %.5f s, per execution time: %.5f s,"
-                "handle output time: %.5f s, swap time: %.5f s, "
-                "total iteration number: %d, "
-                "swap out block num: %d, swap out seq num: %d, "
-                "swap in block num: %d, swap in seq num: %d, low efficient swap out ratio: %.5f, "
-                "mean low efficient swap out extent: %.5f, mean swap-out seq waiting time: %.5f, "
-                "gpu memory iter: %.5f, gpu computation iter: %.5f, sort time: %.5f, "
-                "schedule running time: %.5f, schedule swapped time: %.5f, schedule prefill time: %.5f,"
-                "swap while time: %.5f, prefill while time: %.5f, prefill token num: %d, decode token num: %d,prepare input time: %.5f,"
-                "sample time: %.5f, single execution time: %.5f"
-                ,self.schedule_time+self.execution_time+self.handle_output_time,
-                self.schedule_time,
-                self.execution_time, 
-                execution_time_per_step,
-                self.handle_output_time, 
-                self.swap_time,
-                self.total_count, 
-                total_scheduler_metric.total_swap_out_blocks,
-                total_scheduler_metric.total_swap_out_seqs,
-                total_scheduler_metric.total_swap_in_blocks,
-                total_scheduler_metric.total_swap_in_seqs, 
-                low_efficient_swap_out_ratio,
-                mean_low_efficient_swap_out_extent,
-                mean_swap_out_seq_waiting_time,
-                total_scheduler_metric.gpu_memory_iter,
-                total_scheduler_metric.gpu_computation_iter,
-                total_scheduler_metric.sort_time_iter,
-                total_scheduler_metric.schedule_running_time,
-                total_scheduler_metric.schedule_swapped_time,
-                total_scheduler_metric.schedule_waiting_time,
-                total_scheduler_metric.swap_while,
-                total_scheduler_metric.prefill_while,
-                total_scheduler_metric.prefill_token_num,
-                total_scheduler_metric.decode_token_num,
-                self.model_executor.driver_worker.model_runner.per_prepare_input_time,
-                self.model_executor.driver_worker.model_runner.per_sample_time,
-                self.model_executor.driver_worker.model_runner.per_execute_time,)
          # Tracing
+        scheduler_metric = copy.deepcopy(self.scheduler[virtual_engine].scheduler_metric)
+        scheduler_metric.total_count=self.total_count[virtual_engine]
+        scheduler_metric.schedule_time=self.schedule_time[virtual_engine]
+        scheduler_metric.execution_time=self.execution_time[virtual_engine]
+        scheduler_metric.swap_time=self.swap_time[virtual_engine]
+        scheduler_metric.handle_output_time=self.handle_output_time[virtual_engine]
+        scheduler_metric.scheduler_index=virtual_engine
+        self.scheduler_metrics.append(scheduler_metric)
+        self.scheduler[virtual_engine].reset_schedule_metric()
         self.do_tracing(scheduler_outputs)
 
         return request_outputs
@@ -706,6 +631,7 @@ class AsyncLLMEngine:
                 )
 
         if finished_requests:
+
             await self._engine_abort(finished_requests)
         
         if self.engine_use_ray:
@@ -735,7 +661,7 @@ class AsyncLLMEngine:
             self._request_tracker.process_request_output(
                 request_output, verbose=self.log_requests)
             finished = finished and request_output.finished 
-
+        
         return not finished
         # else:
         #     # reach ddl:
@@ -809,6 +735,13 @@ class AsyncLLMEngine:
                         has_requests_in_progress[virtual_engine] = True
                     else:
                         has_requests_in_progress[virtual_engine] = False
+                        if any([scheduler.reach_ddl for scheduler in self.engine.scheduler]) or not any(has_requests_in_progress):
+                            trace_data = SchedulerMetric.to_dataframe(self.engine.scheduler_metrics)
+                            seq_group_traces = RequestMetrics.to_dataframe(self.engine.seq_group_metrics)
+                            trace_data.to_csv(self.engine.scheduler_config.trace_file_path, index=False)
+                            seq_group_traces.to_csv(self.engine.scheduler_config.trace_file_path.replace(".csv", "_seq_group.csv"), index=False)
+
+
             except asyncio.TimeoutError as exc:
                 logger.error(
                     "Engine iteration timed out. This should never happen!")

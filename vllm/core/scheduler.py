@@ -6,8 +6,8 @@ from itertools import accumulate
 import bisect
 import time
 from collections import deque
-from dataclasses import dataclass, field
-from typing import Deque, Dict, Iterable, List, Optional, Set, Tuple, Union
+from dataclasses import dataclass, field, asdict
+from typing import Deque, Dict, Iterable, List, Optional, Set, Tuple, Union, ClassVar
 from vllm.config import CacheConfig, LoRAConfig, SchedulerConfig
 from vllm.core.batch_solver import BatchSolver
 from vllm.core.interfaces import AllocStatus, BlockSpaceManager
@@ -17,7 +17,7 @@ from vllm.lora.request import LoRARequest
 from vllm.prompt_adapter.request import PromptAdapterRequest
 from vllm.sequence import (Sequence, SequenceData, SequenceGroup,
                            SequenceGroupMetadata, SequenceStatus, SequenceType)
-
+import pandas as pd
 logger = init_logger(__name__)
 
 # Test-only. If configured, decode is preempted with
@@ -345,24 +345,50 @@ class SchedulerPrefillOutputs:
 
 @dataclass
 class SchedulerMetric:
-    total_swap_out_blocks = 0
-    total_swap_in_blocks = 0
-    total_swap_out_seqs = 0
-    total_swap_in_seqs = 0
-    total_low_eff_swap_out = 0
-    total_low_eff_swap_out_diff = 0
-    total_swap_out_waiting_time = 0.0
-    sort_time_iter = 0.0
-    swap_while = 0.0
-    prefill_while = 0.0
-    schedule_running_time = 0.0
-    schedule_waiting_time = 0.0
-    schedule_swapped_time = 0.0
-    prefill_token_num = 0
-    decode_token_num = 0
-    gpu_memory_iter = 0
-    gpu_computation_iter = 0
-    total_running_block_size = 0
+    total_swap_out_blocks: int = 0
+    total_swap_in_blocks: int = 0
+    total_swap_out_seqs: int = 0
+    total_swap_in_seqs: int = 0
+    total_low_eff_swap_out: int = 0
+    total_low_eff_swap_out_diff: int = 0
+    total_swap_out_waiting_time: float = 0.0
+    sort_time_iter: float = 0.0
+    swap_while: float = 0.0
+    prefill_while: float = 0.0
+    schedule_running_time: float = 0.0
+    schedule_waiting_time: float = 0.0
+    schedule_swapped_time: float = 0.0
+    prefill_token_num: int = 0
+    decode_token_num: int = 0
+    gpu_memory_iter: int = 0
+    gpu_computation_iter: int = 0
+    total_running_block_size: int = 0
+    running_seq_nums: int = 0
+    waiting_seq_nums: int = 0
+    pending_seq_nums: int = 0
+    total_count: int = 0
+    execution_time: float = 0.0
+    schedule_time: float = 0.0
+    swap_time: float = 0.0
+    handle_output_time: float = 0.0
+    scheduler_index: int = 0
+
+    @classmethod
+    def to_dataframe(cls, metrics_list: list['SchedulerMetric'] = None) -> pd.DataFrame:
+        """将类变量或实例列表转换为DataFrame
+        
+        Args:
+            metrics_list: 如果传入实例列表，则生成多行DataFrame
+                        如果为None，则用当前类变量生成单行DataFrame
+        """
+        if metrics_list is None:
+            data = {k: [v] for k, v in cls.__dict__.items() 
+                   if not k.startswith('__') and isinstance(v, (int, float))}
+        else:
+            data = [asdict(m) for m in metrics_list]
+        
+        return pd.DataFrame(data)
+
 
 class Scheduler:
 
@@ -483,7 +509,8 @@ class Scheduler:
         self.aux_model = None
         self.need_score = True
         self.tbound = -1
-        self.starv = -1
+        self.starv = -1 
+        self.period = -1  
         self.fake_allocate = self.scheduler_config.fake_allocate
         self.prompt_limit = min(self.scheduler_config.max_model_len,
                                self.scheduler_config.max_num_batched_tokens)
@@ -743,11 +770,12 @@ class Scheduler:
         original_len = len(self.swapped) + len(self.running) + len(self.waiting)
 
         #print("budget: ", self.scheduler_config.max_num_batched_tokens, self.scheduler_config.max_num_seqs, len(self.running), len(self.waiting), len(self.swapped))
-
+            
         budget = SchedulingBudget(
             token_budget=self.scheduler_config.max_num_batched_tokens,
             max_num_seqs=self.scheduler_config.max_num_seqs,
         )
+
         final_budget = SchedulingBudget(
             token_budget=self.scheduler_config.max_num_batched_tokens,
             max_num_seqs=self.scheduler_config.max_num_seqs,
@@ -892,7 +920,7 @@ class Scheduler:
                     del seq_group.num_new_seqs
 
                 else:
-                    assert False
+                    raise AssertionError()
 
             elif seq_group in remaining_swapped:
                 remaining_swapped.remove(seq_group)
@@ -916,9 +944,9 @@ class Scheduler:
                     del seq_group.num_new_seqs
 
                 else:
-                    assert False
+                    raise AssertionError()
             else:
-                assert False 
+                raise AssertionError() 
         #print("prefill decode: ", len(exe_running_decode_seq_groups), len(exe_running_prefill_seq_groups), len(remaining_running))
         #assert len(remaining_running) == 0
         prefills = SchedulerPrefillOutputs(
@@ -1212,7 +1240,7 @@ class Scheduler:
         swapped_queue_set = set(swapped_queue)
         running_queue_set = set(running_queue)
         waiting_queue_set = set(waiting_queue)
-        if budget.max_num_seqs != 1024:
+        if budget.max_num_seqs != 2048:
             budget.update_max_num_seqs(2048)
         decode_seqs:List[int]= []
         for sg in total_queue:
@@ -1247,15 +1275,18 @@ class Scheduler:
                 budget.add_num_seqs(sg.request_id, num_new_seqs)
                 if self.scheduler_config.policy == 'tfittradeoff' and not sg.is_prefill():
                     decode_seqs.append(sg.seq_len)
-                    new_token_budget= self.batch_solver.get_best_token_limits(self.scheduler_config.policy,decode_seqs)
-                    if new_token_budget != 0:
-                        budget.update_token_budget(min(new_token_budget, 4096*3))
-                    else:
-                        budget.update_token_budget(budget._num_batched_tokens)
+                    if sg not in running_queue_set:
+                        new_token_budget= self.batch_solver.get_best_token_limits(self.scheduler_config.policy,decode_seqs)
+                        if new_token_budget != 0:
+                            if new_token_budget == -1:
+                                continue
+                            budget.update_token_budget(min(new_token_budget, 4096*8))
+                        else:
+                            budget.update_token_budget(budget.num_batched_tokens)
             else:
-                budget.subtract_num_batched_tokens(sg.request_id,
-                                                    num_new_tokens)
-                budget.subtract_num_seqs(sg.request_id, num_new_seqs)
+                # budget.subtract_num_batched_tokens(sg.request_id,
+                #                                     num_new_tokens)
+                # budget.subtract_num_seqs(sg.request_id, num_new_seqs)
                 tmp_total_block_size -= block_size
                 sg.update_waiting_iter_nums()
                 selected_swapped_seq_groups.append(sg)
@@ -1691,6 +1722,7 @@ class Scheduler:
                     victim_seq_group.swap_out_moment = time.time()
                     self.scheduler_metric.total_swap_out_blocks += victim_seq_group.total_token_block_size
                     self.scheduler_metric.total_swap_out_seqs += 1
+                    victim_seq_group.update_swap_times()
 
                 else:
                     # No other sequence groups can be preempted.
@@ -2241,7 +2273,6 @@ class Scheduler:
             policy = PolicyFactory.get_policy(
                 policy_name=self.scheduler_config.policy)
 
-            self.scheduler_metric.prefill_token_num = 0
 
             if self.scheduler_config.policy in ["sjmlfq", "tfittradeoff","las",'sjf']:
                 (remaining_running, remaining_swapped, remaining_waiting,
@@ -2389,8 +2420,9 @@ class Scheduler:
             # 2) GPU computation:
 
             prefills_seq_groups = (prefills.seq_groups +
-                                   running_scheduled.prefill_seq_groups +
-                                   swapped_in.prefill_seq_groups)
+                                    prefills.kv_free_seq_groups +
+                                    running_scheduled.prefill_seq_groups +
+                                    swapped_in.prefill_seq_groups )
             computation_iter = 0
 
             for seq_group in [s.seq_group for s in prefills_seq_groups]:
@@ -2402,6 +2434,20 @@ class Scheduler:
             computation_iter += memory_new_generated
 
             self.scheduler_metric.gpu_computation_iter = computation_iter
+
+            # 3) batch size:
+
+            prefill_seq_nums= len(prefills_seq_groups)
+            decode_seq_nums = len(running_scheduled.decode_seq_groups +
+                                    swapped_in.decode_seq_groups)
+            running_seq_nums = prefill_seq_nums+decode_seq_nums
+            waiting_seq_nums = len(self.swapped)
+            pending_seq_nums= len(self.waiting)
+            self.scheduler_metric.running_seq_nums += running_seq_nums
+            self.scheduler_metric.waiting_seq_nums += waiting_seq_nums
+            self.scheduler_metric.pending_seq_nums += pending_seq_nums
+
+
             return SchedulerOutputs(
                 scheduled_seq_groups=scheduled_seq_groups,
                 num_prefill_groups=(len(prefills.seq_groups) +
@@ -2458,6 +2504,8 @@ class Scheduler:
 
     def _schedule(self) -> SchedulerOutputs:
         """Schedule queued requests."""
+        if self.scheduler_config.max_num_seqs != 2048:
+            self.scheduler_config.max_num_seqs = 2048
         if self.scheduler_config.policy == "opt":
             return self._general_schedule()
         if self.scheduler_config.chunked_prefill_enabled :
@@ -2578,8 +2626,12 @@ class Scheduler:
         for scheduled_seq_group in scheduler_outputs.scheduled_seq_groups:
             self.block_manager.mark_blocks_as_computed(
                 scheduled_seq_group.seq_group)
+        
         return seq_group_metadata_list, scheduler_outputs
 
+    def reset_schedule_metric(self):
+        self.scheduler_metric = SchedulerMetric()
+        return
     def fork_seq(self, parent_seq: Sequence, child_seq: Sequence) -> None:
         self.block_manager.fork(parent_seq, child_seq)
 

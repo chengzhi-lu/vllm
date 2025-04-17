@@ -68,22 +68,27 @@ start_server() {
       ;;
   esac
   prefill_predictor_model_config=""
+  prefill_predictor_model_config_path=""
   if [[ "$policy" == "opt" ]]; then
       case "$model_name" in 
         "meta-llama/Llama-2-13b-chat-hf")
           prefill_predictor_model_config_path="/root/vllm/train/MODEL/results/opt-125m-llama2-13b-sharegpt-score-trainbucket10-b32/usage_config.json"
           ;;
-        "meta-llama/Llama-2-13b-chat-hf")
+        "meta-llama/Llama-2-70b-chat-hf")
           prefill_predictor_model_config_path="/root/vllm/train/MODEL/results/opt-350m-llama2-70b-sharegpt-score-trainbucket10-b32/usage_config.json"
           ;;
       esac
-      if [[ "$prefill_predictor_model_config" == "" ]]; then
+      if [[ "$prefill_predictor_model_config_path" != "" ]]; then
           echo "prefill_predictor_model_config: $prefill_predictor_model_config_path"
           prefill_predictor_model_config="--prefill-predictor-model-config $prefill_predictor_model_config_path"
       fi
   fi
-
-
+  date=`date +%Y%m%d`
+  result_dir="result/${date}/${COUNTER}/"
+  if [[ ! -d "$result_dir" ]]; then
+      mkdir -p "$result_dir"
+  fi
+  trace_file_path="${result_dir}/${model_name##*/}_${parallel_type}_${policy}_${COUNTER}.csv"
   CUDA_VISIBLE_DEVICES=$gpu_devices RAY_DEDUP_LOGS=0 taskset -c 28-29 python3 -m vllm.entrypoints.openai.api_server \
     --model "$model_name" \
     $parallel_args \
@@ -91,6 +96,7 @@ start_server() {
     --swap-space "$swap_space" \
     --preemption-mode "$preemption_mode" \
     --scheduler-policy "$policy" \
+    --trace-file-path "$trace_file_path" \
     --enforce-eager \
     --enable-chunked-prefill \
     --max-num-batched-tokens "$max_tokens" \
@@ -132,7 +138,7 @@ run_benchmark() {
     --dataset-path "$dataset_path" \
     --dataset-name "$dataset_name" \
     --request-rate "$request_rate" \
-    --num-prompts 8192 \
+    --num-prompts 16384\
     --request-duration "$request_duration" \
     --sharegpt-output-len 2000 \
     --model "$model_name" \

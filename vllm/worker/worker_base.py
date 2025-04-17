@@ -220,10 +220,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
     ) -> Optional[List[SamplerOutput]]:
         """Executes at least one model step on the given sequences, unless no
         sequences are provided."""
-        logger.debug("start execute model")
-        logger.debug(f"is driver worker {self.is_driver_worker}")
         if self.is_driver_worker:
-            logger.debug(f"if execute_model_req is None {execute_model_req is None}")
             if execute_model_req is None:
                 if self.do_metadata_broadcast:
                     # This signals that there's no more requests to process for
@@ -249,18 +246,14 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                     model_input.as_broadcastable_tensor_dict())
                 broadcast_data["num_steps"] = num_steps
                 broadcast_data["use_aux_model"]=execute_model_req.use_aux_model
-                logger.debug("Broadcasted metadata to other workers")
                 broadcast_tensor_dict(broadcast_data, src=0)
         else:
             assert self.do_metadata_broadcast
-            logger.debug("Waiting for metadata from driver worker")
             broadcast_data = broadcast_tensor_dict(src=0)
-            logger.debug("Received metadata from driver worker")
             if not broadcast_data:
                 return None
             num_steps = broadcast_data.pop("num_steps")
             self.use_aux_model =broadcast_data.pop("use_aux_model")
-            logger.debug(self.use_aux_model)
             worker_input = WorkerInput.from_broadcasted_tensor_dict(
                 broadcast_data)
             model_input = (
@@ -285,7 +278,6 @@ class LocalOrDistributedWorkerBase(WorkerBase):
             model_input, self.kv_cache[worker_input.virtual_engine]
             if self.kv_cache is not None else None, intermediate_tensors,
             num_steps)
-        logger.debug(not get_pp_group().is_last_rank and not execute_model_req.is_aux_model)
 
     
         if not get_pp_group().is_last_rank and not execute_model_req.is_aux_model:
@@ -353,13 +345,10 @@ class WorkerWrapperBase:
         self.worker = worker_class(*args, **kwargs)
 
     def execute_aux_method(self, method, *args, **kwargs):
-        logger.debug(f"Waiting for the method {method} ")
         try:
             if hasattr(self, method):
-                logger.debug(f"Executing method {method} in worker")
                 executor = getattr(self, method)
             else:
-                logger.debug(f"Executing method {method} in aux worker")
                 executor = getattr(self.aux_worker, method)
             return executor(*args, **kwargs)
         except Exception as e:

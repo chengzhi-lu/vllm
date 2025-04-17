@@ -19,8 +19,8 @@ swap_out_partial_rate=$5
 # 默认服务器配置
 swap_space=20
 preemption_mode="swap"
-gpu_memory_utilization=0.6
-max_tokens=4096
+gpu_memory_utilization=0.9
+max_tokens=16384
 max_serving_time=86400
 num_shared_blocks=0
 swap_out_partial_rates=(0.5)

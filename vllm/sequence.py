@@ -1,13 +1,16 @@
 """Sequence and its related classes."""
 import copy
+from datetime import datetime
 import enum
+import json
 import time
 import math
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, Union
 
+import pandas as pd
 import torch
 
 from vllm.lora.request import LoRARequest
@@ -93,23 +96,32 @@ class SequenceType(enum.Enum):
 
 @dataclass
 class RequestMetrics:
-    """Metrics associated with a request.
-
-    Attributes:
-        arrival_time: The time when the request arrived.
-        first_scheduled_time: The time when the request was first scheduled.
-        first_token_time: The time when the first token was generated.
-        time_in_queue: The time the request spent in the queue.
-        finished_time: The time when the request was finished.
-    """
+    """Metrics associated with a request."""
     arrival_time: float
     last_token_time: float
     last_execute_time: float
     waiting_iter_nums: int
-    first_scheduled_time: Optional[float]
-    first_token_time: Optional[float]
-    time_in_queue: Optional[float]
+    swap_times: int
+    first_scheduled_time: Optional[float] = None
+    first_token_time: Optional[float] = None
+    time_in_queue: Optional[float] = None
+    waiting_times: List[float] = field(default_factory=list)
     finished_time: Optional[float] = None
+
+    def to_serializable_dict(self) -> dict:
+        """Convert to dictionary with list fields as strings"""
+        metrics_dict = asdict(self)
+        
+        # Convert list fields to JSON strings
+        for field_name, value in metrics_dict.items():
+            if isinstance(value, list):
+                metrics_dict[field_name] = json.dumps(value, ensure_ascii=False)
+        
+        return metrics_dict
+    @classmethod
+    def to_dataframe(cls, metrics_list: List['RequestMetrics']) -> pd.DataFrame:
+        """Convert to DataFrame with list fields as strings"""
+        return pd.DataFrame([m.to_serializable_dict() for m in metrics_list])
 
 
 class SequenceData:
@@ -540,7 +552,11 @@ class SequenceGroup:
                                       waiting_iter_nums=0,
                                       last_execute_time=time.time(),
                                       first_token_time=None,
-                                      time_in_queue=None)
+                                      time_in_queue=None,
+                                      swap_times=0,
+                                      waiting_times=[],
+                                      finished_time=0,
+                                    )
         self.lora_request = lora_request
         self.prompt_logprobs: Optional[PromptLogprobs] = None
         self.state = SequenceGroupState()
@@ -552,13 +568,6 @@ class SequenceGroup:
         self.eos_token_id = self.seqs_dict[next(iter(self.seqs_dict))].eos_token_id
         self.current_priority = None
         self.promoted = 0
-        self.execution_budget = execution_budget
-        self.execution_iters = 0
-        self.execution_over_budget = False
-        self.last_iter_time = -1.0
-        self.swap_time_unit = 0.00065
-        self.expected_length = 0.0
-        self.waiting_iter_base = waiting_iter_base
         self.priority_rate = 1.0
         if self.sampling_params:
             self.max_length = self.sampling_params.max_tokens
@@ -655,6 +664,7 @@ class SequenceGroup:
         self.metrics.finished_time = time
 
     def update_last_execute_time(self):
+        self.metrics.waiting_times.append(time.time() - self.metrics.last_execute_time)
         self.metrics.last_execute_time = time.time()
 
     def get_last_execute_time(self):
@@ -662,6 +672,9 @@ class SequenceGroup:
 
     def update_waiting_iter_nums(self):
         self.metrics.waiting_iter_nums += 1
+    
+    def update_swap_times(self):
+        self.metrics.swap_times += 1
 
     def reset_waiting_iter_nums(self):
         self.metrics.waiting_iter_nums = 0

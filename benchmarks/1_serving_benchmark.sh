@@ -11,13 +11,13 @@ TOKENIZERS_PARALLELISM="true"
 
 # 模型和数据集配置
 model_names=(
-  "meta-llama/Llama-2-13b-chat-hf"
-  # "meta-llama/Llama-2-70b-chat-hf"
+  # "meta-llama/Llama-2-13b-chat-hf"
+  "meta-llama/Llama-2-70b-chat-hf"
 )
 parallel_types=(
-  "single"
+  # "single"
   # "tp"
-  # "pp"
+  "pp"
 )
 datasets=(
   "sharegpt /root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
@@ -36,14 +36,14 @@ num_shared_blocks=0
 request_duration=90
 # 测试策略组合
 scheduler_swap_policies=(
+  "fcfs full"
   "tfittradeoff partial"
-  # "fcfs full"
-  # "sjf full"
-  # "sjmlfq full"
-  # "opt full"
+  "sjf full"
+  "sjmlfq full"
+  "opt full"
 )
 
-request_rates=(1 2 4 8 16 32 64)
+request_rates=(1 2 4 8 16 32 64 128)
 # request_rates=(8)
 swap_out_partial_rates=(0.5)
 

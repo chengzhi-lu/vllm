@@ -716,7 +716,6 @@ def main(args: argparse.Namespace):
 
         # Setup
         current_dt = datetime.now().strftime("%Y%m%d-%H%M%S")
-        days = datetime.now().strftime("%Y%m%d")
         seconds = datetime.now().strftime("%H%M%S")
         result_json["date"] = current_dt
         result_json["backend"] = backend
@@ -746,12 +745,11 @@ def main(args: argparse.Namespace):
         parallel_type = result_json["parallel_type"]
         # Save to file
         base_model_id = model_id.split("/")[-1]
-        dir_name = f"{days}/{args.execution_counter}"
         file_name = f"{backend}-{args.request_rate}qps-{base_model_id}-{seconds}-{parallel_type}-{args.scheduler_policy}.json"  #noqa
         if args.result_dir:
-            if not os.path.exists(os.path.join(args.result_dir, dir_name)):
-                os.makedirs(os.path.join(args.result_dir, dir_name))
-            file_name = os.path.join(args.result_dir, dir_name, file_name)
+            if not os.path.exists(os.path.join(args.result_dir)):
+                os.makedirs(os.path.join(args.result_dir))
+            file_name = os.path.join(args.result_dir, file_name)
         with open(file_name, "w") as outfile:
             json.dump(result_json, outfile)
         
@@ -765,9 +763,9 @@ def main(args: argparse.Namespace):
             prompt_output_lens_file_name = f"prompt_output_{backend}-{args.request_rate}qps-{base_model_id}-{seconds}-{args.scheduler_policy}.json"  # noqa: E501
             
             if args.result_dir:
-                if not os.path.exists(os.path.join(args.result_dir, dir_name,"prompt")):
-                    os.makedirs(os.path.join(args.result_dir, dir_name,"prompt"))
-                prompt_output_lens_file_name = os.path.join(args.result_dir, dir_name,"prompt", prompt_output_lens_file_name)  # noqa: E501
+                if not os.path.exists(os.path.join(args.result_dir,"prompt")):
+                    os.makedirs(os.path.join(args.result_dir, "prompt"))
+                prompt_output_lens_file_name = os.path.join(args.result_dir,"prompt", prompt_output_lens_file_name)  # noqa: E501
             with open(prompt_output_lens_file_name, "w") as prompt_output_lens_file_name_outfile:
                 json.dump(prompt_output_lens_json, prompt_output_lens_file_name_outfile)
     save_output(
@@ -799,7 +797,7 @@ if __name__ == "__main__":
         default=None,
         help="Server or API base url if not using http host and port.",
     )
-    parser.add_argument("--host", type=str, default="10.119.46.53")
+    parser.add_argument("--host", type=str, default="10.119.46.54")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
         "--endpoint",

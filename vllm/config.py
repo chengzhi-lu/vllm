@@ -784,6 +784,7 @@ class SchedulerConfig:
         embedding_mode: Optional[bool] = False,
         preemption_mode: Optional[str] = None,
         waiting_iter_base: float = 1.0,
+        trace_file_path: str="/root/trace.csv"
     ) -> None:
         if max_num_batched_tokens is not None:
             self.max_num_batched_tokens = max_num_batched_tokens
@@ -820,6 +821,7 @@ class SchedulerConfig:
         self.preemption_mode = preemption_mode
         self.waiting_iter_base= waiting_iter_base
         self.fake_allocate = False 
+        self.trace_file_path = trace_file_path
         self._verify_args()
 
     def _verify_args(self) -> None:
