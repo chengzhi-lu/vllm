@@ -719,10 +719,10 @@ class AsyncLLMEngine:
                             not any(has_requests_in_progress):
                             trace_data = SchedulerMetric.to_dataframe(self.engine.scheduler_metrics)
                             seq_group_traces = RequestMetrics.to_dataframe(self.engine.seq_group_metrics)
+                            seq_group_file_path = self.engine.scheduler_config.trace_file_path.replace(".csv", "_seq_group.csv")
                             logger.info(f"finished one request rate, len(trace_data): {len(trace_data)}, len(seq_group_traces): {len(seq_group_traces)}")
                             trace_data.to_csv(self.engine.scheduler_config.trace_file_path, index=False, mode='a')
-                            seq_group_file_path = self.engine.scheduler_config.trace_file_path.replace(".csv", "_seq_group.csv", mode='a')
-                            seq_group_traces.to_csv(seq_group_file_path, index=False)
+                            seq_group_traces.to_csv(seq_group_file_path, index=False, mode='a')
 
 
             except asyncio.TimeoutError as exc:
