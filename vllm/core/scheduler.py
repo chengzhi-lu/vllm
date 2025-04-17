@@ -345,6 +345,8 @@ class SchedulerPrefillOutputs:
 
 @dataclass
 class SchedulerMetric:
+    scheduler_start_time: float = 0.0
+    scheduler_end_time: float = 0.0
     total_swap_out_blocks: int = 0
     total_swap_in_blocks: int = 0
     total_swap_out_seqs: int = 0

@@ -9,12 +9,12 @@ start_ray() {
   # 无论之前是否运行，现在都启动ray
   echo "Starting Ray cluster..."
   NCCL_SOCKET_IFNAME=bond0 RAY_ENABLE_RECORD_ACTOR_TASK_LOGGING=1 ray start --head
-  ssh lucz@10.119.46.53 'docker exec -i vllm_lucz bash -c "NCCL_SOCKET_IFNAME=bond0 RAY_ENABLE_RECORD_ACTOR_TASK_LOGGING=1 ray start --address=10.119.46.54:6379"'
+  ssh lucz@10.119.46.54 'docker exec -i vllm_lucz bash -c "NCCL_SOCKET_IFNAME=bond0 RAY_ENABLE_RECORD_ACTOR_TASK_LOGGING=1 ray start --address=10.119.46.53:6379"'
 }
 
 stop_ray() {
   ray stop
-  ssh lucz@10.119.46.53 'docker exec -i vllm_lucz bash -c "bash /root/vllm/benchmarks/terminate_server.sh"' || true
+  ssh lucz@10.119.46.54 'docker exec -i vllm_lucz bash -c "bash /root/vllm/benchmarks/terminate_server.sh"' || true
   rm -r /tmp/ray
   sleep 5
 }
@@ -113,7 +113,7 @@ start_server() {
   if [[ "$parallel_type" == @("pp") ]]; then
       sleep 5
       remote_shell="bash /root/vllm/benchmarks/3_serving_benchmark_pp.sh \"$model_name\" \"$max_num_seqs\" \"$policy\" \"$swap_policy\" \"$swap_out_partial_rate\""
-      ssh lucz@10.119.46.53 \
+      ssh lucz@10.119.46.54 \
         "docker exec -i vllm_lucz bash -c \"$remote_shell\""
   fi
 }
@@ -138,7 +138,7 @@ run_benchmark() {
     --dataset-path "$dataset_path" \
     --dataset-name "$dataset_name" \
     --request-rate "$request_rate" \
-    --num-prompts 16384\
+    --num-prompts 8192\
     --request-duration "$request_duration" \
     --sharegpt-output-len 2000 \
     --model "$model_name" \
@@ -164,7 +164,7 @@ terminate_server() {
   if [[ "$parallel_type" == @("pp"|"tp") ]]; then
       kill -9 `ps -aux|grep "ray" | grep -v grep | awk '{print $2}'` 2>/dev/null
       if [[ "$parallel_type" == "pp" ]]; then
-          ssh lucz@10.119.46.53 'docker exec -i vllm_lucz bash -c "bash /root/vllm/benchmarks/terminate_server.sh"'
+          ssh lucz@10.119.46.54 'docker exec -i vllm_lucz bash -c "bash /root/vllm/benchmarks/terminate_server.sh"'
           stop_ray
       fi
   fi

@@ -97,6 +97,7 @@ class SequenceType(enum.Enum):
 @dataclass
 class RequestMetrics:
     """Metrics associated with a request."""
+    request_id: int
     arrival_time: float
     last_token_time: float
     last_execute_time: float
@@ -546,7 +547,8 @@ class SequenceGroup:
         self.request_id = request_id
         self.seqs_dict = {seq.seq_id: seq for seq in seqs}
         self.sampling_params = sampling_params
-        self.metrics = RequestMetrics(arrival_time=arrival_time,
+        self.metrics = RequestMetrics(request_id=request_id,
+                                      arrival_time=arrival_time,
                                       last_token_time=arrival_time,
                                       first_scheduled_time=None,
                                       waiting_iter_nums=0,

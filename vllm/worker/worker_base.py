@@ -346,10 +346,7 @@ class WorkerWrapperBase:
 
     def execute_aux_method(self, method, *args, **kwargs):
         try:
-            if hasattr(self, method):
-                executor = getattr(self, method)
-            else:
-                executor = getattr(self.aux_worker, method)
+            executor = getattr(self, method) if hasattr(self, method) else getattr(self.aux_worker, method)
             return executor(*args, **kwargs)
         except Exception as e:
             # if the driver worker also execute methods,

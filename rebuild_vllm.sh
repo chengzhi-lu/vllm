@@ -8,5 +8,5 @@ pip uninstall -y vllm-flash-attn
 # clear
 # cd benchmarks
 # bash 2_serving_benchmark_opt.sh
-# bash 1_serving_benchmark.sh
+#bash 1_serving_benchmark.sh
 # bash motivation_benchmark.sh

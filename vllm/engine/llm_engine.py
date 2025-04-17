@@ -925,6 +925,7 @@ class LLMEngine:
             >>>         break
         """
         reach_ddl = self.scheduler[0].reach_ddl
+        schedule_start_time=time.time()
         if reach_ddl:
             return []
         if self.parallel_config.pipeline_parallel_size > 1:
@@ -997,6 +998,8 @@ class LLMEngine:
         scheduler_metric.swap_time=self.swap_time[0]
         scheduler_metric.handle_output_time=self.handle_output_time[0]
         scheduler_metric.scheduler_index=0
+        scheduler_metric.scheduler_start_time=schedule_start_time
+        scheduler_metric.scheduler_end_time=self.et
         self.scheduler_metrics.append(scheduler_metric)
         self.scheduler[0].reset_schedule_metric()
 
@@ -1252,8 +1255,9 @@ class LLMEngine:
         trace_data = SchedulerMetric.to_dataframe(self.scheduler_metrics) 
         seq_group_traces = RequestMetrics.to_dataframe(self.seq_group_metrics)
     
-        trace_data.to_csv(trace_path, index=False, mode='a+')
-        seq_group_traces.to_csv(trace_path.replace(".csv", "_seq_group.csv"), index=False, mode='a+')
+        logger.info(f"finished one request rate, len(trace_data): {len(trace_data)}, len(seq_group_traces): {len(seq_group_traces)}")
+        trace_data.to_csv(trace_path, index=False, mode='a')
+        seq_group_traces.to_csv(trace_path.replace(".csv", "_seq_group.csv"), index=False, mode='a')
 
 
 

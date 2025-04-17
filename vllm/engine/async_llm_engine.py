@@ -217,29 +217,6 @@ class RequestTracker:
 class _AsyncLLMEngine(LLMEngine):
     """Extension of LLMEngine to add async methods."""
 
-    def parse_scheduler_metric(self):
-        total_scheduler_metric = SchedulerMetric()
-        for scheduler in self.scheduler:
-            total_scheduler_metric.total_swap_out_blocks += scheduler.scheduler_metric.total_swap_out_blocks
-            total_scheduler_metric.total_swap_in_blocks += scheduler.scheduler_metric.total_swap_in_blocks
-            total_scheduler_metric.total_swap_out_seqs += scheduler.scheduler_metric.total_swap_out_seqs
-            total_scheduler_metric.total_swap_in_seqs += scheduler.scheduler_metric.total_swap_in_seqs
-            total_scheduler_metric.total_low_eff_swap_out += scheduler.scheduler_metric.total_low_eff_swap_out
-            total_scheduler_metric.total_low_eff_swap_out_diff += scheduler.scheduler_metric.total_low_eff_swap_out_diff
-            total_scheduler_metric.total_swap_out_waiting_time += scheduler.scheduler_metric.total_swap_out_waiting_time
-            total_scheduler_metric.sort_time_iter += scheduler.scheduler_metric.sort_time_iter
-            total_scheduler_metric.swap_while += scheduler.scheduler_metric.swap_while
-            total_scheduler_metric.prefill_while += scheduler.scheduler_metric.prefill_while
-            total_scheduler_metric.schedule_running_time += scheduler.scheduler_metric.schedule_running_time
-            total_scheduler_metric.schedule_waiting_time += scheduler.scheduler_metric.schedule_waiting_time
-            total_scheduler_metric.schedule_swapped_time += scheduler.scheduler_metric.schedule_swapped_time
-            total_scheduler_metric.prefill_token_num += scheduler.scheduler_metric.prefill_token_num
-            total_scheduler_metric.decode_token_num += scheduler.scheduler_metric.decode_token_num
-            total_scheduler_metric.gpu_memory_iter += scheduler.scheduler_metric.gpu_memory_iter
-            total_scheduler_metric.gpu_computation_iter += scheduler.scheduler_metric.gpu_computation_iter
-            total_scheduler_metric.total_running_block_size += scheduler.scheduler_metric.total_running_block_size
-        return total_scheduler_metric
-
     async def step_async(
         self, virtual_engine: int
     ) -> List[Union[RequestOutput, EmbeddingRequestOutput]]:
@@ -253,6 +230,7 @@ class _AsyncLLMEngine(LLMEngine):
         the sequences and returns the newly generated results.
         """
         reach_ddl = self.scheduler[virtual_engine].reach_ddl
+        schedule_start_time = time.time()
         if virtual_engine not in self.total_count:
             self.total_count[virtual_engine] = 0
         self.total_count[virtual_engine]= self.total_count[virtual_engine] + 1
@@ -264,7 +242,7 @@ class _AsyncLLMEngine(LLMEngine):
         et = time.time()
         self.schedule_time[virtual_engine] = et - st
         st = time.time()
-        self.swap_time[virtual_engine]=0
+        self.swap_time[virtual_engine] =0
         if not scheduler_outputs.is_empty() and len(seq_group_metadata_list) > 0:
             # Execute the model.
             finished_requests_ids = self.scheduler[
@@ -323,6 +301,8 @@ class _AsyncLLMEngine(LLMEngine):
         scheduler_metric.swap_time=self.swap_time[virtual_engine]
         scheduler_metric.handle_output_time=self.handle_output_time[virtual_engine]
         scheduler_metric.scheduler_index=virtual_engine
+        scheduler_metric.scheduler_start_time=schedule_start_time
+        scheduler_metric.scheduler_end_time=time.time()
         self.scheduler_metrics.append(scheduler_metric)
         self.scheduler[virtual_engine].reset_schedule_metric()
         self.do_tracing(scheduler_outputs)
@@ -735,11 +715,14 @@ class AsyncLLMEngine:
                         has_requests_in_progress[virtual_engine] = True
                     else:
                         has_requests_in_progress[virtual_engine] = False
-                        if any([scheduler.reach_ddl for scheduler in self.engine.scheduler]) or not any(has_requests_in_progress):
+                        if any([scheduler.reach_ddl for scheduler in self.engine.scheduler]) or \
+                            not any(has_requests_in_progress):
                             trace_data = SchedulerMetric.to_dataframe(self.engine.scheduler_metrics)
                             seq_group_traces = RequestMetrics.to_dataframe(self.engine.seq_group_metrics)
-                            trace_data.to_csv(self.engine.scheduler_config.trace_file_path, index=False)
-                            seq_group_traces.to_csv(self.engine.scheduler_config.trace_file_path.replace(".csv", "_seq_group.csv"), index=False)
+                            logger.info(f"finished one request rate, len(trace_data): {len(trace_data)}, len(seq_group_traces): {len(seq_group_traces)}")
+                            trace_data.to_csv(self.engine.scheduler_config.trace_file_path, index=False, mode='a')
+                            seq_group_file_path = self.engine.scheduler_config.trace_file_path.replace(".csv", "_seq_group.csv", mode='a')
+                            seq_group_traces.to_csv(seq_group_file_path, index=False)
 
 
             except asyncio.TimeoutError as exc:

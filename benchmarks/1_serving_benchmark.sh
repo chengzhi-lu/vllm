@@ -11,7 +11,7 @@ TOKENIZERS_PARALLELISM="true"
 
 # 模型和数据集配置
 model_names=(
-  # "meta-llama/Llama-2-13b-chat-hf"
+  "meta-llama/Llama-2-13b-chat-hf"
   "meta-llama/Llama-2-70b-chat-hf"
 )
 parallel_types=(
@@ -100,7 +100,7 @@ for ptype in "${parallel_types[@]}"; do
             fi
               
             if [[ "$ptype" == "pp" ]]; then
-              host="10.119.46.54"
+              host="10.119.46.53"
             else
               host=""
               export RAY_ADDRESS=""

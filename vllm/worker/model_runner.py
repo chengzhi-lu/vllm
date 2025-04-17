@@ -1356,7 +1356,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             **seqlen_agnostic_kwargs)
         
         pred_scores = None
-        if type(hidden_or_intermediate_states) == tuple and len(hidden_or_intermediate_states) == 2:
+        if type(hidden_or_intermediate_states) == tuple and len(hidden_or_intermediate_states) == 2:  # noqa: E721
             hidden_or_intermediate_states, pred_scores = hidden_or_intermediate_states
         else:
             hidden_or_intermediate_states = hidden_or_intermediate_states
