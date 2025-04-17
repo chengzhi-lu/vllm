@@ -337,7 +337,6 @@ class LlamaModel(nn.Module):
         
         # torch.cuda.synchronize()
    
-
         if get_pp_group().is_first_rank:
             if swapped_blocks is not None and self.cache_engine is not None:
                 swap_in_blocks = swapped_blocks['blocks_to_swap_in']
@@ -357,7 +356,6 @@ class LlamaModel(nn.Module):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
-
         if swapped_blocks is not None and self.cache_engine is not None:
             for i in range(self.start_layer, self.end_layer):
                 if i < self.end_layer -1:
@@ -387,7 +385,6 @@ class LlamaModel(nn.Module):
                     attn_metadata,
                     residual,
                 )
-
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({
                 "hidden_states": hidden_states,

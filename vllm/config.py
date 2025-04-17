@@ -822,6 +822,7 @@ class SchedulerConfig:
         self.waiting_iter_base= waiting_iter_base
         self.trace_file_path = trace_file_path
         self.fake_allocate = False 
+        self.trace_file_path = trace_file_path
         self._verify_args()
 
     def _verify_args(self) -> None:

@@ -1165,7 +1165,6 @@ class LLMEngine:
             num_generation_tokens_iter = (
                 scheduler_outputs.num_batched_tokens - num_prompt_tokens_iter +
                 num_generation_tokens_from_prefill_groups)
-            # print(f"scheduler_outputs.num_batched_tokens is {scheduler_outputs.num_batched_tokens}, num_prompt_tokens_iter is {num_prompt_tokens_iter}, num_generation_tokens_from_prefill_groups is {num_generation_tokens_from_prefill_groups}, num_generation_tokens_iter is {num_generation_tokens_iter}")
 
         # Spec decode, if enabled, emits specialized metrics from the worker in
         # sampler output.
