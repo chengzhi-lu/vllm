@@ -9,12 +9,12 @@ start_ray() {
   # 无论之前是否运行，现在都启动ray
   echo "Starting Ray cluster..."
   NCCL_SOCKET_IFNAME=bond0 RAY_ENABLE_RECORD_ACTOR_TASK_LOGGING=1 ray start --head
-  ssh lucz@10.119.46.53 'docker exec -i vllm_lucz bash -c "NCCL_SOCKET_IFNAME=bond0 RAY_ENABLE_RECORD_ACTOR_TASK_LOGGING=1 ray start --address=10.119.46.54:6379"'
+  ssh lucz@10.119.46.54 'docker exec -i vllm_lucz bash -c "NCCL_SOCKET_IFNAME=bond0 RAY_ENABLE_RECORD_ACTOR_TASK_LOGGING=1 ray start --address=10.119.46.53:6379"'
 }
 
 stop_ray() {
   ray stop
-  ssh lucz@10.119.46.53 'docker exec -i vllm_lucz bash -c "bash /root/vllm/benchmarks/terminate_server.sh"' || true
+  ssh lucz@10.119.46.54 'docker exec -i vllm_lucz bash -c "bash /root/vllm/benchmarks/terminate_server.sh"' || true
   rm -r /tmp/ray
   sleep 5
 }
@@ -68,22 +68,27 @@ start_server() {
       ;;
   esac
   prefill_predictor_model_config=""
+  prefill_predictor_model_config_path=""
   if [[ "$policy" == "opt" ]]; then
       case "$model_name" in 
         "meta-llama/Llama-2-13b-chat-hf")
           prefill_predictor_model_config_path="/root/vllm/train/MODEL/results/opt-125m-llama2-13b-sharegpt-score-trainbucket10-b32/usage_config.json"
           ;;
-        "meta-llama/Llama-2-13b-chat-hf")
+        "meta-llama/Llama-2-70b-chat-hf")
           prefill_predictor_model_config_path="/root/vllm/train/MODEL/results/opt-350m-llama2-70b-sharegpt-score-trainbucket10-b32/usage_config.json"
           ;;
       esac
-      if [[ "$prefill_predictor_model_config" == "" ]]; then
+      if [[ "$prefill_predictor_model_config_path" != "" ]]; then
           echo "prefill_predictor_model_config: $prefill_predictor_model_config_path"
           prefill_predictor_model_config="--prefill-predictor-model-config $prefill_predictor_model_config_path"
       fi
   fi
-
-
+  date=`date +%Y%m%d`
+  result_dir="result/${date}/${COUNTER}/"
+  if [[ ! -d "$result_dir" ]]; then
+      mkdir -p "$result_dir"
+  fi
+  trace_file_path="${result_dir}/${model_name##*/}_${parallel_type}_${policy}_${COUNTER}.csv"
   CUDA_VISIBLE_DEVICES=$gpu_devices RAY_DEDUP_LOGS=0 taskset -c 28-29 python3 -m vllm.entrypoints.openai.api_server \
     --model "$model_name" \
     $parallel_args \
@@ -91,6 +96,7 @@ start_server() {
     --swap-space "$swap_space" \
     --preemption-mode "$preemption_mode" \
     --scheduler-policy "$policy" \
+    --trace-file-path "$trace_file_path" \
     --enforce-eager \
     --enable-chunked-prefill \
     --max-num-batched-tokens "$max_tokens" \
@@ -107,7 +113,7 @@ start_server() {
   if [[ "$parallel_type" == @("pp") ]]; then
       sleep 5
       remote_shell="bash /root/vllm/benchmarks/3_serving_benchmark_pp.sh \"$model_name\" \"$max_num_seqs\" \"$policy\" \"$swap_policy\" \"$swap_out_partial_rate\""
-      ssh lucz@10.119.46.53 \
+      ssh lucz@10.119.46.54 \
         "docker exec -i vllm_lucz bash -c \"$remote_shell\""
   fi
 }
@@ -132,7 +138,7 @@ run_benchmark() {
     --dataset-path "$dataset_path" \
     --dataset-name "$dataset_name" \
     --request-rate "$request_rate" \
-    --num-prompts 8192 \
+    --num-prompts 8192\
     --request-duration "$request_duration" \
     --sharegpt-output-len 2000 \
     --model "$model_name" \
@@ -158,7 +164,7 @@ terminate_server() {
   if [[ "$parallel_type" == @("pp"|"tp") ]]; then
       kill -9 `ps -aux|grep "ray" | grep -v grep | awk '{print $2}'` 2>/dev/null
       if [[ "$parallel_type" == "pp" ]]; then
-          ssh lucz@10.119.46.53 'docker exec -i vllm_lucz bash -c "bash /root/vllm/benchmarks/terminate_server.sh"'
+          ssh lucz@10.119.46.54 'docker exec -i vllm_lucz bash -c "bash /root/vllm/benchmarks/terminate_server.sh"'
           stop_ray
       fi
   fi

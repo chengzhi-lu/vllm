@@ -784,6 +784,7 @@ class SchedulerConfig:
         embedding_mode: Optional[bool] = False,
         preemption_mode: Optional[str] = None,
         waiting_iter_base: float = 1.0,
+        trace_file_path: str = "/root/trace_file.csv",
     ) -> None:
         if max_num_batched_tokens is not None:
             self.max_num_batched_tokens = max_num_batched_tokens
@@ -819,6 +820,7 @@ class SchedulerConfig:
         self.embedding_mode = embedding_mode
         self.preemption_mode = preemption_mode
         self.waiting_iter_base= waiting_iter_base
+        self.trace_file_path = trace_file_path
         self.fake_allocate = False 
         self._verify_args()
 
@@ -844,6 +846,8 @@ class SchedulerConfig:
                 f"Scheduler policy {self.policy} is not implemented."
             )
             
+        if not self.trace_file_path.endswith(".csv"):
+            raise ValueError(f"Trace file path {self.trace_file_path} must end with.csv")
         if self.num_lookahead_slots < 0:
             raise ValueError(
                 "num_lookahead_slots "

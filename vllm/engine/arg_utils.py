@@ -50,7 +50,7 @@ class EngineArgs:
     gpu_memory_utilization: float = 0.90
     max_num_batched_tokens: Optional[int] = None
     num_shared_blocks: Optional[int] = None
-    max_num_seqs: int = 256
+    max_num_seqs: int = 2048
     max_logprobs: int = 20  # Default value for OpenAI Chat Completions API
     disable_log_stats: bool = False
     revision: Optional[str] = None
@@ -88,6 +88,7 @@ class EngineArgs:
     swap_out_partial_rate: float = 0.5
     execution_budget:int = 32768 
     max_serving_time: int = 600
+    trace_file_path: str='trace.csv'
 
 
     scheduler_delay_factor: float = 0.0
@@ -589,6 +590,13 @@ class EngineArgs:
         )
 
         parser.add_argument(
+            "--trace-file-path",
+            type=str,
+            default=EngineArgs.trace_file_path,
+            help='The path to the trace file for the engine.'
+        )
+
+        parser.add_argument(
             '--speculative-model',
             type=nullable_str,
             default=EngineArgs.speculative_model,
@@ -847,6 +855,7 @@ class EngineArgs:
             preemption_mode=self.preemption_mode,
             embedding_mode=model_config.embedding_mode,
             waiting_iter_base=self.waiting_iter_base,
+            trace_file_path=self.trace_file_path,
         )
         lora_config = LoRAConfig(
             max_lora_rank=self.max_lora_rank,

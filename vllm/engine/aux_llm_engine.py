@@ -371,7 +371,7 @@ class AUXLLMEngine:
         init_kwargs = dict(
             tokenizer_id=self.model_config.tokenizer,
             enable_lora=bool(self.lora_config),
-            max_num_seqs=self.scheduler_config.max_num_seqs,
+            max_num_seqs=2048,
             max_input_length=None,
             tokenizer_mode=self.model_config.tokenizer_mode,
             trust_remote_code=self.model_config.trust_remote_code,

@@ -1,5 +1,7 @@
+import copy
 import time
 from contextlib import contextmanager
+import pandas as pd
 from typing import TYPE_CHECKING, Any, ClassVar, Dict, Iterable, List, Optional
 from typing import Sequence as GenericSequence
 from typing import Set, Type, TypeVar, Union
@@ -12,7 +14,7 @@ from vllm.config import (CacheConfig, DecodingConfig, DeviceConfig, LoadConfig,
                          PromptAdapterConfig, SchedulerConfig,
                          SpeculativeConfig)
 from vllm.core.batch_solver import BatchSolver
-from vllm.core.scheduler import (ScheduledSequenceGroup, Scheduler,
+from vllm.core.scheduler import (ScheduledSequenceGroup, Scheduler, SchedulerMetric,
                                  SchedulerOutputs)
 from vllm.engine.arg_utils import EngineArgs
 from vllm.engine.metrics import (LoggingStatLogger, PrometheusStatLogger,
@@ -32,7 +34,7 @@ from vllm.pooling_params import PoolingParams
 from vllm.prompt_adapter.request import PromptAdapterRequest
 from vllm.sampling_params import SamplingParams
 from vllm.sequence import (EmbeddingSequenceGroupOutput, ExecuteModelRequest,
-                           PoolerOutput, SamplerOutput, Sequence,
+                           PoolerOutput, RequestMetrics, SamplerOutput, Sequence,
                            SequenceGroup, SequenceGroupMetadata,
                            SequenceStatus)
 from vllm.tracing import (SpanAttributes, SpanKind, extract_trace_context,
@@ -250,14 +252,16 @@ class LLMEngine:
         self.generation_config_fields = _load_generation_config_dict(
             model_config)
 
-        self.schedule_time: float = 0.0
-        self.execution_time: float = 0.0
-        self.swap_time: float = 0.0
-        self.handle_output_time: float = 0.0
-        self.total_count: int = 0
-        self.total_iteration_time: float = 0
+        self.schedule_time:  Dict[int, float] ={}
+        self.execution_time:  Dict[int, float] ={}
+        self.swap_time: Dict[int, float] ={}
+        self.handle_output_time:  Dict[int, float] ={}
+        self.total_count: Dict[int, int]= {}
+        self.scheduler_metrics: List[SchedulerMetric] = []
+        self.seq_group_metrics: List[RequestMetrics] = []
         self.input_processor = INPUT_REGISTRY.create_input_processor(
             self.model_config)
+        self.trace_file_path=self.scheduler_config.trace_file_path
 
         self.model_executor = executor_class(
             model_config=model_config,
@@ -861,6 +865,8 @@ class LLMEngine:
             request_output = RequestOutputFactory.create(
                 seq_group, additional_info, token_chunk_size)
             request_outputs.append(request_output)
+            if seq_group.is_finished():
+                self.seq_group_metrics.append(seq_group.metrics)
         for seq_group in ignored_seq_groups:
             request_output = RequestOutputFactory.create(
                 seq_group, additional_info, 0)
@@ -918,18 +924,25 @@ class LLMEngine:
             >>>     if not (engine.has_unfinished_requests() or example_inputs):
             >>>         break
         """
+        reach_ddl = self.scheduler[0].reach_ddl
+        schedule_start_time=time.time()
+        if reach_ddl:
+            return []
         if self.parallel_config.pipeline_parallel_size > 1:
             raise NotImplementedError(
                 "Pipeline parallelism is only supported through AsyncLLMEngine "
                 "as performance will be severely degraded otherwise.")
-        self.total_count += 1
+    
+        if 0 not in self.total_count:
+            self.total_count[0] = 0
+        self.total_count[0] = self.total_count[0]+ 1
         st = time.time()
         if self.et != 0:
             logger.debug("interval time:", self.et - st)
         seq_group_metadata_list, scheduler_outputs = self.scheduler[
             0].schedule()
         et = time.time()
-        self.schedule_time += et - st
+        self.schedule_time[0] = et - st
         # logger.debug(f"schedule time: {et - st}")
         st = time.time()
         if not scheduler_outputs.is_empty():
@@ -945,12 +958,11 @@ class LLMEngine:
                 finished_requests_ids=finished_requests_ids)
             output = self.model_executor.execute_model(
                 execute_model_req=execute_model_req)
-            self.swap_time += output[0].swap_time
+            self.swap_time[0] = output[0].swap_time
         else:
             output = []
         et = time.time()
-        self.execution_time += et - st
-        self.total_iteration_time = self.execution_time - self.swap_time
+        self.execution_time[0] = et - st
         st = time.time()
         request_outputs = self._process_model_outputs(
             output,
@@ -975,22 +987,22 @@ class LLMEngine:
             # the RPC thread in the workers so that they can process any other
             # queued control plane messages, such as add/remove lora adapters.
             self.model_executor.stop_remote_worker_execution_loop()
+            self.save_trace(self.trace_file_path)
 
         self.et = time.time()
-        # print(f"process time: {self.et - st}")
-        self.handle_output_time += self.et - st
-        # logger.info(
-        #    "Total schedule time: %.1f s, execution time: %.1f s, "
-        #    "handle output time: %.1f s, swap time: %.1f s, "
-        #    "total iteration number: %d, "
-        #    "swap out block num: %d, swap out seq num: %d, "
-        #    "swap in block num: %d, swap in seq num: %d",
-        #    self.schedule_time, self.execution_time,
-        #    self.handle_output_time, self.swap_time,
-        #    self.total_count,
-        #    self.scheduler.total_swap_out_blocks, self.scheduler.total_swap_out_seqs,
-        #    self.scheduler.total_swap_in_blocks, self.scheduler.total_swap_in_seqs
-        # )
+        self.handle_output_time[0] = self.et - st
+        scheduler_metric = copy.deepcopy(self.scheduler[0].scheduler_metric)
+        scheduler_metric.total_count=self.total_count[0]
+        scheduler_metric.schedule_time=self.schedule_time[0]
+        scheduler_metric.execution_time=self.execution_time[0]
+        scheduler_metric.swap_time=self.swap_time[0]
+        scheduler_metric.handle_output_time=self.handle_output_time[0]
+        scheduler_metric.scheduler_index=0
+        scheduler_metric.scheduler_start_time=schedule_start_time
+        scheduler_metric.scheduler_end_time=self.et
+        self.scheduler_metrics.append(scheduler_metric)
+        self.scheduler[0].reset_schedule_metric()
+
         return request_outputs
 
     def add_logger(self, logger_name: str, logger: StatLoggerBase) -> None:
@@ -1236,6 +1248,18 @@ class LLMEngine:
             seq_group = scheduled_seq_group.seq_group
             if seq_group.is_finished():
                 self.create_trace_span(seq_group)
+        
+
+    def save_trace(self, trace_path: str):
+        
+        trace_data = SchedulerMetric.to_dataframe(self.scheduler_metrics) 
+        seq_group_traces = RequestMetrics.to_dataframe(self.seq_group_metrics)
+    
+        logger.info(f"finished one request rate, len(trace_data): {len(trace_data)}, len(seq_group_traces): {len(seq_group_traces)}")
+        trace_data.to_csv(trace_path, index=False, mode='a')
+        seq_group_traces.to_csv(trace_path.replace(".csv", "_seq_group.csv"), index=False, mode='a')
+
+
 
     def create_trace_span(self, seq_group: SequenceGroup) -> None:
         if self.tracer is None or seq_group.sampling_params is None:
