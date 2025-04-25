@@ -1,6 +1,8 @@
 import copy
+from datetime import datetime
 import time
 from contextlib import contextmanager
+import numpy as np
 import pandas as pd
 from typing import TYPE_CHECKING, Any, ClassVar, Dict, Iterable, List, Optional
 from typing import Sequence as GenericSequence
@@ -1251,13 +1253,24 @@ class LLMEngine:
         
 
     def save_trace(self, trace_path: str):
-        
+        if len(self.seq_group_metrics) ==0:
+            return
         trace_data = SchedulerMetric.to_dataframe(self.scheduler_metrics) 
         seq_group_traces = RequestMetrics.to_dataframe(self.seq_group_metrics)
     
         logger.info(f"finished one request rate, len(trace_data): {len(trace_data)}, len(seq_group_traces): {len(seq_group_traces)}")
-        trace_data.to_csv(trace_path, index=False, mode='a')
-        seq_group_traces.to_csv(trace_path.replace(".csv", "_seq_group.csv"), index=False, mode='a')
+        seq_nums = len(seq_group_traces)
+        seconds = datetime.now().strftime("%H%M%S")
+        request_rate = 2**round((np.log2(seq_nums/90)))
+        file_name = trace_path.split("/")[-1]
+        new_file_name = f"{request_rate}.0qps-{seconds}_system_level_{file_name}"
+        system_level_trace_path = trace_path.replace(file_name, new_file_name)
+        trace_data.to_csv(system_level_trace_path, index=False, mode='a')
+        new_file_name = f"{request_rate}.0qps-{seconds}_seq_level_{file_name}"
+        seq_level_trace_path = trace_path.replace(file_name, new_file_name)
+        seq_group_traces.to_csv(seq_level_trace_path, index=False, mode='a')
+        self.scheduler_metrics = []
+        self.seq_group_metrics = []
 
 
 

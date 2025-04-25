@@ -353,18 +353,13 @@ class SchedulerMetric:
     total_swap_in_seqs: int = 0
     total_low_eff_swap_out: int = 0
     total_low_eff_swap_out_diff: int = 0
-    total_swap_out_waiting_time: float = 0.0
-    sort_time_iter: float = 0.0
-    swap_while: float = 0.0
-    prefill_while: float = 0.0
     schedule_running_time: float = 0.0
     schedule_waiting_time: float = 0.0
     schedule_swapped_time: float = 0.0
     prefill_token_num: int = 0
     decode_token_num: int = 0
-    gpu_memory_iter: int = 0
-    gpu_computation_iter: int = 0
-    total_running_block_size: int = 0
+    gpu_memory_occupy: float = 0
+    gpu_computation_occupy: float = 0
     running_seq_nums: int = 0
     waiting_seq_nums: int = 0
     pending_seq_nums: int = 0
@@ -713,6 +708,7 @@ class Scheduler:
             prefill_seq_groups.append(
                 ScheduledSequenceGroup(seq_group=seq_group,
                                        token_chunk_size=num_running_tokens))
+            self.scheduler_metric.prefill_token_num += num_running_tokens
         else:
             decode_seq_groups.append(
                 ScheduledSequenceGroup(seq_group=seq_group,
@@ -767,7 +763,7 @@ class Scheduler:
         return ret 
 
     def _general_schedule(self):
-
+        st = time.time()
         ordered_requests = self._get_ordered_requests()
         original_len = len(self.swapped) + len(self.running) + len(self.waiting)
 
@@ -827,6 +823,10 @@ class Scheduler:
 
                 selected_seq_groups.append(seq_group)
                 gpu_block_required += num_new_seqs
+                if seq_group.is_prefill():
+                    self.scheduler_metric.prefill_token_num += num_new_tokens
+                else:
+                    self.scheduler_metric.decode_token_num += seq_group.seq_len
 
                 #x1.append(seq_group)
 
@@ -849,6 +849,12 @@ class Scheduler:
                 budget.add_num_seqs(seq_group.request_id, num_new_seqs)
                 selected_seq_groups.append(seq_group)
                 gpu_block_required += (len(self.block_manager._get_physical_blocks(seq_group)) + num_swapped_seqs)
+                if seq_group.is_prefill():
+                    self.scheduler_metric.prefill_token_num += num_new_tokens
+                else:
+                    self.scheduler_metric.decode_token_num += seq_group.seq_len
+                    # self.scheduler_metric.total_swap_in_blocks += seq_group.total_token_block_size
+                    # self.scheduler_metric.total_swap_in_seqs += 1
 
                 
             elif seq_group in remaining_waiting:
@@ -873,6 +879,11 @@ class Scheduler:
                 budget.add_num_batched_tokens(seq_group.request_id, num_new_tokens)
                 budget.add_num_seqs(seq_group.request_id, num_new_seqs)
                 gpu_block_required += seq_group.total_token_block_size
+                if seq_group.is_prefill():
+                    self.scheduler_metric.prefill_token_num += num_new_tokens
+                else:
+                    self.scheduler_metric.decode_token_num += seq_group.seq_len
+
             else:
                 
                 assert False, "seqgroup not in all lists"
@@ -996,7 +1007,6 @@ class Scheduler:
         # Update swapped requests.
         self.swapped = remaining_swapped
         self.swapped.extend(running_scheduled.swapped_out)
-
         all_pri = list(self.swapped) + list(self.running) + list(self.waiting)
         assert len(self.swapped) + len(self.running) + len(self.waiting) == original_len
         ret = SchedulerOutputs(
@@ -1022,6 +1032,31 @@ class Scheduler:
             need_score=self.need_score,
             allow_both_swap=True
         )
+
+        block_generated = len(ret.scheduled_seq_groups)
+        block_used = self.scheduler_metric.decode_token_num + block_generated
+        # Normalization
+        self.scheduler_metric.gpu_memory_occupy = block_used/ self.cache_config.num_gpu_blocks
+
+        # 2) GPU computation:
+
+        prefills_seq_groups = (prefills.seq_groups +
+                                prefills.kv_free_seq_groups +
+                                running_scheduled.prefill_seq_groups +
+                                swapped_in.prefill_seq_groups )
+        computation_tokens = 0
+
+        for seq_group in [s.seq_group for s in prefills_seq_groups]:
+            computation_tokens += seq_group.seq_len
+
+        computation_tokens += block_generated
+
+        self.scheduler_metric.gpu_computation_occupy = computation_tokens
+
+        self.scheduler_metric.running_seq_nums += len(ret.scheduled_seq_groups)
+        self.scheduler_metric.waiting_seq_nums += len(self.swapped)
+        self.scheduler_metric.pending_seq_nums += len(self.waiting)
+        
         running_this_step = [r.seq_group for r in ret.scheduled_seq_groups]
         for seq in all_pri:
             if seq in running_this_step:
@@ -1070,7 +1105,13 @@ class Scheduler:
                     preempted_mode = self._preempt(request, blocks_to_swap_out, preemption_mode = PreemptionMode.SWAP)
                     if preempted_mode == PreemptionMode.RECOMPUTE:
                         preempted.append(request)
+                        self.scheduler_metric.total_swap_out_blocks += request.total_token_block_size
+                        self.scheduler_metric.total_swap_out_seqs+= 1
+                        request.update_swap_times()
                     else:
+                        self.scheduler_metric.total_swap_out_blocks += request.total_token_block_size
+                        self.scheduler_metric.total_swap_out_seqs += 1
+                        request.update_swap_times()
                         swapped_out.append(request)
                     if request in remaining_running:
                         assert request not in execute_pinned_requests
@@ -1092,11 +1133,18 @@ class Scheduler:
                         remaining_running.remove(request)
                         if preempted_mode == PreemptionMode.RECOMPUTE:
                             preempted.append(request)
+                            self.scheduler_metric.total_swap_out_blocks += request.total_token_block_size
+                            self.scheduler_metric.total_swap_out_seqs += 1
+                            request.update_swap_times()
+                            request.update_waiting_iter_nums()
                         else:
+                            self.scheduler_metric.total_swap_out_blocks += request.total_token_block_size
+                            self.scheduler_metric.total_swap_out_seqs += 1
+                            request.update_swap_times()
+                            request.update_waiting_iter_nums()
                             swapped_out.append(request)
 
                     elif (len(request.get_seqs(status=SequenceStatus.SWAPPED))):
-
                         num_swap_out_blocks_needed -= (len(self.block_manager._get_physical_blocks(request)) + request.num_seqs(status=SequenceStatus.SWAPPED))
                     else:
                         num_swap_out_blocks_needed -= request.get_seqs()[0].n_blocks  
@@ -1134,6 +1182,9 @@ class Scheduler:
                         request.num_new_seqs = request.get_max_num_running_seqs()
                         request.num_new_tokens = sum(seq.get_num_new_tokens() for seq in request.get_seqs(status=SequenceStatus.SWAPPED))
                         self._swap_in(request, blocks_to_swap_in)
+                        self.scheduler_metric.total_swap_in_blocks += request.total_token_block_size
+                        self.scheduler_metric.total_swap_in_seqs += request.num_seqs(status=SequenceStatus.RUNNING)
+                        request.reset_
 
                         final_budget.add_num_batched_tokens(seq_group.request_id, seq_group.num_new_tokens)
                         final_budget.add_num_seqs(seq_group.request_id, seq_group.num_new_seqs)
@@ -1290,7 +1341,6 @@ class Scheduler:
                 #                                     num_new_tokens)
                 # budget.subtract_num_seqs(sg.request_id, num_new_seqs)
                 tmp_total_block_size -= block_size
-                sg.update_waiting_iter_nums()
                 selected_swapped_seq_groups.append(sg)
 
         for seq_group in selected_swapped_seq_groups:
@@ -1342,11 +1392,11 @@ class Scheduler:
                       schedule_preemption: SchedulerPreemption,
                       running_queue: deque, waiting_queue: deque,
                       swapped_queue: deque, recomputed_token_nums: int):
+        seq_group.reset_waiting_iter_nums()
         if seq_group in running_queue:
             num_running_tokens = seq_group.token_chunk_size 
             self._append_slots(seq_group,
                                schedule_preemption.blocks_to_copy_running)
-            seq_group.reset_waiting_iter_nums()
             is_prefill = seq_group.is_prefill()
             if is_prefill:
                 schedule_preemption.prefill_seq_groups_running.append(
@@ -1354,6 +1404,7 @@ class Scheduler:
                         seq_group=seq_group,
                         token_chunk_size=num_running_tokens))
                 recomputed_token_nums += num_running_tokens
+                self.scheduler_metric.prefill_token_num += num_running_tokens
             else:
                 schedule_preemption.decode_seq_groups_running.append(
                     ScheduledSequenceGroup(seq_group=seq_group,
@@ -1380,6 +1431,7 @@ class Scheduler:
                 schedule_preemption.prefill_seq_groups_swapped.append(
                     ScheduledSequenceGroup(seq_group,
                                            token_chunk_size=num_new_tokens))
+                self.scheduler_metric.prefill_token_num += num_new_tokens
             else:
                 schedule_preemption.decode_seq_groups_swapped.append(
                     ScheduledSequenceGroup(seq_group, token_chunk_size=1))
@@ -1413,6 +1465,7 @@ class Scheduler:
             schedule_preemption.seq_groups_prefill.append(
                 ScheduledSequenceGroup(seq_group=seq_group,
                                        token_chunk_size=num_new_tokens))
+            self.scheduler_metric.prefill_token_num += num_new_tokens
         return True, None, recomputed_token_nums
 
     def _preempt_seq(self, seq_group: SequenceGroup, budget: SchedulingBudget,
@@ -1432,6 +1485,8 @@ class Scheduler:
             running_queue.remove(seq_group)
             self.scheduler_metric.total_swap_out_seqs += 1
             self.scheduler_metric.total_swap_out_blocks += seq_group.total_token_block_size
+            seq_group.update_swap_times()
+            seq_group.update_waiting_iter_nums()
             # Queue requests that couldn't be scheduled.
         return True, None
 
@@ -1487,7 +1542,6 @@ class Scheduler:
                 running_queue, queue_type='running', policy_info=policy_info)
         else:
             running_queue = policy.sort_by_priority(now, running_queue)
-        self.scheduler_metric.sort_time_iter += time.time() - now
         self.has_preempted_seq = False
 
         while running_queue:
@@ -1756,6 +1810,7 @@ class Scheduler:
                             seq_group=seq_group,
                             token_chunk_size=num_running_tokens))
                     recomputed_token_nums += num_running_tokens
+                    self.scheduler_metric.prefill_token_num += num_running_tokens
                 else:
                     decode_seq_groups.append(
                         ScheduledSequenceGroup(seq_group=seq_group,
@@ -1829,7 +1884,6 @@ class Scheduler:
             swapped_queue = policy.sort_by_priority(now, swapped_queue)
         infeasible_seq_groups: List[SequenceGroup] = []
         leftover_swapped: Deque[SequenceGroup] = deque()
-        st_while = time.time()
         while swapped_queue:
             seq_group: SequenceGroup = swapped_queue[0]
             # if (self.scheduler_config.policy in ["infer", "tfittradeoff"]
@@ -1909,9 +1963,6 @@ class Scheduler:
                 self.scheduler_metric.total_low_eff_swap_out_diff += seq_group.seq_len - \
                                 seq_group.metrics.waiting_iter_nums
 
-            if seq_group.swap_out_moment is not None:
-                self.scheduler_metric.total_swap_out_waiting_time += time.time() - \
-                                seq_group.swap_out_moment
 
             self._swap_in(seq_group, blocks_to_swap_in)
 
@@ -1928,13 +1979,13 @@ class Scheduler:
                 prefill_seq_groups.append(
                     ScheduledSequenceGroup(seq_group,
                                            token_chunk_size=num_new_tokens))
+                self.scheduler_metric.prefill_token_num += num_new_tokens
             else:
                 decode_seq_groups.append(
                     ScheduledSequenceGroup(seq_group, token_chunk_size=1))
             budget.add_num_batched_tokens(seq_group.request_id, num_new_tokens)
             budget.add_num_seqs(seq_group.request_id, num_new_seqs)
             seq_group.reset_waiting_iter_nums()
-        self.scheduler_metric.swap_while += time.time() - st_while
         swapped_queue.extendleft(leftover_swapped)
         self.scheduler_metric.schedule_swapped_time += time.time() - now
 
@@ -2023,7 +2074,6 @@ class Scheduler:
 
         leftover_waiting_sequences: Deque[SequenceGroup] = deque()
 
-        st_while = time.time()
         while self._passed_delay(time.time()) and waiting_queue:
             seq_group = waiting_queue[0]
             waiting_seqs = seq_group.get_seqs(status=SequenceStatus.WAITING)
@@ -2098,9 +2148,6 @@ class Scheduler:
             else:
                 self._allocate_and_set_running(seq_group)
 
-            if seq_group.swap_out_moment is not None:
-                self.scheduler_metric.total_swap_out_waiting_time += time.time(
-                ) - seq_group.swap_out_moment
 
             seq_groups.append(
                 ScheduledSequenceGroup(seq_group=seq_group,
@@ -2108,7 +2155,6 @@ class Scheduler:
             self.scheduler_metric.prefill_token_num += num_new_tokens
             budget.add_num_batched_tokens(seq_group.request_id, num_new_tokens)
             budget.add_num_seqs(seq_group.request_id, num_new_seqs)
-        self.scheduler_metric.prefill_while += time.time() - st_while
         # Queue requests that couldn't be scheduled.
         waiting_queue.extendleft(leftover_waiting_sequences)
         if len(seq_groups) > 0:
@@ -2378,18 +2424,14 @@ class Scheduler:
             self.swapped = remaining_swapped
             self.swapped.extend(running_scheduled.swapped_out)
             
-            for s in (running_scheduled.prefill_seq_groups+swapped_in.prefill_seq_groups):
-                self.scheduler_metric.prefill_token_num += len(s.seq_group.prompt_token_ids)
             
             self.scheduler_metric.decode_token_num = 0
             for s in (running_scheduled.decode_seq_groups +
                                     swapped_in.decode_seq_groups):
-                self.scheduler_metric.decode_token_num += 1
+                self.scheduler_metric.decode_token_num += s.seq_group.seq_len
 
             # Motivation:
             # 1) GPU Memory:
-            memory_existed = 0
-            memory_new_generated = 0
 
             scheduled_seq_groups = (prefills.seq_groups +
                                     prefills.kv_free_seq_groups +
@@ -2398,26 +2440,12 @@ class Scheduler:
                                     running_scheduled.decode_seq_groups +
                                     swapped_in.decode_seq_groups)
 
-            for seq_group in [s.seq_group for s in scheduled_seq_groups]:
-                memory_existed += sum([
-                    seq.get_len() for seq in seq_group.get_seqs()
-                    if not seq.is_finished()
-                ])
+            block_generated = len(scheduled_seq_groups)
 
-            for seq_group in [
-                    s.seq_group for s in (running_scheduled.decode_seq_groups +
-                                          swapped_in.decode_seq_groups)
-            ]:
-                memory_new_generated += sum([
-                    1 for seq in seq_group.get_seqs() if not seq.is_finished()
-                ])
+            block_used = self.scheduler_metric.decode_token_num + block_generated
 
-            memory_iter = memory_existed + memory_new_generated
-
-            self.scheduler_metric.gpu_memory_iter = memory_iter
             # Normalization
-            self.scheduler_metric.gpu_memory_iter /= (self.cache_config.block_size *
-                                     self.cache_config.num_gpu_blocks)
+            self.scheduler_metric.gpu_memory_occupy = block_used/ self.cache_config.num_gpu_blocks
 
             # 2) GPU computation:
 
@@ -2425,24 +2453,19 @@ class Scheduler:
                                     prefills.kv_free_seq_groups +
                                     running_scheduled.prefill_seq_groups +
                                     swapped_in.prefill_seq_groups )
-            computation_iter = 0
+            computation_tokens = 0
 
             for seq_group in [s.seq_group for s in prefills_seq_groups]:
-                computation_iter += sum([
-                    seq.get_len() for seq in seq_group.get_seqs()
-                    if not seq.is_finished()
-                ])
+                computation_tokens += seq_group.seq_len
 
-            computation_iter += memory_new_generated
+            computation_tokens += block_generated
 
-            self.scheduler_metric.gpu_computation_iter = computation_iter
+            self.scheduler_metric.gpu_computation_occupy = computation_tokens
 
             # 3) batch size:
 
-            prefill_seq_nums= len(prefills_seq_groups)
-            decode_seq_nums = len(running_scheduled.decode_seq_groups +
-                                    swapped_in.decode_seq_groups)
-            running_seq_nums = prefill_seq_nums+decode_seq_nums
+
+            running_seq_nums = len(scheduled_seq_groups)
             waiting_seq_nums = len(self.swapped)
             pending_seq_nums= len(self.waiting)
             self.scheduler_metric.running_seq_nums += running_seq_nums

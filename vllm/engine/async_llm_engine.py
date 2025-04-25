@@ -1,10 +1,12 @@
 import asyncio
+from datetime import datetime
 import time
 from functools import partial
 from typing import (AsyncIterator, Callable, Dict, Iterable, List, Optional,
                     Set, Tuple, Type, Union)
 
 import copy
+import numpy as np
 from transformers import PreTrainedTokenizer
 
 import vllm.envs as envs
@@ -717,12 +719,23 @@ class AsyncLLMEngine:
                         has_requests_in_progress[virtual_engine] = False
                         if any([scheduler.reach_ddl for scheduler in self.engine.scheduler]) or \
                             not any(has_requests_in_progress):
+                            if len(self.engine.seq_group_metrics) ==0:
+                                continue
                             trace_data = SchedulerMetric.to_dataframe(self.engine.scheduler_metrics)
                             seq_group_traces = RequestMetrics.to_dataframe(self.engine.seq_group_metrics)
-                            logger.info(f"finished one request rate, len(trace_data): {len(trace_data)}, len(seq_group_traces): {len(seq_group_traces)}")
-                            trace_data.to_csv(self.engine.scheduler_config.trace_file_path, index=False, mode='a')
-                            seq_group_file_path = self.engine.scheduler_config.trace_file_path.replace(".csv", "_seq_group.csv")
-                            seq_group_traces.to_csv(seq_group_file_path, index=False, mode='a')
+                            seq_nums = len(seq_group_traces)
+                            seconds = datetime.now().strftime("%H%M%S")
+                            request_rate = 2**round((np.log2(seq_nums/90)))
+                            trace_path = self.engine.scheduler_config.trace_file_path
+                            file_name = trace_path.split("/")[-1]
+                            new_file_name = f"{request_rate}.0qps-{seconds}_system_level_{file_name}"
+                            system_level_trace_path = trace_path.replace(file_name, new_file_name)
+                            trace_data.to_csv(system_level_trace_path, index=False, mode='a')
+                            new_file_name = f"{request_rate}.0qps-{seconds}_seq_level_{file_name}"
+                            seq_level_trace_path = trace_path.replace(file_name, new_file_name)
+                            seq_group_traces.to_csv(seq_level_trace_path, index=False, mode='a')
+                            self.engine.scheduler_metrics = []
+                            self.engine.seq_group_metrics = []
 
 
             except asyncio.TimeoutError as exc:

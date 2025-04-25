@@ -77,6 +77,73 @@ class BenchmarkMetrics:
     std_itl_ms: float
 
 
+def sample_alpaca_requests(
+    dataset_path: str,
+    num_requests: int,
+    tokenizer: PreTrainedTokenizerBase,
+    fixed_output_len: Optional[int] = None,
+    scheduler_policy: Optional[str] = None,
+) -> List[Tuple[str, int, int]]:
+    if fixed_output_len is not None and fixed_output_len < 4:
+        raise ValueError("output_len too small")
+    # Load the dataset.
+    with open(dataset_path) as f:
+        dataset = json.load(f)
+    # Filter out the conversations with less than 2 turns.
+    dataset = [data for data in dataset if len(data["conversation"]) >= 2]
+    # Only keep the first two turns of each conversation.
+    dataset = [(data["conversation"][0]["value"],
+                data["conversation"][1]["value"]) for data in dataset]
+
+    # Shuffle the dataset.
+    random.shuffle(dataset)
+    prompt_len_list = []
+    # Filter out sequences that are too long or too short
+    filtered_dataset: List[Tuple[str, int, int]] = []
+    filtered_data_prompts = []
+    data=None
+    if args.scheduler_policy in ["srjf", "sjf"]:
+        file_path = get_json_file(qps=args.request_rate)
+        if file_path:
+            with open(file_path, 'r', encoding="utf-8") as file:
+                data = json.load(file)
+            # print(f"Loaded data from {file_path}")
+        else:
+            print("No JSON file found in the current directory.")
+        
+    for i in range(len(dataset)):
+        if len(filtered_data_prompts) == num_requests:
+            break
+
+        # Tokenize the prompts and completions.
+        prompt = dataset[i][0]
+        if prompt in filtered_data_prompts:
+            continue
+        prompt_token_ids = tokenizer(prompt).input_ids
+        completion = dataset[i][1]
+        completion_token_ids = tokenizer(completion).input_ids
+        prompt_len = len(prompt_token_ids)
+        prompt_len_list.append(prompt_len)
+        # if data is not None:
+            # if prompt not in data['prompts']:
+        output_len = len(completion_token_ids
+                        )
+        if prompt_len + output_len < 128:
+            continue
+            # else:
+            #     index = data['prompts'].index(prompt)
+            #     output_len = data['output_lens'][index]
+            #     if output_len == 0:
+            #         output_len = len(completion_token_ids
+            #                     )
+        # else:
+        #     output_len=0
+        filtered_dataset.append((prompt, prompt_len, output_len))
+        filtered_data_prompts.append(prompt)
+    print(f"Number of requests: {len(filtered_dataset)}")
+    return filtered_dataset,data
+
+
 def sample_sharegpt_requests(
     dataset_path: str,
     num_requests: int,
@@ -649,6 +716,14 @@ def main(args: argparse.Namespace):
             fixed_output_len=args.sharegpt_output_len,
             scheduler_policy=args.scheduler_policy,
         )
+    elif args.dataset_name == "alpaca":
+        input_requests,data = sample_alpaca_requests(
+            dataset_path=args.dataset_path,
+            num_requests=args.num_prompts,
+            tokenizer=tokenizer,
+            fixed_output_len=args.sharegpt_output_len,
+            scheduler_policy=args.scheduler_policy,
+        )
 
     elif args.dataset_name == "sonnet":
         # Do not format the prompt, pass to message directly
@@ -797,7 +872,7 @@ if __name__ == "__main__":
         default=None,
         help="Server or API base url if not using http host and port.",
     )
-    parser.add_argument("--host", type=str, default="10.119.46.54")
+    parser.add_argument("--host", type=str, default="10.119.46.53")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
         "--endpoint",
@@ -816,7 +891,7 @@ if __name__ == "__main__":
         "--dataset-name",
         type=str,
         default="sharegpt",
-        choices=["sharegpt", "sonnet", "random"],
+        choices=["sharegpt", "sonnet", "random", 'alpaca'],
         help="Name of the dataset to benchmark on.",
     )
     parser.add_argument("--dataset-path",

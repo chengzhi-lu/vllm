@@ -30,30 +30,40 @@ def filter_data_alpaca(model_name):
     )
     selected_seqs = {}
     # all_need_seq = [i for i in range(1, 2049)]
-
+    dataset=[]
     with open(dataset_path) as f:
         dataset = json.load(f)
+        import random
         # Only keep the first two turns of each conversation.
         dataset = [
-            (
-                data["instruction"] + " "+ data["input"],
-                data["output"],
-            )
+            {
+                "id": f"{random.randint(0,len(dataset))}",
+                "conversation":[
+                    {
+                    "from": "human",
+                    "value": data["instruction"] + " "+ data["input"]
+                    },
+                    {"from": "gpt",
+                     "value":data["output"]}
+                ]
+            }
             for data in dataset
         ]
+    with open("test.json", mode='w') as f:
+        f.write(json.dumps(dataset))
 
-        # Shuffle the dataset.
-        random.seed(1)
-        random.shuffle(dataset)
-        count = 0
-        for i in range(len(dataset)):
-            prompt = dataset[i][0]
-            prompt_token_ids = tokenizer(prompt).input_ids
-            prompt_len = len(prompt_token_ids)
-            selected_seqs[count] = (prompt,prompt_len)
-            count+=1
-        file_name=f"{model_name}_alpaca"
-        save_seq_to_file(selected_seqs,file_name)
+        # # Shuffle the dataset.
+        # random.seed(1)
+        # random.shuffle(dataset)
+        # count = 0
+        # for i in range(len(dataset)):
+        #     prompt = dataset[i][0]
+        #     prompt_token_ids = tokenizer(prompt).input_ids
+        #     prompt_len = len(prompt_token_ids)
+        #     selected_seqs[count] = (prompt,prompt_len)
+        #     count+=1
+        # file_name=f"{model_name}_alpaca"
+        # save_seq_to_file(selected_seqs,file_name)
 
 def filter_data_sharegpt(model_name):
     dataset_path = (
@@ -113,6 +123,6 @@ def filter_data_sharegpt(model_name):
         save_seq_to_file(selected_seqs,file_name)
 
 
-for model in ["llama","mistral"]:
-    filter_data_sharegpt(model)
+for model in ["llama"]:
+    # filter_data_sharegpt(model)
     filter_data_alpaca(model)

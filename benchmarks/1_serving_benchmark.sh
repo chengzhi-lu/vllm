@@ -16,12 +16,12 @@ model_names=(
 )
 parallel_types=(
   "single"
-  # "tp"
+  "tp"
   # "pp"
 )
 datasets=(
   "sharegpt /root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
-  # "alpaca /root/vllm/dataset/alpaca_data.json"
+  # "alpaca /root/vllm/dataset/cleared_alpaca.json"
 )
 
 # 服务器配置
@@ -36,14 +36,14 @@ num_shared_blocks=0
 request_duration=90
 # 测试策略组合
 scheduler_swap_policies=(
-  "fcfs full"
   "tfittradeoff partial"
-  "sjf full"
+  "fcfs full"
+  # "sjf full"
   "sjmlfq full"
-  "opt full"
+  # "opt full"
 )
 
-request_rates=(1 2 4 8 16 32 64)
+request_rates=(16 32)
 # request_rates=(8)
 swap_out_partial_rates=(0.5)
 
@@ -111,13 +111,13 @@ for ptype in "${parallel_types[@]}"; do
             "$ptype" "$model_name"
             
             # 运行基准测试
-            for i in {1..1}; do
+            for i in {1..3}; do
               for request_rate in "${request_rates[@]}"; do
                 max_request_nums=$((request_duration * request_rate))
                 run_benchmark "$policy" "$swap_policy" "$swap_out_partial_rate" \
                   "$request_rate" "$dataset_path" "$dataset_name" \
                   "$model_name" "$ptype" "$max_request_nums"
-                sleep 5
+                sleep 20
                 parse_result "$policy" "$swap_policy" "$swap_out_partial_rate" \
                   "$request_rate" "$model_name" "$ptype"
               done
