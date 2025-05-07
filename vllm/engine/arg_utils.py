@@ -88,6 +88,7 @@ class EngineArgs:
     swap_out_partial_rate: float = 0.5
     execution_budget:int = 32768 
     max_serving_time: int = 600
+    early_terminate: bool=False
     trace_file_path: str='trace.csv'
 
 
@@ -588,6 +589,13 @@ class EngineArgs:
             help=
             'The base number of waiting iterations before the engine promotes a sequence from the waiting queue to the running queue.'
         )
+        
+        parser.add_argument(
+            "--early-terminate",
+            action='store_true',
+            default=EngineArgs.early_terminate,
+            help='Early terminate when all prefills are done!'
+        )
 
         parser.add_argument(
             "--trace-file-path",
@@ -854,6 +862,7 @@ class EngineArgs:
             iter_threshold=self.iter_threshold,
             preemption_mode=self.preemption_mode,
             embedding_mode=model_config.embedding_mode,
+            early_terminate = self.early_terminate,
             waiting_iter_base=self.waiting_iter_base,
             trace_file_path=self.trace_file_path,
         )

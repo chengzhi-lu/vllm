@@ -1,7 +1,10 @@
+import time
 from typing import List
 import numpy as np
 import pandas as pd
 import os
+
+from vllm.sequence import SequenceGroup
 
 
 class BatchSolver:
@@ -24,14 +27,15 @@ class BatchSolver:
             pipeline_parallel_size=pipeline_parallel_size,
             model_id=model_id,
         )
-        self.max_throughput = {} #b:tp
-        self.last_token_limit = {} # b:token_limit
+        self.max_throughput = {}  # b:tp
+        self.last_token_limit = {}  # b:token_limit
+        self.total_waiting_time = 0
+        self.total_execution_time = 0
+        self.decode_seqs = []
 
     def get_profiled_info(self):
         try:
-            if not hasattr(self, "profile_result") or not isinstance(
-                self.profile_result, pd.DataFrame
-            ):
+            if not hasattr(self, "profile_result") or not isinstance(self.profile_result, pd.DataFrame):
                 raise ValueError("self.profile_result must be a valid pandas DataFrame.")
 
             required_columns = {"model_id", "parallel_type", "num_instances"}
@@ -52,11 +56,7 @@ class BatchSolver:
 
     def _read_params(self):
         data_frames = []
-        if (
-            self.profile_dir is None
-            or not os.path.exists(self.profile_dir)
-            or not os.path.isdir(self.profile_dir)
-        ):
+        if self.profile_dir is None or not os.path.exists(self.profile_dir) or not os.path.isdir(self.profile_dir):
             return None
         for file_name in os.listdir(self.profile_dir):
             if file_name.endswith(".csv"):
@@ -67,9 +67,7 @@ class BatchSolver:
                         stage = file_name.split("_")[0]
                         tmp_df["stage"] = stage
                     else:
-                        print(
-                            f"Warning: File name '{file_name}' does not match expected format, skipping."
-                        )
+                        print(f"Warning: File name '{file_name}' does not match expected format, skipping.")
                         continue
                     data_frames.append(tmp_df)
                 except Exception as e:
@@ -81,17 +79,13 @@ class BatchSolver:
 
         total_profile_result = pd.concat(data_frames, ignore_index=True)
         total_profile_result = (
-            total_profile_result.groupby(["model_id", "parallel_type", "num_instances", "stage"])
-            .mean()
-            .reset_index()
+            total_profile_result.groupby(["model_id", "parallel_type", "num_instances", "stage"]).mean().reset_index()
         )
         return total_profile_result
 
     def _get_params(self, parallel_type: str, pipeline_parallel_size: int = 0, model_id: str = ""):
         if not parallel_type or pipeline_parallel_size < 0 or not model_id:
-            print(
-                "Invalid parameters: parallel_type, pipeline_parallel_size, and model_id must be valid."
-            )
+            print("Invalid parameters: parallel_type, pipeline_parallel_size, and model_id must be valid.")
             return
 
         if (
@@ -130,31 +124,53 @@ class BatchSolver:
         if not all([self.decode_time_params, self.prefill_time_params, self.sample_time_params]):
             print("Some parameters could not be retrieved successfully.")
 
+    def is_opt(self, scheduling_policy: str, seq_group: SequenceGroup):
+        if np.sum(self.decode_time_params) == 0 or scheduling_policy != "tfittradeoff":
+            return True
+        waiting_time = time.time() - seq_group.get_last_execute_time()
+        execution_time = (
+            self.prefill_time_params[0] * seq_group.seq_len**2
+            + self.prefill_time_params[1] * seq_group.seq_len
+            + self.prefill_time_params[2]
+        )
+        if not seq_group.is_prefill():
+            self.decode_seqs.append(seq_group.seq_len)
+            execution_time = (
+                execution_time
+                + self.decode_time_params[0] * len(self.decode_seqs)
+                + self.decode_time_params[1] * len(self.decode_seqs) * np.sum(self.decode_seqs)
+                + self.decode_time_params[2]
+            )
+
+        if self.total_execution_time == 0:
+            self.total_execution_time = execution_time
+            self.total_waiting_time = waiting_time
+            return True
+        else:
+            if waiting_time / execution_time > self.total_waiting_time / self.total_execution_time:
+                self.total_waiting_time = waiting_time
+                self.total_execution_time = execution_time
+                return True
+            else:
+                return False
+
+    def reset_opt(self):
+        self.decode_seqs = []
+        self.total_waiting_time = 0
+        self.total_execution_time = 0
+
     def get_best_token_limits(self, scheduling_policy: str, decode_seqs: List[int]):
-        if (
-            len(decode_seqs) == 0
-            or np.sum(self.decode_time_params) == 0
-            or scheduling_policy != "tfittradeoff"
-        ):
+        if len(decode_seqs) == 0 or np.sum(self.decode_time_params) == 0 or scheduling_policy != "tfittradeoff":
             return 0
         b = len(decode_seqs)
         s = np.sum(decode_seqs)
-        decode_time = (
-            self.decode_time_params[0] * b
-            + self.decode_time_params[1] * b * s
-            + self.decode_time_params[2]
-        )
+        decode_time = self.decode_time_params[0] * b + self.decode_time_params[1] * b * s + self.decode_time_params[2]
         sampling_time = self.sample_time_params[0] * (b + 1) + self.sample_time_params[1]
 
         try:
             sqrt_param = (
                 b**2
-                + (
-                    decode_time
-                    + sampling_time
-                    + self.prefill_time_params[2]
-                    - self.prefill_time_params[1] * b
-                )
+                + (decode_time + sampling_time + self.prefill_time_params[2] - self.prefill_time_params[1] * b)
                 / self.prefill_time_params[0]
             )
 
@@ -162,10 +178,14 @@ class BatchSolver:
                 print(f"Square root parameter is negative. b is {b}, s is {s}")
                 return 0
             token_limit = int(-b + np.sqrt(sqrt_param))
-            predicted_prefill_time=self.prefill_time_params[0]*token_limit**2+self.prefill_time_params[1]*token_limit+self.prefill_time_params[2]
-            max_throughput = (token_limit+b)/(decode_time+sampling_time+predicted_prefill_time)
+            predicted_prefill_time = (
+                self.prefill_time_params[0] * token_limit**2
+                + self.prefill_time_params[1] * token_limit
+                + self.prefill_time_params[2]
+            )
+            max_throughput = (token_limit + b) / (decode_time + sampling_time + predicted_prefill_time)
             if b not in self.max_throughput:
-                self.max_throughput[b]=max_throughput
+                self.max_throughput[b] = max_throughput
                 self.last_token_limit[b] = token_limit
                 return token_limit
             if max_throughput > self.max_throughput[b]:

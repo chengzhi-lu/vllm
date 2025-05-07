@@ -853,8 +853,8 @@ class Scheduler:
                     self.scheduler_metric.prefill_token_num += num_new_tokens
                 else:
                     self.scheduler_metric.decode_token_num += seq_group.seq_len
-                    # self.scheduler_metric.total_swap_in_blocks += seq_group.total_token_block_size
-                    # self.scheduler_metric.total_swap_in_seqs += 1
+                    self.scheduler_metric.total_swap_in_blocks += seq_group.total_token_block_size
+                    self.scheduler_metric.total_swap_in_seqs += 1
 
                 
             elif seq_group in remaining_waiting:
@@ -893,7 +893,7 @@ class Scheduler:
         
         #print("before remain: ", len(selected_seq_groups), len(ordered_requests), budget.num_curr_seqs)
 
-        _, execute_pinned_requests, preempted, swapped_out, blocks_to_swap_out, blocks_to_swap_in = self.reserve_free_blocks(gpu_block_required, selected_seq_groups, ordered_requests, remaining_running, final_budget)
+        _, execute_pinned_requests, preempted, swapped_out, blocks_to_swap_out, blocks_to_swap_in = self.reserve_free_blocks(gpu_block_required, selected_seq_groups, ordered_requests, remaining_running, budget)
         blocks_to_copy = []
 
         for seq_group in execute_pinned_requests:
@@ -985,9 +985,10 @@ class Scheduler:
             num_lookahead_slots=self._get_num_lookahead_slots(
                 is_prefill=False))
 
-        assert (final_budget.num_batched_tokens <=
+        assert (budget.num_batched_tokens <=
                 self.scheduler_config.max_num_batched_tokens)
         assert budget.num_curr_seqs <= self.scheduler_config.max_num_seqs, f" num req: {budget.num_curr_seqs} {self.scheduler_config.max_num_seqs}"
+
 
         #print("extend: ", len(remaining_running), len(prefills.seq_groups), len(running_scheduled.decode_seq_groups), len(running_scheduled.prefill_seq_groups), len(running_scheduled.prefill_seq_groups), len(swapped_in.decode_seq_groups), len(swapped_in.prefill_seq_groups))
         # Update waiting requests.
@@ -1018,7 +1019,7 @@ class Scheduler:
             num_prefill_groups=(len(prefills.seq_groups) +
                                 len(swapped_in.prefill_seq_groups) +
                                 len(running_scheduled.prefill_seq_groups)),
-            num_batched_tokens=final_budget.num_batched_tokens,
+            num_batched_tokens=budget.num_batched_tokens,
             blocks_to_swap_in=swapped_in.blocks_to_swap_in,
             blocks_to_swap_out=running_scheduled.blocks_to_swap_out,
             blocks_to_copy=running_scheduled.blocks_to_copy + swapped_in.blocks_to_copy,
@@ -1184,7 +1185,6 @@ class Scheduler:
                         self._swap_in(request, blocks_to_swap_in)
                         self.scheduler_metric.total_swap_in_blocks += request.total_token_block_size
                         self.scheduler_metric.total_swap_in_seqs += request.num_seqs(status=SequenceStatus.RUNNING)
-                        request.reset_
 
                         final_budget.add_num_batched_tokens(seq_group.request_id, seq_group.num_new_tokens)
                         final_budget.add_num_seqs(seq_group.request_id, seq_group.num_new_seqs)
@@ -1303,6 +1303,8 @@ class Scheduler:
                 seq_status= SequenceStatus.RUNNING
             elif sg in waiting_queue_set:
                 seq_status= SequenceStatus.WAITING
+            if sg not in running_queue_set and not self.batch_solver.is_opt(self.scheduler_config.policy, sg):
+                break
             num_new_tokens = self._get_num_new_tokens(sg,
                                                         seq_status,
                                                         self.enable_chunking,
@@ -1321,28 +1323,29 @@ class Scheduler:
                     num_new_tokens=num_new_tokens,
                     num_new_seqs=num_new_seqs
                 ):
+                
                 sg.reset_waiting_iter_nums()
                 selected_running_seq_groups.append(sg)
                 sg.token_chunk_size = num_new_tokens
                 budget.add_num_batched_tokens(sg.request_id, num_new_tokens)
                 budget.add_num_seqs(sg.request_id, num_new_seqs)
-                if self.scheduler_config.policy == 'tfittradeoff' and not sg.is_prefill():
-                    decode_seqs.append(sg.seq_len)
-                    if sg not in running_queue_set:
-                        new_token_budget= self.batch_solver.get_best_token_limits(self.scheduler_config.policy,decode_seqs)
-                        if new_token_budget != 0:
-                            if new_token_budget == -1:
-                                continue
-                            budget.update_token_budget(min(new_token_budget, 4096*8))
-                        else:
-                            budget.update_token_budget(budget.num_batched_tokens)
+                # if self.scheduler_config.policy == 'tfittradeoff' and not sg.is_prefill():
+                #     decode_seqs.append(sg.seq_len)
+                #     if sg not in running_queue_set:
+                #         new_token_budget= self.batch_solver.get_best_token_limits(self.scheduler_config.policy,decode_seqs)
+                #         if new_token_budget != 0:
+                #             if new_token_budget == -1:
+                #                 continue
+                #             budget.update_token_budget(min(new_token_budget, 4096*8))
+                #         else:
+                #             budget.update_token_budget(budget.num_batched_tokens)
             else:
                 # budget.subtract_num_batched_tokens(sg.request_id,
                 #                                     num_new_tokens)
                 # budget.subtract_num_seqs(sg.request_id, num_new_seqs)
                 tmp_total_block_size -= block_size
                 selected_swapped_seq_groups.append(sg)
-
+        self.batch_solver.reset_opt()
         for seq_group in selected_swapped_seq_groups:
             self._preempt_seq(
                 seq_group=seq_group,
@@ -2927,3 +2930,6 @@ class Scheduler:
             return -1
 
         return index + 1  # return the number of elements needed
+
+    def is_opt(self, seq_group: SequenceGroup):
+        pass

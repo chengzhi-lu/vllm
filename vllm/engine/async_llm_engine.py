@@ -308,6 +308,18 @@ class _AsyncLLMEngine(LLMEngine):
         self.scheduler_metrics.append(scheduler_metric)
         self.scheduler[virtual_engine].reset_schedule_metric()
         self.do_tracing(scheduler_outputs)
+        if self.scheduler_config.early_terminate:
+            total_waiting_seq_nums = np.sum(
+                [len(scheduler.waiting) for scheduler in self.scheduler]
+            )
+            total_swapped_seq_nums = np.sum(
+                [len(scheduler.swapped) for scheduler in self.scheduler]
+            )
+            if total_waiting_seq_nums == 0 and total_swapped_seq_nums > 0:
+                logger.info("All prefill are finished")
+                for scheduler in self.scheduler:
+                    scheduler.reach_ddl=True
+
 
         return request_outputs
 
@@ -657,11 +669,6 @@ class AsyncLLMEngine:
             self.engine.abort_request(request_ids)
 
     async def run_engine_loop(self):
-        # if self.engine_use_ray:
-        #     pipeline_parallel_size = 1  # type: ignore
-        # else:
-        #     pipeline_parallel_size = \
-        #         self.engine.parallel_config.pipeline_parallel_size
         pipeline_parallel_size = 1 if self.engine_use_ray else self.engine.parallel_config.pipeline_parallel_size
         has_requests_in_progress = [False] * pipeline_parallel_size
         while True:
@@ -721,10 +728,15 @@ class AsyncLLMEngine:
                             not any(has_requests_in_progress):
                             if len(self.engine.seq_group_metrics) ==0:
                                 continue
+                            current_time = time.time()
+                            first_seq_arrival_time = self.engine.seq_group_metrics[0].arrival_time
+                            if current_time - first_seq_arrival_time < 80:
+                                continue
                             trace_data = SchedulerMetric.to_dataframe(self.engine.scheduler_metrics)
                             seq_group_traces = RequestMetrics.to_dataframe(self.engine.seq_group_metrics)
                             seq_nums = len(seq_group_traces)
                             seconds = datetime.now().strftime("%H%M%S")
+                            
                             request_rate = 2**round((np.log2(seq_nums/90)))
                             trace_path = self.engine.scheduler_config.trace_file_path
                             file_name = trace_path.split("/")[-1]

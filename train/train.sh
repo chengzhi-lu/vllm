@@ -11,8 +11,11 @@
 
 #ShareGPT/LTR/llama-70b Tau=0.55
 # python3 trainer.py --config configs/config_prefill_opt_350m.txt --file jsonfiles/sharegpt-Meta-Llama-3-70B-Instruct-t1.0-s0-l8192-c20000:30000-rFalse.jsonl --job-dir MODEL --run-id opt-350m-llama3-70b-sharegpt-score-trainbucket10-b32 --batch-size 32 --label-group-size 10 --loss listMLE
-python3 trainer.py --config configs/config_prefill_opt_350m.txt --file jsonfiles/lmsys-Meta-Llama-3-70B-Instruct-t1.0-s0-l8192-c20000:30000-rFalse.jsonl --job-dir MODEL --run-id opt-350m-llama2-70b-sharegpt-score-trainbucket10-b32 --batch-size 32 --label-group-size 10 --loss listMLE
+# python3 trainer.py --config configs/config_prefill_opt_350m.txt --file jsonfiles/lmsys-Meta-Llama-3-70B-Instruct-t1.0-s0-l8192-c20000:30000-rFalse.jsonl --job-dir MODEL --run-id opt-350m-llama2-70b-sharegpt-score-trainbucket10-b32 --batch-size 32 --label-group-size 10 --loss listMLE
 
+# python3 trainer.py --config configs/config_prefill_opt_350m.txt --file jsonfiles/lmsys-Meta-Llama-3-70B-Instruct-t1.0-s0-l8192-c20000:30000-rFalse.jsonl --job-dir MODEL --run-id opt-350m-llama2-13b-sharegpt-score-trainbucket10-b32 --batch-size 32 --label-group-size 10 --loss listMLE
+python3 trainer.py --config configs/config_prefill_opt.txt --file /root/vllm/benchmarks/output-alpaca-Llama-2-13b-chat-hf.jsonl --job-dir MODEL --run-id opt-125m-llama2-13b-alpaca-score-trainbucket10-b32 --batch-size 32 --label-group-size 10 --loss listMLE
+# python3 trainer.py --config configs/config_prefill_opt_350m.txt --file /root/vllm/benchmarks/output-alpaca-Llama-2-70b-chat-hf.jsonl --job-dir MODEL --run-id opt-350m-llama2-70b-alpaca-score-trainbucket10-b32 --batch-size 32 --label-group-size 10 --loss listMLE
 ##########################################
 #Classification
 ##########################################
@@ -54,7 +57,7 @@ python3 trainer.py --config configs/config_prefill_opt_350m.txt --file jsonfiles
 
 #ShareGPT/LTR/llama-8b Tau=0.52
 # python3 trainer.py --config configs/config_prefill_opt.txt --file jsonfiles/llama3-8b-sharegpt-train-t1-s0-8192.jsonl --job-dir MODEL --run-id opt-125m-llama3-8b-sharegpt-score-trainbucket10-b32 --batch-size 32 --label-group-size 10 --loss listMLE
-python3 trainer.py --config configs/config_prefill_opt.txt --file jsonfiles/lmsys-Meta-Llama-3-70B-Instruct-t1.0-s0-l8192-c20000:30000-rFalse.jsonl --job-dir MODEL --run-id opt-125m-llama2-13b-sharegpt-score-trainbucket10-b32 --batch-size 32 --label-group-size 10 --loss listMLE
+# python3 trainer.py --config configs/config_prefill_opt.txt --file jsonfiles/lmsys-Meta-Llama-3-70B-Instruct-t1.0-s0-l8192-c20000:30000-rFalse.jsonl --job-dir MODEL --run-id opt-125m-llama2-13b-sharegpt-score-trainbucket10-b32 --batch-size 32 --label-group-size 10 --loss listMLE
 
 
 #Lmsys/class bucket=820/llama-70b acc: 0.97

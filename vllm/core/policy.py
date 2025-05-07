@@ -115,23 +115,32 @@ class TFITTradeoff(Policy):
     def _get_running_priority(self, seq_group: SequenceGroup, policy_info: PolicyInfo):
         if seq_group.priority_rate == 1:
             all_eos_token_prob_diff = []
+            all_tmp_token_prob = []
             for seq in seq_group.seqs_dict.values():
                 all_eos_token_prob_diff.append(seq.get_eos_token_prob_diff())
+                all_tmp_token_prob.append(seq.get_tmp_eos_token_prob())
             seq_group.priority_rate = max(all_eos_token_prob_diff)
-        priority = (seq_group.priority_rate)/((seq_group.seq_len)/seq_group.max_length)
+            if seq_group.priority_rate == 1:
+                seq_group.tmp_priority_rate = 1-min(all_tmp_token_prob)
+        priority = (seq_group.priority_rate)/((seq_group.seq_len))
 
         return priority
 
     def _get_swapped_priority(self, seq_group: SequenceGroup, policy_info: PolicyInfo):
-        # waiting_time = max(policy_info.now - seq_group.get_last_execute_time(), 0.001)
-        waiting_time = seq_group.metrics.waiting_iter_nums
+        waiting_time = max(policy_info.now - seq_group.get_last_execute_time(), 0.00001)
+        # waiting_time = seq_group.metrics.waiting_iter_nums
         if seq_group.priority_rate < 1: 
             tmp_priority_rate = seq_group.priority_rate 
-            priority = (waiting_time+seq_group.seq_len) / seq_group.max_length* tmp_priority_rate
+            # priority = (waiting_time+seq_group.seq_len) / seq_group.max_length* tmp_priority_rate
+            priority = waiting_time / ((seq_group.seq_len) *(1- tmp_priority_rate))
         elif not seq_group.is_prefill():
-            priority = (waiting_time+seq_group.seq_len) / seq_group.max_length
+            # priority = (waiting_time+seq_group.seq_len) / seq_group.max_length
+            # tmp_priority_rate = seq_group.tmp_priority_rate
+            epsilon = 10**(-5)
+            priority = waiting_time / ((seq_group.seq_len)*epsilon)
         else:
-            priority = (waiting_time) /(seq_group.max_length)
+            # priority = (waiting_time) /(seq_group.max_length)
+            priority = waiting_time / (seq_group.seq_len)
         return priority
         
 

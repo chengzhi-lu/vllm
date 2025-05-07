@@ -575,6 +575,7 @@ class SequenceGroup:
             self.max_length = self.sampling_params.max_tokens
         else:
             self.max_length = 10240
+        self.tmp_priority_rate=1.0
         self.weighted: Tuple[float, float] = (0, 0)
         self.swap_out_moment = None
         self.swap_in_moment = None
@@ -737,6 +738,10 @@ class SequenceGroup:
     @property
     def seq_len(self) -> int:
         return sum([seq.get_len() for seq in self.seqs_dict.values()])
+    
+    @property
+    def decode_len(self) -> int:
+        return sum([seq.get_output_len() for seq in self.seqs_dict.values()])
     
     @property
     def total_token_block_size(self) -> int:

@@ -103,7 +103,7 @@ def sample_alpaca_requests(
     filtered_data_prompts = []
     data=None
     if args.scheduler_policy in ["srjf", "sjf"]:
-        file_path = get_json_file(qps=args.request_rate)
+        file_path = get_json_file(dataset_name='alpaca',qps=args.request_rate)
         if file_path:
             with open(file_path, 'r', encoding="utf-8") as file:
                 data = json.load(file)
@@ -170,7 +170,7 @@ def sample_sharegpt_requests(
     filtered_data_prompts = []
     data=None
     if args.scheduler_policy in ["srjf", "sjf"]:
-        file_path = get_json_file(qps=args.request_rate)
+        file_path = get_json_file(dataset_name='sharegpt',qps=args.request_rate)
         if file_path:
             with open(file_path, 'r', encoding="utf-8") as file:
                 data = json.load(file)
@@ -326,12 +326,13 @@ async def get_request(
         await asyncio.sleep(interval)
         i+=1
 
-def get_json_file(qps):
-    for file_name in os.listdir('.'):
+def get_json_file(dataset_name,qps):
+    dir_name = f"./{dataset_name}"
+    for file_name in os.listdir(f'./{dataset_name}'):
         if fnmatch.fnmatch(file_name, '*.json'):
             if str(qps) not in file_name:
                 continue
-            return file_name
+            return f"{dir_name}/{file_name}"
     return None
 
 def generate_request(input_requests: List[Tuple[str, int, int]]) -> Tuple[str, int, int]:
@@ -355,15 +356,16 @@ async def get_request_duration(
 
 
 def save_output(outputs: List[RequestFuncOutput], filename: str) -> None:
-    with open(filename, "a+") as f:
-        for output in outputs:
-            if output.success:
-                result={
-                    "prompt": output.prompt,
-                    "generated": output.generated_text,
-                }
-                f.write(json.dumps(result))
-            
+    results = []
+    for output in outputs:
+        if output.success:
+            result = {
+                "prompt": output.prompt,
+                "generated": output.generated_text,
+            }
+            results.append(result)
+    with open(filename, "w") as f:
+        f.write(json.dumps(results))
 
 def calculate_metrics(
     input_requests: List[Tuple[str, int, int]],

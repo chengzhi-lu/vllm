@@ -783,6 +783,7 @@ class SchedulerConfig:
         iter_threshold: int = 1,
         embedding_mode: Optional[bool] = False,
         preemption_mode: Optional[str] = None,
+        early_terminate: bool = False,
         waiting_iter_base: float = 1.0,
         trace_file_path: str = "/root/trace_file.csv",
     ) -> None:
@@ -822,6 +823,7 @@ class SchedulerConfig:
         self.waiting_iter_base= waiting_iter_base
         self.trace_file_path = trace_file_path
         self.fake_allocate = False 
+        self.early_terminate = early_terminate
         self.trace_file_path = trace_file_path
         self._verify_args()
 

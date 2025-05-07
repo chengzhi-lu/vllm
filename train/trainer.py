@@ -111,9 +111,11 @@ def run():
     with open(dataset_path) as f:
         for jsonObj in f:
             info = json.loads(jsonObj)
-            dataset.append(info)
+            if isinstance(info, list):
+                dataset = info
+            else:
+                dataset.append(info)
     
-
     train_dataset = RankingDataset(dataset[:int(0.9 * len(dataset))], llama3_tokenizer, max_length=config.model.max_length, label_max_length=args.label_max_length, label_group_size=args.label_group_size)
     test_dataset = RankingTestDataset(dataset[int(0.9 * len(dataset)):], llama3_tokenizer, max_length=config.model.max_length, label_max_length=args.label_max_length)
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
