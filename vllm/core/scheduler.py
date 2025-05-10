@@ -1329,20 +1329,7 @@ class Scheduler:
                 sg.token_chunk_size = num_new_tokens
                 budget.add_num_batched_tokens(sg.request_id, num_new_tokens)
                 budget.add_num_seqs(sg.request_id, num_new_seqs)
-                # if self.scheduler_config.policy == 'tfittradeoff' and not sg.is_prefill():
-                #     decode_seqs.append(sg.seq_len)
-                #     if sg not in running_queue_set:
-                #         new_token_budget= self.batch_solver.get_best_token_limits(self.scheduler_config.policy,decode_seqs)
-                #         if new_token_budget != 0:
-                #             if new_token_budget == -1:
-                #                 continue
-                #             budget.update_token_budget(min(new_token_budget, 4096*8))
-                #         else:
-                #             budget.update_token_budget(budget.num_batched_tokens)
             else:
-                # budget.subtract_num_batched_tokens(sg.request_id,
-                #                                     num_new_tokens)
-                # budget.subtract_num_seqs(sg.request_id, num_new_seqs)
                 tmp_total_block_size -= block_size
                 selected_swapped_seq_groups.append(sg)
         self.batch_solver.reset_opt()

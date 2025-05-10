@@ -20,8 +20,8 @@ parallel_types=(
   # "pp"
 )
 datasets=(
-  "sharegpt /root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
-  "alpaca /root/vllm/dataset/cleared_alpaca.json"
+  # "sharegpt /root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
+  "leval /root/vllm/dataset/paper_assistant_transformed.json"
 )
 
 # 服务器配置
@@ -37,13 +37,13 @@ request_duration=90
 # 测试策略组合
 scheduler_swap_policies=(
   "tfittradeoff partial"
-  # "fcfs full"
-  # "sjf full"
-  # "sjmlfq full"
-  # "opt full"
+  "fcfs full"
+  "sjf full"
+  "sjmlfq full"
+  "opt full"
 )
 
-request_rates=(1 2 4 8 16 32 64)
+request_rates=(1 2 4 8)
 # request_rates=(8)
 swap_out_partial_rates=(0.5)
 
