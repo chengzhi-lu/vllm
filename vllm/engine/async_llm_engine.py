@@ -240,7 +240,7 @@ class _AsyncLLMEngine(LLMEngine):
             return []
         st = time.time()
         seq_group_metadata_list, scheduler_outputs = self.scheduler[
-            virtual_engine].schedule()
+                virtual_engine].schedule()
         et = time.time()
         self.schedule_time[virtual_engine] = et - st
         st = time.time()

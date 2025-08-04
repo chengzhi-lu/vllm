@@ -242,6 +242,7 @@ class LLMEngine:
         self.num_total_generation_tokens = 0
         self.stats = None
         self.et = 0.0
+        self.has_finished_seq  = False
         self.engine_start_time = time.time()
         if not self.model_config.skip_tokenizer_init:
             self.tokenizer = self._init_tokenizer()
@@ -868,6 +869,7 @@ class LLMEngine:
                 seq_group, additional_info, token_chunk_size)
             request_outputs.append(request_output)
             if seq_group.is_finished():
+                self.has_finished_seq=True
                 self.seq_group_metrics.append(seq_group.metrics)
         for seq_group in ignored_seq_groups:
             request_output = RequestOutputFactory.create(

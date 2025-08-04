@@ -3,6 +3,8 @@ import time
 from dataclasses import dataclass
 from typing import Deque
 
+from regex import W
+
 
 from vllm.sequence import SequenceGroup
 import random
@@ -13,6 +15,8 @@ class PolicyInfo:
     waiting_queue_size: int = 0
     running_queue_size: int = 0
     swapped_queue_size: int = 0
+    max_waiting_time: float = 0.0
+    max_pending_time: float = 0.0
     now: float = 0.0
 
 
@@ -92,9 +96,9 @@ class SkipJoinMLFQ(Policy):
         if seq_group.current_priority is None:  # Have been assigned with a priority?
             seq_group.current_priority = self.get_highest_priority(input_length)
         else:
-            if seq_group.metrics.first_scheduled_time is None:   
+            if seq_group.metrics.first_scheduled_time is None:
                 seq_group.current_priority = 1
-                seq_group.promoted = 1  
+                seq_group.promoted = 1
             elif (
                 now - seq_group.metrics.first_scheduled_time
                 > (2 ** (seq_group.current_priority - 1)) * self.min_quantum
@@ -104,11 +108,8 @@ class SkipJoinMLFQ(Policy):
             elif seq_group.metrics.waiting_iter_nums >= self.starve_limit:
                 seq_group.current_priority = 1  # Promote to highest priority (Q1)
                 seq_group.promoted = 1  # has been promoted to the Q1
-        
 
         return -seq_group.current_priority  # higher value means higher priority
-
-
 
 
 class TFITTradeoff(Policy):
@@ -121,32 +122,36 @@ class TFITTradeoff(Policy):
                 all_tmp_token_prob.append(seq.get_tmp_eos_token_prob())
             seq_group.priority_rate = max(all_eos_token_prob_diff)
             if seq_group.priority_rate == 1:
-                seq_group.tmp_priority_rate = 1-min(all_tmp_token_prob)
-        priority = (seq_group.priority_rate)/((seq_group.seq_len))
+                seq_group.tmp_priority_rate = 0
+        priority = (seq_group.priority_rate) / (seq_group.seq_len)
 
         return priority
 
-    def _get_swapped_priority(self, seq_group: SequenceGroup, policy_info: PolicyInfo):
-        waiting_time = max(policy_info.now - seq_group.get_last_execute_time(), 0.00001)
-        # waiting_time = seq_group.metrics.waiting_iter_nums
-        if seq_group.priority_rate < 1: 
-            tmp_priority_rate = seq_group.priority_rate 
-            # priority = (waiting_time+seq_group.seq_len) / seq_group.max_length* tmp_priority_rate
-            priority = waiting_time / ((seq_group.seq_len) *(1- tmp_priority_rate))
-        elif not seq_group.is_prefill():
-            # priority = (waiting_time+seq_group.seq_len) / seq_group.max_length
-            # tmp_priority_rate = seq_group.tmp_priority_rate
-            epsilon = 10**(-5)
-            priority = waiting_time / ((seq_group.seq_len)*epsilon)
+    def _get_swapped_priority(self, seq_group: SequenceGroup, policy_info: PolicyInfo, queue_type: str):
+        waiting_time = max(policy_info.now - seq_group.get_last_execute_time(), 10 ** (-5))
+        if queue_type == "swapped":
+            waiting_time = waiting_time / policy_info.max_pending_time
+        elif queue_type == "waiting":
+            waiting_time = waiting_time / policy_info.max_waiting_time
         else:
-            # priority = (waiting_time) /(seq_group.max_length)
-            priority = waiting_time / (seq_group.seq_len)
+            raise ValueError("Invalid queue type")
+        # waiting_time = seq_group.metrics.waiting_iter_nums
+        if seq_group.priority_rate < 1:
+            # priority = (waiting_time+seq_group.seq_len) /seq_group.max_length* tmp_priority_rate
+            priority = waiting_time / ((seq_group.seq_len) * (1 - seq_group.priority_rate))
+        elif not seq_group.is_prefill():
+            # priority = (waiting_time+seq_group.seq_len)/seq_group.max_length
+            # tmp_priority_rate = seq_group.tmp_priority_rate
+            epsilon = 10 ** (-5)
+            priority = waiting_time / ((seq_group.seq_len) * max(1 - seq_group.priority_rate, epsilon))
+        else:
+            priority = waiting_time / seq_group.seq_len
+            # priority = waiting_time / (seq_group.seq_len)
         return priority
-        
 
     def _get_waiting_priority(self, seq_group: SequenceGroup, policy_info: PolicyInfo):
         waiting_time = policy_info.now - seq_group.get_last_execute_time()
-        priority = waiting_time/seq_group.seq_len
+        priority = waiting_time / seq_group.seq_len
         return priority
 
     def got_priority(
@@ -159,7 +164,7 @@ class TFITTradeoff(Policy):
         if queue_type == "running":
             priority = self._get_running_priority(seq_group, policy_info)
         elif queue_type == "swapped" or queue_type == "waiting":
-            priority = self._get_swapped_priority(seq_group, policy_info)
+            priority = self._get_swapped_priority(seq_group, policy_info, queue_type)
         else:
             raise ValueError("Invalid queue type")
         return priority
@@ -179,9 +184,6 @@ class Random(Policy):
         seq_group: SequenceGroup,
     ) -> float:
         return random.random()
-
-
-
 
 
 class ShortRemainJobFirst(Policy):
@@ -212,8 +214,8 @@ class LeastAttainedSvr(Policy):
         seq_group: SequenceGroup,
     ) -> float:
         decode_length = sum(seq.get_output_len() for seq in seq_group.seqs_dict.values())
-        priority = -decode_length if decode_length > 0 else  now -seq_group.metrics.arrival_time
-        return priority 
+        priority = -decode_length if decode_length > 0 else now - seq_group.metrics.arrival_time
+        return priority
 
 
 class PolicyFactory:

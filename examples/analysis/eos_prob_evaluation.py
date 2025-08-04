@@ -1,7 +1,7 @@
 import argparse
 from queue import Queue
 import threading
-from typing import List, Tuple, Dict
+from typing import List, Tuple
 
 from vllm import EngineArgs, LLMEngine, SamplingParams
 from vllm import RequestOutput, LLMEngine
@@ -21,9 +21,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def get_requests(model_name, dataset_name) -> List[Tuple[str, SamplingParams, int]]:
     init_seq = []
-    saved_seq = Utils.load_seq_from_file(
-        BASE_DIR, "seq_data", f"{model_name}_{dataset_name}.json"
-    )
+    saved_seq = Utils.load_seq_from_file(BASE_DIR, "seq_data", f"{model_name}_{dataset_name}.json")
     for count in saved_seq:
         prompt, prompt_len = saved_seq[count]
         init_seq.append(
@@ -64,30 +62,34 @@ def parse_batched_result(request_outputs: List[RequestOutput]):
     return _results
 
 
-
-
-def put_requests(all_inputs: List[Tuple[str, SamplingParams, int]], input_queue:Queue):
+def put_requests(all_inputs: List[Tuple[str, SamplingParams, int]], input_queue: Queue):
     for seq in all_inputs:
         prompt, sampling_params, prompt_len = seq
-        input_queue.put((prompt,sampling_params,prompt_len),block=True)
-    
+        input_queue.put((prompt, sampling_params, prompt_len), block=True)
 
-def inference_backend(engine:LLMEngine, input_queue:Queue):
-    count = 0 
+
+def inference_backend(engine: LLMEngine, input_queue: Queue):
+    count = 0
     while count < batch_size:
-        prompt,sampling_params,prompt_len = input_queue.get()
+        prompt, sampling_params, prompt_len = input_queue.get()
         engine.add_request(
             request_id=count,
             inputs=prompt,
             params=sampling_params,
-        ) 
+        )
         count += 1
     while engine.has_unfinished_requests():
         request_outputs: List[RequestOutput] = engine.step()
         _result = parse_batched_result(request_outputs)
         if engine.has_finished_seq:
-            while not input_queue.empty() and len(engine.scheduler.waiting)+len(engine.scheduler.running)+len(engine.scheduler.swapped) <= batch_size:
-                prompt,sampling_params,prompt_len = input_queue.get()
+            while (
+                not input_queue.empty()
+                and len(engine.scheduler[0].waiting)
+                + len(engine.scheduler[0].running)
+                + len(engine.scheduler[0].swapped)
+                <= batch_size
+            ):
+                prompt, sampling_params, prompt_len = input_queue.get()
                 engine.add_request(
                     request_id=count,
                     inputs=prompt,
@@ -96,8 +98,6 @@ def inference_backend(engine:LLMEngine, input_queue:Queue):
                 count += 1
         engine.has_finished_seq = False
         yield _result
-
-
 
 
 def main(
@@ -109,9 +109,7 @@ def main(
     dataset_name: str = "sharegpt",
 ):
     """Main function that sets up and runs the prompt processing."""
-    parser = argparse.ArgumentParser(
-        description="Demo on using the LLMEngine class directly"
-    )
+    parser = argparse.ArgumentParser(description="Demo on using the LLMEngine class directly")
 
     parser = EngineArgs.add_cli_args(parser)
     args: argparse.Namespace = parser.parse_args()
@@ -156,7 +154,15 @@ def main(
                     "eos_token_rank",
                 ],
             )
-            result_df.to_csv(os.path.join(BASE_DIR,"data","eos_result", f"{model_name}_{dataset_name}_eos_prob_result.csv"), index=False)
+            result_df.to_csv(
+                os.path.join(
+                    BASE_DIR,
+                    "data",
+                    "eos_result",
+                    f"{model_name}_{dataset_name}_eos_prob_result.csv",
+                ),
+                index=False,
+            )
 
     # for input_seqs in track(seqs, description="Predicting eos position..."):
     #     for seq in input_seqs:
@@ -170,17 +176,17 @@ def main(
     #         request_outputs: List[RequestOutput] = engine.step()
     #         _result = parse_batched_result(request_outputs)
     #         eos_result.extend(_result)
-        # result_df = pd.DataFrame(
-        #     eos_result,
-        #     columns=[
-        #         "request_id",
-        #         "prompt_len",
-        #         "token_num",
-        #         "eos_prob",
-        #         "eos_token_rank",
-        #     ],
-        # )
-        # result_df.to_csv(os.path.join(BASE_DIR, f"{model_name}_{dataset_name}_eos_prob_result.csv"), index=False)
+    # result_df = pd.DataFrame(
+    #     eos_result,
+    #     columns=[
+    #         "request_id",
+    #         "prompt_len",
+    #         "token_num",
+    #         "eos_prob",
+    #         "eos_token_rank",
+    #     ],
+    # )
+    # result_df.to_csv(os.path.join(BASE_DIR, f"{model_name}_{dataset_name}_eos_prob_result.csv"), index=False)
     return
 
 
@@ -193,9 +199,7 @@ def main_test(
     dataset_name: str = "sharegpt",
 ):
     """Main function that sets up and runs the prompt processing."""
-    parser = argparse.ArgumentParser(
-        description="Demo on using the LLMEngine class directly"
-    )
+    parser = argparse.ArgumentParser(description="Demo on using the LLMEngine class directly")
 
     parser = EngineArgs.add_cli_args(parser)
     args: argparse.Namespace = parser.parse_args()
@@ -205,7 +209,7 @@ def main_test(
     args.scheduler_policy = policy
     args.default_preemption_mode = preemption_mode
     args.enable_chunked_prefill = True
-    args.disable_sliding_window=True
+    args.disable_sliding_window = True
     args.max_num_batched_tokens = max_token_num
     try:
         all_inputs = get_requests(model_name, dataset_name)
@@ -228,7 +232,7 @@ def main_test(
 if __name__ == "__main__":
     test_type = "infer_schedule_policy_test"
     models = ["llama"]
-    datasets = ["alpaca"]
+    datasets = ["lmsys"]
     rerun = True
     max_token_nums = [4096]
     batch_sizes = [512]
@@ -248,7 +252,7 @@ if __name__ == "__main__":
                                 policy=policy,
                                 preemption_mode=preemption_mode,
                                 model_name=model,
-                                dataset_name=dataset
+                                dataset_name=dataset,
                             )
                             # main_test(
                             #     max_token_num=max_token_num,

@@ -12,19 +12,17 @@ TOKENIZERS_PARALLELISM="true"
 # 模型和数据集配置
 model_names=(
   # "meta-llama/Llama-2-13b-chat-hf"
-  "meta-llama/Llama-3.1-8B-Instruct"
-  # "meta-llama/Llama-2-70b-chat-hf"
-  # "meta-llama/Llama-3.1-70B-Instruct"
+  "meta-llama/Llama-2-70b-chat-hf"
 )
 parallel_types=(
-  "single"
-  # "tp"
+  # "single"
+  "tp"
   # "pp"
 )
 datasets=(
-  "sharegpt /root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
+  # "sharegpt /root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
   # "leval /root/vllm/dataset/paper_assistant_transformed.json"
-  # "lmsys /root/vllm/dataset/lmsys-chat-1m-aligned.json"
+  "lmsys /root/vllm/dataset/lmsys-chat-1m-aligned.json"
 )
 
 # 服务器配置
@@ -40,14 +38,14 @@ request_duration=90
 # 测试策略组合
 scheduler_swap_policies=(
   "tfittradeoff partial"
-  # "fcfs full"
+  "fcfs full"
   # "sjf full"
-  # "sjmlfq full"
+  "sjmlfq full"
   # "opt full"
 )
 
-request_rates=(8)
-# request_rates=(4 8)
+request_rates=(1 2 4 8 16 32 64)
+# request_rates=(8)
 swap_out_partial_rates=(0.5)
 
 # --------------------------
@@ -96,13 +94,8 @@ for ptype in "${parallel_types[@]}"; do
 
         for model_name in "${model_names[@]}"; do
           # 跳过70b模型的single并行类型
-          if [[ "$model_name" == "meta-llama/Llama-3.1-70B-Instruct" && "$ptype" == "single" ]]; then
-            echo "跳过 llama3-70b 的 single 并行类型测试"
-            continue
-          fi
-
-          if [[ "$model_name" == "meta-llama/Llama-3.1-8B-Instruct" && "$ptype" == "tp" ]]; then
-            echo "跳过 llama3-8b 的 tp 并行类型测试"
+          if [[ "$model_name" == "meta-llama/Llama-2-70b-chat-hf" && "$ptype" == "single" ]]; then
+            echo "跳过 llama2-70b 的 single 并行类型测试"
             continue
           fi
 
@@ -118,7 +111,7 @@ for ptype in "${parallel_types[@]}"; do
             "$ptype" "$model_name"
 
           # 运行基准测试
-          for i in {1..2}; do
+          for i in {1..1}; do
             for request_rate in "${request_rates[@]}"; do
               max_request_nums=$((request_duration * request_rate))
               run_benchmark "$policy" "$swap_policy" "$swap_out_partial_rate" \

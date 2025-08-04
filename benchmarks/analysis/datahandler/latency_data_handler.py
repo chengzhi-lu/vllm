@@ -22,6 +22,11 @@ def get_metric_ratio(df, metric_min_result):
     return df
 
 
+def get_metric_ratio_result(df, columns):
+    df[columns] = round(df[columns] / 1, 2)
+    return df
+
+
 def generate_dir_names(base_dir, dates, counters):
     """生成目录路径列表"""
     dir_names = []
@@ -84,7 +89,6 @@ def get_result(e2e_result_dir_names):
         if e2e_result_df["parallel_type"][0] == "tp" and "tp" not in file_path:
             continue
 
-        e2e_result_df["avg_token_latency"] = e2e_result_df["latencies"] / e2e_result_df["output_lens"]
         # 替换 DataFrame 中的值
         e2e_result_df.replace(replace_name, inplace=True)
 
@@ -94,74 +98,18 @@ def get_result(e2e_result_dir_names):
     return e2e_result_dfs
 
 
-def extract_e2e_results(e2e_result_dfs):
-    """从多个 DataFrame 中提取结果并返回一个聚合后的 DataFrame"""
-    e2e_result = {
-        "scheduling_policies": [],
-        "request_throughput": [],
-        "output_throughput": [],
-        "request_rates": [],
-        "parallel_types": [],
-        "model_ids": [],
-    }
-
-    for df_name, df in e2e_result_dfs.items():
-        e2e_result["scheduling_policies"].append(df["scheduler_policy"].iloc[0])
-        e2e_result["request_throughput"].append(df["request_throughput"].mean())
-        e2e_result["output_throughput"].append(df["output_throughput"].mean())
-        e2e_result["request_rates"].append(df["request_rate"].iloc[0])
-        e2e_result["parallel_types"].append(df["parallel_type"].iloc[0])
-        e2e_result["model_ids"].append(df["model_id"].iloc[0])
-
-    result_df = pd.DataFrame(e2e_result)
-    result_df = result_df[result_df["scheduling_policies"] != "las"]
-    # 按策略和请求率分组并取最大值
-    result_df = (
-        result_df.groupby(["scheduling_policies", "request_rates", "parallel_types", "model_ids"]).mean().reset_index()
+def calculate_latency_max(request_level_result):
+    """计算请求级别的中位数 TTFT 最大值"""
+    latency_max = (
+        request_level_result.groupby(["scheduler_policy", "request_rate"]).agg({"p99_lat_ms": "max"}).reset_index()
     )
-
-    return result_df
-
-
-def process_selected_result(selected_result, selected_columns):
-    """处理 selected_result 并返回长格式的 DataFrame"""
-    # 转换为 DataFrame
-    result_df = pd.DataFrame(selected_result)
-
-    # 按策略和请求率分组并计算均值
-    result_df = (
-        result_df.groupby(["scheduler_policy", "swap_policy", "request_rate", "parallel_type", "model_ids"])
-        .mean()
-        .reset_index()
-    )
-
-    # 选择需要的列并转换为长格式
-    long_df = result_df[
-        ["scheduler_policy", "swap_policy", "request_rate", "parallel_type", "model_ids"] + selected_columns
-    ].melt(
-        id_vars=["scheduler_policy", "swap_policy", "request_rate", "parallel_type", "model_ids"],
-        value_vars=selected_columns,
-        var_name="Metric",
-        value_name="Value",
-    )
-
-    # 计算指标比率（假设 get_metric_ratio 是一个自定义函数）
-    metric_min_result = long_df.groupby(["Metric", "parallel_type", "model_ids"], group_keys=False).min().reset_index()
-    long_df = (
-        long_df.groupby(["Metric", "request_rate", "parallel_type", "model_ids"], group_keys=False)
-        .apply(lambda row: get_metric_ratio(row, metric_min_result))
-        .reset_index()
-    )
-
-    # 拆分 Metric 列
-    long_df[["metric_name", "metric_type"]] = long_df["Metric"].apply(
-        lambda row: pd.Series([row.split("_", 2)[0].capitalize(), row.split("_", 2)[1].upper()])
-    )
-
-    return long_df
+    latency_max.columns = ["scheduler_policy", "request_rate", "p99_lat_ms"]
+    latency_max = latency_max[latency_max["scheduler_policy"] != "LAS"]
+    print(latency_max)
+    return latency_max
 
 
-def extract_selected_results(ttft_tpot_result_dfs):
+def extract_selected_results(latency_result_dfs):
     """从多个 DataFrame 中提取特定列的数据"""
     selected_result = {
         "scheduler_policy": [],
@@ -171,13 +119,6 @@ def extract_selected_results(ttft_tpot_result_dfs):
         "model_ids": [],
     }
     selected_columns = [
-        "mean_ttft_ms",
-        "median_ttft_ms",
-        "p99_ttft_ms",
-        "mean_tpot_ms",
-        "median_tpot_ms",
-        "p99_tpot_ms",
-        "avg_token_latency",
         "mean_itl_ms",
         "median_itl_ms",
         "p99_itl_ms",
@@ -191,7 +132,7 @@ def extract_selected_results(ttft_tpot_result_dfs):
         selected_result[column] = []
 
     # 遍历每个 DataFrame 并提取数据
-    for df_name, df in ttft_tpot_result_dfs.items():
+    for df_name, df in latency_result_dfs.items():
         # 提取策略和请求率
         selected_result["scheduler_policy"].append(df["scheduler_policy"].iloc[0])
         selected_result["swap_policy"].append(df["swap_policy"].iloc[0])
@@ -215,62 +156,31 @@ def extract_selected_results(ttft_tpot_result_dfs):
     return selected_result, selected_columns
 
 
-def latency_result_13b(dataset):
-    data_types = [f"fixed_result/{dataset}/llama2-13b/ttft_tpot/"]
+def latency_result_13b():
+    data_types = ["fixed_result/share_gpt/llama2-13b/ttft_tpot/"]
     methods = [["fcfs", "l2r", "mlfq", "ours", "sjf"]]
     ttft_tpot_result_dir_names = generate_dir_names(base_dir, data_types, methods)
     ttft_tpot_result_dfs = get_result(ttft_tpot_result_dir_names)
     selected_result, selected_columns = extract_selected_results(ttft_tpot_result_dfs)
-
-    long_df = process_selected_result(selected_result, selected_columns)
+    request_level_result = pd.DataFrame(selected_result)
+    # long_df = calculate_latency_max(request_level_result)
     csv_result_path = os.path.join(base_dir, data_types[0], "latency_result.csv")
-    long_df.to_csv(csv_result_path, index=False)
+    request_level_result.to_csv(csv_result_path, index=False)
 
 
-def token_latency_result_13b(dataset):
-    data_types = [f"fixed_result/{dataset}/llama2-13b/ttft_tpot/"]
-    methods = [["fcfs", "l2r", "mlfq", "ours", "sjf"]]
-    ttft_tpot_result_dir_names = generate_dir_names(base_dir, data_types, methods)
-    ttft_tpot_result_dfs = get_result(ttft_tpot_result_dir_names)
-    print(ttft_tpot_result_dfs)
-    selected_result, selected_columns = extract_selected_results(ttft_tpot_result_dfs)
-
-    long_df = process_selected_result(selected_result, selected_columns)
-    csv_result_path = os.path.join(base_dir, data_types[0], "avg_token_latency_result.csv")
-    long_df.to_csv(csv_result_path, index=False)
+#
 
 
-def latency_result_70b(dataset):
-    data_types = [f"fixed_result/{dataset}/llama2-70b/ttft_tpot/"]
+def latency_result_70b():
+    data_types = ["fixed_result/share_gpt/llama2-70b/ttft_tpot/"]
     methods = [["fcfs", "l2r", "mlfq", "ours", "sjf"]]
     ttft_tpot_result_dir_names = generate_dir_names(base_dir, data_types, methods)
     ttft_tpot_result_dfs = get_result(ttft_tpot_result_dir_names)
     selected_result, selected_columns = extract_selected_results(ttft_tpot_result_dfs)
 
-    long_df = process_selected_result(selected_result, selected_columns)
-    csv_result_path = os.path.join(base_dir, data_types[0], "latency_result.csv")
-    long_df.to_csv(csv_result_path, index=False)
+    # csv_result_path = os.path.join(base_dir, data_types[0], "ttft_tpot_result.csv")
+    # long_df.to_csv(csv_result_path, index=False)
 
 
-def token_latency_result_70b(dataset):
-    data_types = [f"fixed_result/{dataset}/llama2-70b/ttft_tpot/"]
-    methods = [["fcfs", "l2r", "mlfq", "ours", "sjf"]]
-    ttft_tpot_result_dir_names = generate_dir_names(base_dir, data_types, methods)
-    ttft_tpot_result_dfs = get_result(ttft_tpot_result_dir_names)
-    selected_result, selected_columns = extract_selected_results(ttft_tpot_result_dfs)
-
-    long_df = process_selected_result(selected_result, selected_columns)
-    csv_result_path = os.path.join(base_dir, data_types[0], "avg_token_latency_result.csv")
-    long_df.to_csv(csv_result_path, index=False)
-
-
-# latency_result_13b("share_gpt")
-# latency_result_70b("share_gpt")
-# token_latency_result_13b("share_gpt")
-# token_latency_result_70b("share_gpt")
-
-
-latency_result_13b("lmsys")
-# latency_result_70b("lmsys")
-token_latency_result_13b("lmsys")
-# token_latency_result_70b("lmsys")
+latency_result_13b()
+latency_result_70b()

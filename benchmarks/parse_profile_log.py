@@ -5,7 +5,7 @@ import argparse
 import numpy as np
 import os
 from scipy.optimize import curve_fit
-
+from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
 def parse_profile_line(line):
     patterns = {
@@ -56,8 +56,11 @@ def prefill_model(df):
             "c": [c],
         }
     )
+    y_pred = a * X**2 + b * X + c
+    mse = mean_absolute_percentage_error(y, y_pred)
+    print(mse)
     history_result = pd.concat([history_result, new_profile_result])
-    history_result.to_csv(os.path.join(profile_result_dir, "prefill_profile.csv"), index=False)
+    # history_result.to_csv(os.path.join(profile_result_dir, "prefill_profile.csv"), index=False)
 
 
 def decode_model(df):
@@ -100,8 +103,11 @@ def decode_model(df):
             "c": [popt[2]],
         }
     )
+    y_pred = func(X, *popt)
+    mse = mean_absolute_percentage_error(y, y_pred)
+    print(mse)
     history_result = pd.concat([history_result, new_profile_result])
-    history_result.to_csv(os.path.join(profile_result_dir, "decode_profile.csv"), index=False)
+    # history_result.to_csv(os.path.join(profile_result_dir, "decode_profile.csv"), index=False)
 
 
 def sample_model(df):
@@ -127,8 +133,10 @@ def sample_model(df):
             "b": [popt[1]],
         }
     )
+    y_pred = func(X, *popt)
+    mse = mean_absolute_percentage_error(y, y_pred)
     history_result = pd.concat([history_result, new_profile_result])
-    history_result.to_csv(os.path.join(profile_result_dir, "sample_profile.csv"), index=False)
+    # history_result.to_csv(os.path.join(profile_result_dir, "sample_profile.csv"), index=False)
 
 
 def parse_log():

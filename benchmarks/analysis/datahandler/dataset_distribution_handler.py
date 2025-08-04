@@ -1,23 +1,22 @@
-import argparse
-
-from vllm import EngineArgs
 import pandas as pd
-from vllm.transformers_utils.tokenizer import get_tokenizer
 import json
 
-import json
 import multiprocessing
 from multiprocessing import Process, Queue
 from transformers import AutoTokenizer
 
 
 def producer(queue, dataset_path, data_type):
+    import random
+
     with open(dataset_path, "r", encoding="utf-8") as f:
         dataset = json.load(f)
 
     key_name = "conversation" if data_type == "Alpaca" else "conversations"
     dataset = [data for data in dataset if len(data[key_name]) >= 2]
-    for data in dataset:
+    random.seed(42)
+    sampled_dataset = random.sample(dataset, 15000) if len(dataset) > 15000 else dataset
+    for data in sampled_dataset:
         conversations = data.get(key_name, [])
         if len(conversations) >= 2:
             for i in range(len(conversations) - 1):
@@ -40,14 +39,16 @@ def consumer(queue, tokenizer_id, model_id, trust_remote_code, output_queue):
 
         conversation = item
         input_data = conversation["prompt"]
-        ouput_data = conversation["completion"]
+        output_data = conversation["completion"]
         length_types = []
         data_lengths = []
         model_ids = []
         data_types = []
         input_length = len(tokenizer(input_data).input_ids)
-        output_length = len(tokenizer(ouput_data).input_ids)
-        if input_length + output_length <= 4096:
+        output_length = len(tokenizer(output_data).input_ids)
+        if input_length <= 4096 and output_length <= 2048:
+            input_length = len(input_data)
+            output_length = len(output_data)
             length_types.append("input")
             data_lengths.append(input_length)
             model_ids.append(model_id)
@@ -108,9 +109,10 @@ if __name__ == "__main__":
     models = ["meta-llama/Llama-2-13b-hf", "meta-llama/Llama-2-70b-hf"]
     dataset_path = [
         "/root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json",
-        "/root/vllm/dataset/paper_assistant_transformed.json",
+        # "/root/vllm/dataset/paper_assistant_transformed.json",
+        "/root/vllm/dataset/lmsys-chat-1m-aligned.json",
     ]
-    data_types = ["ShareGPT", "L-Eval"]
+    data_types = ["ShareGPT", "LMSys-Chat"]
     df = None
     for model_id in models:
         for i, data_type in enumerate(data_types):

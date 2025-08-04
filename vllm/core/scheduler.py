@@ -1294,7 +1294,7 @@ class Scheduler:
         running_queue_set = set(running_queue)
         waiting_queue_set = set(waiting_queue)
         if budget.max_num_seqs != 2048:
-            budget.update_max_num_seqs(2048)
+            budget.update_max_num_seqs(4096)
         decode_seqs:List[int]= []
         for sg in total_queue:
             if sg in swapped_queue_set:
@@ -1304,7 +1304,7 @@ class Scheduler:
             elif sg in waiting_queue_set:
                 seq_status= SequenceStatus.WAITING
             if sg not in running_queue_set and not self.batch_solver.is_opt(self.scheduler_config.policy, sg):
-                break
+                continue
             num_new_tokens = self._get_num_new_tokens(sg,
                                                         seq_status,
                                                         self.enable_chunking,
@@ -1327,8 +1327,21 @@ class Scheduler:
                 sg.reset_waiting_iter_nums()
                 selected_running_seq_groups.append(sg)
                 sg.token_chunk_size = num_new_tokens
+                if sg.is_prefill() and num_new_tokens < sg.seq_len:
+                    sg.is_chunk_prefill=True
+
                 budget.add_num_batched_tokens(sg.request_id, num_new_tokens)
                 budget.add_num_seqs(sg.request_id, num_new_seqs)
+                # if self.scheduler_config.policy == 'tfittradeoff' and not sg.is_prefill():
+                #     decode_seqs.append(sg.seq_len)
+                #     if sg not in running_queue_set:
+                #         new_token_budget= self.batch_solver.get_best_token_limits(self.scheduler_config.policy,decode_seqs)
+                #         if new_token_budget != 0:
+                #             if new_token_budget == -1:
+                #                 continue
+                #             budget.update_token_budget(min(new_token_budget, 4096*8))
+                #         else:
+                #             budget.update_token_budget(budget.num_batched_tokens)
             else:
                 tmp_total_block_size -= block_size
                 selected_swapped_seq_groups.append(sg)
@@ -2294,11 +2307,16 @@ class Scheduler:
             token_budget=self.scheduler_config.max_num_batched_tokens,
             max_num_seqs=max(self.scheduler_config.max_num_seqs, 1024),
         )
+        now = time.time()
+        max_pending_time = max([now-s.get_last_execute_time() for s in self.swapped])
+        max_waiting_time = max([now -s.get_last_execute_time() for s in self.waiting])
         policy_info = PolicyInfo(
             waiting_queue_size=len(self.waiting),
             running_queue_size = len(self.running),
             swapped_queue_size = len(self.swapped),
-            now=time.time(),
+            max_pending_time=max_pending_time,
+            max_waiting_time=max_waiting_time,
+            now=now,
         )
         curr_loras: Set[int] = set()
         if not self.reach_ddl:
@@ -2519,8 +2537,8 @@ class Scheduler:
 
     def _schedule(self) -> SchedulerOutputs:
         """Schedule queued requests."""
-        if self.scheduler_config.max_num_seqs != 2048:
-            self.scheduler_config.max_num_seqs = 2048
+        if self.scheduler_config.max_num_seqs != 4096:
+            self.scheduler_config.max_num_seqs = 4096 
         if self.scheduler_config.policy == "opt":
             return self._general_schedule()
         if self.scheduler_config.chunked_prefill_enabled :

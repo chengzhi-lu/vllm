@@ -78,14 +78,14 @@ start_server() {
       if [[ "$dataset_name" == "sharegpt" ]]; then
         prefill_predictor_model_config_path="/root/vllm/train/MODEL/results/opt-125m-llama2-13b-sharegpt-score-trainbucket10-b32/usage_config.json"
       else
-        prefill_predictor_model_config_path="/root/vllm/train/MODEL/results/opt-125m-llama2-13b-alpaca-score-trainbucket10-b32/usage_config.json"
+        prefill_predictor_model_config_path="/root/vllm/train/MODEL/results/opt-125m-llama2-13b-lmsys-score-trainbucket10-b32/usage_config.json"
       fi
       ;;
     "meta-llama/Llama-2-70b-chat-hf")
       if [[ "$dataset_name" == "sharegpt" ]]; then
         prefill_predictor_model_config_path="/root/vllm/train/MODEL/results/opt-350m-llama2-70b-sharegpt-score-trainbucket10-b32/usage_config.json"
       else
-        prefill_predictor_model_config_path="/root/vllm/train/MODEL/results/opt-350m-llama2-70b-alpaca-score-trainbucket10-b32/usage_config.json"
+        prefill_predictor_model_config_path="/root/vllm/train/MODEL/results/opt-350m-llama2-70b-lmsys-score-trainbucket10-b32/usage_config.json"
       fi
       ;;
     esac
@@ -95,7 +95,7 @@ start_server() {
     fi
   fi
   date=$(date +%Y%m%d)
-  result_dir="result/${date}/${COUNTER}/"
+  result_dir="result/${date}/${COUNTER}"
   if [[ ! -d "$result_dir" ]]; then
     mkdir -p "$result_dir"
   fi
@@ -129,7 +129,7 @@ start_server() {
 
 record_gpu_execution_trace() {
   local trace_file_path=$1
-  remote_shell="bash /home/lucz/github/vllm/benchmarks/gpu_trace_manager.sh start /home/lucz/github/vllm/benchmarks/\"$trace_file_path\""
+  remote_shell="bash /home/lucz/github/vllm/benchmarks/gpu_trace_manager.sh start /sda/dataset/result/\"$trace_file_path\""
   ssh lucz@10.119.46.53 "$remote_shell"
 }
 

@@ -306,7 +306,8 @@ class Sequence:
         # Swapped out block raio
         self.swapped_out_block_nums: int = 0
 
-        self.eos_prob_estimation_window = 15
+        # self.eos_prob_estimation_window = 15 # for sharegpt
+        self.eos_prob_estimation_window = 10
         self.min_eos_rank = -1
         self.default_eos_token_prob = 0.1
 
@@ -358,8 +359,8 @@ class Sequence:
     def get_eos_token_prob_diff(self) -> float:
         if len(self.eos_token_prob) >= self.eos_prob_estimation_window and self.eos_token_prob_diff == 1.0:
             self.eos_token_prob_diff = (
-                max(self.eos_token_prob[: self.eos_prob_estimation_window])
-                - min(self.eos_token_prob[:self.eos_prob_estimation_window])
+                max(self.eos_token_prob[-self.eos_prob_estimation_window:])
+                - min(self.eos_token_prob[-self.eos_prob_estimation_window:])
             ) / self.eos_prob_estimation_window
         return self.eos_token_prob_diff
 
@@ -588,6 +589,8 @@ class SequenceGroup:
         self.lst_process_time = arrival_time
         self.running_info = {"swap_out" : 0, "swap_blocks" : 0}
         self.process_time = 0
+        self.is_chunk_prefilled = False
+        self.waiting_time = 0.0
         
 
     @property
@@ -669,7 +672,7 @@ class SequenceGroup:
     def update_last_execute_time(self):
         self.metrics.waiting_times.append(time.time() - self.metrics.last_execute_time)
         self.metrics.last_execute_time = time.time()
-
+        
     def get_last_execute_time(self):
         return self.metrics.last_execute_time
 
@@ -787,6 +790,9 @@ class SequenceGroup:
     def is_prefill(self) -> bool:
         # Every sequence should be in the same stage.
         return self.get_seqs()[0].is_prefill()
+
+    def is_chunk_prefill(self)-> bool: 
+        return self.is_chunk_prefilled
 
     def __repr__(self) -> str:
         return (f"SequenceGroup(request_id={self.request_id}, "

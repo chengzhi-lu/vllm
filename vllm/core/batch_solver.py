@@ -132,7 +132,7 @@ class BatchSolver:
             self.prefill_time_params[0] * seq_group.seq_len**2
             + self.prefill_time_params[1] * seq_group.seq_len
             + self.prefill_time_params[2]
-        )
+        ) 
         if not seq_group.is_prefill():
             self.decode_seqs.append(seq_group.seq_len)
             execution_time = (
@@ -140,16 +140,17 @@ class BatchSolver:
                 + self.decode_time_params[0] * len(self.decode_seqs)
                 + self.decode_time_params[1] * len(self.decode_seqs) * np.sum(self.decode_seqs)
                 + self.decode_time_params[2]
-            )
+            ) 
+        execution_time = execution_time / 1000
 
         if self.total_execution_time == 0:
             self.total_execution_time = execution_time
             self.total_waiting_time = waiting_time
             return True
         else:
-            if waiting_time / execution_time > self.total_waiting_time / self.total_execution_time:
-                self.total_waiting_time = waiting_time
-                self.total_execution_time = execution_time
+            if waiting_time / execution_time >= self.total_waiting_time / self.total_execution_time:
+                self.total_waiting_time += waiting_time
+                self.total_execution_time += execution_time
                 return True
             else:
                 return False
@@ -192,5 +193,5 @@ class BatchSolver:
                 self.max_throughput[b] = max_throughput
                 self.last_token_limit[b] = token_limit
             return self.last_token_limit[b]
-        except ZeroDivisionError:
-            raise ValueError("prefill_time_params[0] cannot be zero.")
+        except ZeroDivisionError as e:
+            raise ValueError("prefill_time_params[0] cannot be zero.") from e
