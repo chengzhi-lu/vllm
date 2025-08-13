@@ -29,14 +29,14 @@ start_server() {
   local parallel_args=""
   # GPU分配逻辑
   if [[ "$parallel_type" == @("pp"|"tp") ]]; then
-    if [[ "$model_name" == "meta-llama/Llama-2-13b-chat-hf" ]]; then
-      echo "跳过13b模型的tp测试"
+    if [[ "$model_name" == "meta-llama/Llama-3.1-8B-Instruct" ]]; then
+      echo "跳过8b模型的tp测试"
       return 1
     fi
     gpu_devices="0,1,2,3"
-  elif [[ "$parallel_type" == "single" && "$model_name" == "meta-llama/Llama-2-13b-chat-hf" ]]; then
+  elif [[ "$parallel_type" == "single" && "$model_name" == "meta-llama/Llama-3.1-8B-Instruct" ]]; then
     gpu_devices="0"
-  elif [[ "$parallel_type" == "single" && "$model_name" == "meta-llama/Llama-2-70b-chat-hf" ]]; then
+  elif [[ "$parallel_type" == "single" && "$model_name" == "meta-llama/Llama-3.1-70B-Instruct" ]]; then
     echo "70b模型不支持单卡"
     return 1 # 添加返回语句避免继续执行
   else
@@ -74,14 +74,14 @@ start_server() {
   prefill_predictor_model_config_path=""
   if [[ "$policy" == "opt" ]]; then
     case "$model_name" in
-    "meta-llama/Llama-2-13b-chat-hf")
+    "meta-llama/Llama-3.1-8B-Instruct")
       if [[ "$dataset_name" == "sharegpt" ]]; then
         prefill_predictor_model_config_path="/root/vllm/train/MODEL/results/opt-125m-llama2-13b-sharegpt-score-trainbucket10-b32/usage_config.json"
       else
         prefill_predictor_model_config_path="/root/vllm/train/MODEL/results/opt-125m-llama2-13b-lmsys-score-trainbucket10-b32/usage_config.json"
       fi
       ;;
-    "meta-llama/Llama-2-70b-chat-hf")
+    "meta-llama/Llama-3.1-70B-Instruct")
       if [[ "$dataset_name" == "sharegpt" ]]; then
         prefill_predictor_model_config_path="/root/vllm/train/MODEL/results/opt-350m-llama2-70b-sharegpt-score-trainbucket10-b32/usage_config.json"
       else
@@ -115,7 +115,6 @@ start_server() {
     --swap-out-partial-rate "$swap_out_partial_rate" \
     --num-shared-blocks "$num_shared_blocks" \
     --gpu-memory-utilization "$gpu_memory_utilization" \
-    --disable-sliding-window \
     --disable-log-requests \
     --max-serving-time "$max_serving_time" \
     $prefill_predictor_model_config >"$log_file" 2>&1 &

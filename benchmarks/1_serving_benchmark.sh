@@ -30,7 +30,7 @@ datasets=(
 # 服务器配置
 swap_space=20
 preemption_mode="swap"
-gpu_memory_utilization=0.9
+gpu_memory_utilization=0.45
 max_tokens=16384
 max_num_seqs=256
 max_serving_time=86400
@@ -46,7 +46,7 @@ scheduler_swap_policies=(
   # "opt full"
 )
 
-request_rates=(8)
+request_rates=(16)
 # request_rates=(4 8)
 swap_out_partial_rates=(0.5)
 

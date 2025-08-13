@@ -2308,14 +2308,16 @@ class Scheduler:
             max_num_seqs=max(self.scheduler_config.max_num_seqs, 1024),
         )
         now = time.time()
-        max_pending_time = max([now-s.get_last_execute_time() for s in self.swapped])
-        max_waiting_time = max([now -s.get_last_execute_time() for s in self.waiting])
+        # swap_execution_time = [s.get_last_execute_time() for s in self.swapped]
+        # waiting_execution_time = [s.get_last_execute_time() for s in self.waiting]
+        # max_pending_time = max(swap_execution_time) if len(swap_execution_time) > 0 else 1
+        # max_waiting_time = max(waiting_execution_time) if len(waiting_execution_time) > 0 else 1
         policy_info = PolicyInfo(
             waiting_queue_size=len(self.waiting),
             running_queue_size = len(self.running),
             swapped_queue_size = len(self.swapped),
-            max_pending_time=max_pending_time,
-            max_waiting_time=max_waiting_time,
+            # max_pending_time=max_pending_time,
+            # max_waiting_time=max_waiting_time,
             now=now,
         )
         curr_loras: Set[int] = set()
