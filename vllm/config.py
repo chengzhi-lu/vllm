@@ -786,6 +786,7 @@ class SchedulerConfig:
         early_terminate: bool = False,
         waiting_iter_base: float = 1.0,
         trace_file_path: str = "/root/trace_file.csv",
+        phase: str="hybrid",
     ) -> None:
         if max_num_batched_tokens is not None:
             self.max_num_batched_tokens = max_num_batched_tokens
@@ -825,6 +826,7 @@ class SchedulerConfig:
         self.fake_allocate = False 
         self.early_terminate = early_terminate
         self.trace_file_path = trace_file_path
+        self.phase = phase
         self._verify_args()
 
     def _verify_args(self) -> None:

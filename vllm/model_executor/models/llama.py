@@ -357,24 +357,31 @@ class LlamaModel(nn.Module):
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
         if swapped_blocks is not None and self.cache_engine is not None:
-            for i in range(self.start_layer, self.end_layer):
-                if i < self.end_layer -1:
-                        with torch.cuda.stream(self.stream_swap):
-                            self.cache_engine.pre_swap_out(swap_out_blocks, i+1)
-                            self.cache_engine.pre_swap_in(swap_in_blocks, i+1)
-                            self.events[i+1].record(stream=self.stream_swap)
-            for i in range(self.start_layer, self.end_layer):
+            swap_in_blocks = swapped_blocks['blocks_to_swap_in']
+            swap_out_blocks = swapped_blocks['blocks_to_swap_out']
+            with torch.cuda.stream(self.stream_compute):
+                hidden_states = inputs_embeds if inputs_embeds is not None else self.get_input_embeddings(input_ids)
+            with torch.cuda.stream(self.stream_swap):
+                self.cache_engine.pre_swap_out(swap_out_blocks, 0)
+                self.cache_engine.pre_swap_in(swap_in_blocks, 0)
+                self.events[0].record(stream=self.stream_swap)
+            residual = None
+            for i in range(len(self.layers)):
+                if i < len(self.layers) -1:
+                    with torch.cuda.stream(self.stream_swap):
+                        self.cache_engine.pre_swap_out(swap_out_blocks, i+1)
+                        self.cache_engine.pre_swap_in(swap_in_blocks, i+1)
+                        self.events[i+1].record(stream=self.stream_swap)
                 with torch.cuda.stream(self.stream_compute):
                     self.events[i].wait(stream=self.stream_compute)
                     layer = self.layers[i]
                     hidden_states, residual = layer(
                         positions,
                         hidden_states,
-                        self.cache_engine.gpu_cache[i - self.start_layeri],
+                        self.cache_engine.gpu_cache[i],
                         attn_metadata,
                         residual,
                     )
-            torch.cuda.synchronize()
         else:
             for i in range(self.start_layer, self.end_layer):
                 layer = self.layers[i]

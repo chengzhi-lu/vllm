@@ -23,7 +23,8 @@ start_server() {
   local swap_out_partial_rate=$3
   local parallel_type=$4
   local model_name=$5
-
+  local phase=$6
+  
   local log_file="logs/api_server_${model_name##*/}_${parallel_type}_${policy}_${swap_policy}.log"
 
   local parallel_args=""
@@ -35,7 +36,7 @@ start_server() {
     fi
     gpu_devices="0,1,2,3"
   elif [[ "$parallel_type" == "single" && "$model_name" == "meta-llama/Llama-3.1-8B-Instruct" ]]; then
-    gpu_devices="0"
+    gpu_devices="2"
   elif [[ "$parallel_type" == "single" && "$model_name" == "meta-llama/Llama-3.1-70B-Instruct" ]]; then
     echo "70b模型不支持单卡"
     return 1 # 添加返回语句避免继续执行
@@ -76,9 +77,9 @@ start_server() {
     case "$model_name" in
     "meta-llama/Llama-3.1-8B-Instruct")
       if [[ "$dataset_name" == "sharegpt" ]]; then
-        prefill_predictor_model_config_path="/root/vllm/train/MODEL/results/opt-125m-llama2-13b-sharegpt-score-trainbucket10-b32/usage_config.json"
+        prefill_predictor_model_config_path="/root/vllm/train/MODEL/results/opt-125m-llama3-8b-sharegpt-score-trainbucket10-b32/usage_config.json"
       else
-        prefill_predictor_model_config_path="/root/vllm/train/MODEL/results/opt-125m-llama2-13b-lmsys-score-trainbucket10-b32/usage_config.json"
+        prefill_predictor_model_config_path="/root/vllm/train/MODEL/results/opt-125m-llama3-8b-lmsys-score-trainbucket10-b32/usage_config.json"
       fi
       ;;
     "meta-llama/Llama-3.1-70B-Instruct")
@@ -117,6 +118,7 @@ start_server() {
     --gpu-memory-utilization "$gpu_memory_utilization" \
     --disable-log-requests \
     --max-serving-time "$max_serving_time" \
+    --phase "$phase" \
     $prefill_predictor_model_config >"$log_file" 2>&1 &
   if [[ "$parallel_type" == @("pp") ]]; then
     sleep 5
@@ -166,6 +168,7 @@ run_benchmark() {
   local model_name=$7
   local parallel_type=$8
   local total_request_nums=$9
+  local phase=${10}
 
   local request_duration=$((total_request_nums / request_rate))
   local log_file="logs/benchmark_${model_name##*/}_${parallel_type}_${policy}_rate${request_rate}.log"
@@ -186,6 +189,7 @@ run_benchmark() {
     --sharegpt-output-len 2000 \
     --model "$model_name" \
     --scheduler-policy "$policy" \
+    --phase "$phase" \
     --save-result \
     --result-dir "$result_dir" \
     --metadata "model=${model_name##*/}" \

@@ -1277,6 +1277,8 @@ class Scheduler:
             num_lookahead_slots_prefill=num_lookahead_slots_prefill,
         )
         gpu_block_capacity = self.block_manager.gpu_block_capacity
+  
+        
         tmp_total_block_size = 0
         selected_running_seq_groups: List[SequenceGroup] = []
         selected_swapped_seq_groups: List[SequenceGroup] = []
@@ -1286,16 +1288,21 @@ class Scheduler:
         if self.scheduler_config.policy != 'tfittradeoff':
             total_queue = policy.sort_by_priority(now, all_seq_group_queue)
         else:
-            total_waiting_queue = swapped_queue + waiting_queue
-            total_waiting_queue = policy.sorted_by_priority(total_waiting_queue, "waiting",policy_info)
-            running_queue = policy.sorted_by_priority(running_queue, "running",policy_info)
-            total_queue = running_queue + total_waiting_queue
+            if self.scheduler_config.phase!='decode':
+                total_waiting_queue = swapped_queue + waiting_queue
+                total_waiting_queue = policy.sorted_by_priority(total_waiting_queue, "waiting",policy_info)
+                running_queue = policy.sorted_by_priority(running_queue, "running",policy_info)
+                total_queue = running_queue + total_waiting_queue
+            else:
+                swapped_queue  = policy.sorted_by_priority(swapped_queue,"waiting",policy_info)
+                running_queue = policy.sorted_by_priority(running_queue, "running",policy_info)
+                total_queue = waiting_queue + running_queue + swapped_queue
+    
         swapped_queue_set = set(swapped_queue)
         running_queue_set = set(running_queue)
         waiting_queue_set = set(waiting_queue)
         if budget.max_num_seqs != 2048:
             budget.update_max_num_seqs(4096)
-        decode_seqs:List[int]= []
         for sg in total_queue:
             if sg in swapped_queue_set:
                 seq_status= SequenceStatus.SWAPPED
@@ -1303,7 +1310,8 @@ class Scheduler:
                 seq_status= SequenceStatus.RUNNING
             elif sg in waiting_queue_set:
                 seq_status= SequenceStatus.WAITING
-            if sg not in running_queue_set and not self.batch_solver.is_opt(self.scheduler_config.policy, sg):
+            if sg not in running_queue_set and not self.batch_solver.is_opt(self.scheduler_config.policy, sg) and self.scheduler_config.phase!='decode':
+                sg.update_waiting_iter_nums()
                 continue
             num_new_tokens = self._get_num_new_tokens(sg,
                                                         seq_status,
@@ -1323,7 +1331,6 @@ class Scheduler:
                     num_new_tokens=num_new_tokens,
                     num_new_seqs=num_new_seqs
                 ):
-                
                 sg.reset_waiting_iter_nums()
                 selected_running_seq_groups.append(sg)
                 sg.token_chunk_size = num_new_tokens
@@ -1332,17 +1339,9 @@ class Scheduler:
 
                 budget.add_num_batched_tokens(sg.request_id, num_new_tokens)
                 budget.add_num_seqs(sg.request_id, num_new_seqs)
-                # if self.scheduler_config.policy == 'tfittradeoff' and not sg.is_prefill():
-                #     decode_seqs.append(sg.seq_len)
-                #     if sg not in running_queue_set:
-                #         new_token_budget= self.batch_solver.get_best_token_limits(self.scheduler_config.policy,decode_seqs)
-                #         if new_token_budget != 0:
-                #             if new_token_budget == -1:
-                #                 continue
-                #             budget.update_token_budget(min(new_token_budget, 4096*8))
-                #         else:
-                #             budget.update_token_budget(budget.num_batched_tokens)
             else:
+                if sg in waiting_queue_set or sg in swapped_queue_set:
+                    sg.update_waiting_iter_nums()
                 tmp_total_block_size -= block_size
                 selected_swapped_seq_groups.append(sg)
         self.batch_solver.reset_opt()

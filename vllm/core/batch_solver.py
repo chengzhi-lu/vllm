@@ -124,24 +124,29 @@ class BatchSolver:
         if not all([self.decode_time_params, self.prefill_time_params, self.sample_time_params]):
             print("Some parameters could not be retrieved successfully.")
 
-    def is_opt(self, scheduling_policy: str, seq_group: SequenceGroup):
+    def is_opt(self, scheduling_policy: str, seq_group: SequenceGroup) -> bool:
         if np.sum(self.decode_time_params) == 0 or scheduling_policy != "tfittradeoff":
             return True
-        waiting_time = time.time() - seq_group.get_last_execute_time()
-        execution_time = (
-            self.prefill_time_params[0] * seq_group.seq_len**2
-            + self.prefill_time_params[1] * seq_group.seq_len
-            + self.prefill_time_params[2]
-        ) 
-        if not seq_group.is_prefill():
+        now = time.time()
+        waiting_time = (
+            now - seq_group.get_last_execute_time()
+            if seq_group.metrics.time_in_queue
+            else now - seq_group.metrics.arrival_time
+        )
+        if seq_group.is_prefill():
+            delta_execution_time = (
+                self.prefill_time_params[0] * seq_group.seq_len**2
+                + self.prefill_time_params[1] * seq_group.seq_len
+                + self.prefill_time_params[2]
+            ) 
+        else:
             self.decode_seqs.append(seq_group.seq_len)
-            execution_time = (
-                execution_time
-                + self.decode_time_params[0] * len(self.decode_seqs)
-                + self.decode_time_params[1] * len(self.decode_seqs) * np.sum(self.decode_seqs)
+            delta_execution_time = (
+                self.decode_time_params[0]
+                + self.decode_time_params[1] * seq_group.seq_len
                 + self.decode_time_params[2]
             ) 
-        execution_time = execution_time / 1000
+        execution_time = delta_execution_time / 1000
 
         if self.total_execution_time == 0:
             self.total_execution_time = execution_time
@@ -153,6 +158,8 @@ class BatchSolver:
                 self.total_execution_time += execution_time
                 return True
             else:
+                if not seq_group.is_prefill():
+                    self.decode_seqs = self.decode_seqs[:-1]
                 return False
 
     def reset_opt(self):

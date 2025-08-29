@@ -3,9 +3,6 @@ import time
 from dataclasses import dataclass
 from typing import Deque
 
-from regex import W
-from sympy import is_perfect
-
 
 from vllm.sequence import SequenceGroup
 import random
@@ -19,6 +16,8 @@ class PolicyInfo:
     max_waiting_time: float = 0.0
     max_pending_time: float = 0.0
     now: float = 0.0
+    phase: str = "hybrid"
+    memory_full: bool = False
 
 
 class Policy:
@@ -34,8 +33,8 @@ class Policy:
         seq_group: SequenceGroup,
         queue_type: str,
         policy_info: PolicyInfo,
-    ):
-        pass
+    ) -> float:
+        raise NotImplementedError
 
     def sort_by_priority(
         self,
@@ -117,13 +116,9 @@ class TFITTradeoff(Policy):
     def _get_running_priority(self, seq_group: SequenceGroup, policy_info: PolicyInfo):
         if seq_group.priority_rate == 1:
             all_eos_token_prob_diff = []
-            all_tmp_token_prob = []
             for seq in seq_group.seqs_dict.values():
                 all_eos_token_prob_diff.append(seq.get_eos_token_prob_diff())
-                all_tmp_token_prob.append(seq.get_tmp_eos_token_prob())
             seq_group.priority_rate = max(all_eos_token_prob_diff)
-            if seq_group.priority_rate == 1:
-                seq_group.tmp_priority_rate = 0
         priority = (seq_group.priority_rate) / (seq_group.seq_len)
 
         return priority
@@ -146,13 +141,17 @@ class TFITTradeoff(Policy):
     #
 
     def _get_swapped_priority(self, seq_group: SequenceGroup, policy_info: PolicyInfo, queue_type: str):
-        epsilon = 10 ** (-5)
-        waiting_time = max(policy_info.now - seq_group.get_last_execute_time(), epsilon)
-        priority = 0
-        if queue_type == "swapped":
-            priority = seq_group.priority_rate
-        elif queue_type == "waiting":
-            priority = 0
+        epsilon = 10 ** (-4)
+        # waiting_time = (
+        #     min(policy_info.now - seq_group.get_last_execute_time(), epsilon)
+        #     if seq_group.metrics.first_scheduled_time
+        #     else policy_info.now - seq_group.metrics.arrival_time
+        # )
+        # if policy_info.memory_full and not seq_group.metrics.first_scheduled_time:
+        #     waiting_time = epsilon
+        waiting_time = min(seq_group.metrics.waiting_iter_nums, epsilon)
+        priority = seq_group.priority_rate if seq_group.metrics.first_scheduled_time else 0
+
         priority = waiting_time / (min(1 - priority + epsilon, 1) * seq_group.seq_len)
         return priority
 
@@ -200,7 +199,7 @@ class ShortRemainJobFirst(Policy):
         seq_group: SequenceGroup,
     ) -> float:
         total_output_lens = sum([seq.get_output_len() for seq in seq_group.get_seqs()])
-        priority = -(seq_group.max_length - total_output_lens)
+        priority = -total_output_lens if not seq_group.max_length else -(seq_group.max_length - total_output_lens)
         return priority
 
 
@@ -210,7 +209,7 @@ class ShortJobFirst(Policy):
         now: float,
         seq_group: SequenceGroup,
     ) -> float:
-        priority = -seq_group.max_length
+        priority = -seq_group.max_length if seq_group.max_length else 0
         return priority
 
 

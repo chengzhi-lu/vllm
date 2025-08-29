@@ -38,6 +38,7 @@ class RequestFuncOutput:
         default_factory=list)  # List of inter-token latencies
     prompt_len: int = 0
     error: str = ""
+    actual_output_len: int = 0
 
 
 async def async_request_tgi(

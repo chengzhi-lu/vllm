@@ -569,13 +569,10 @@ class SequenceGroup:
         self.encoder_seq = encoder_seq
         self.trace_headers = trace_headers
         self.eos_token_id = self.seqs_dict[next(iter(self.seqs_dict))].eos_token_id
-        self.current_priority = None
+        self.current_priority:float = 0
         self.promoted = 0
         self.priority_rate = 1.0
-        if self.sampling_params:
-            self.max_length = self.sampling_params.max_tokens
-        else:
-            self.max_length = 10240
+        self.max_length = self.sampling_params.max_tokens if self.sampling_params else 10240
         self.tmp_priority_rate=1.0
         self.weighted: Tuple[float, float] = (0, 0)
         self.swap_out_moment = None

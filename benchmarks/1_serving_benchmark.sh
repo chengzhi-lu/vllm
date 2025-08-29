@@ -22,9 +22,9 @@ parallel_types=(
   # "pp"
 )
 datasets=(
-  "sharegpt /root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
+  # "sharegpt /root/vllm/dataset/ShareGPT_V3_unfiltered_cleaned_split.json"
   # "leval /root/vllm/dataset/paper_assistant_transformed.json"
-  # "lmsys /root/vllm/dataset/lmsys-chat-1m-aligned.json"
+  "lmsys /root/vllm/dataset/lmsys-chat-1m-aligned.json"
 )
 
 # 服务器配置
@@ -40,13 +40,19 @@ request_duration=90
 # 测试策略组合
 scheduler_swap_policies=(
   "tfittradeoff partial"
-  # "fcfs full"
-  # "sjf full"
-  # "sjmlfq full"
-  # "opt full"
+#  "fcfs full"
+#  "sjf full"
+#  "sjmlfq full"
+#  "opt full"
 )
 
-request_rates=(16)
+phases=(
+  "hybrid"
+  # "decode"
+  # "prefill"
+)
+
+request_rates=(32)
 # request_rates=(4 8)
 swap_out_partial_rates=(0.5)
 
@@ -93,7 +99,8 @@ for ptype in "${parallel_types[@]}"; do
       IFS=' ' read -r policy swap_policy <<<"$scheduler_swap_policy"
       for dataset in "${datasets[@]}"; do
         IFS=' ' read -r dataset_name dataset_path <<<"$dataset"
-
+        
+        for phase in "${phases[@]}"; do
         for model_name in "${model_names[@]}"; do
           # 跳过70b模型的single并行类型
           if [[ "$model_name" == "meta-llama/Llama-3.1-70B-Instruct" && "$ptype" == "single" ]]; then
@@ -115,18 +122,21 @@ for ptype in "${parallel_types[@]}"; do
 
           # 启动服务
           start_server "$policy" "$swap_policy" "$swap_out_partial_rate" \
-            "$ptype" "$model_name"
+            "$ptype" "$model_name" "$phase"
 
           # 运行基准测试
-          for i in {1..2}; do
+          for i in {1..1}; do
             for request_rate in "${request_rates[@]}"; do
-              max_request_nums=$((request_duration * request_rate))
-              run_benchmark "$policy" "$swap_policy" "$swap_out_partial_rate" \
-                "$request_rate" "$dataset_path" "$dataset_name" \
-                "$model_name" "$ptype" "$max_request_nums"
-              sleep 20
-              parse_result "$policy" "$swap_policy" "$swap_out_partial_rate" \
-                "$request_rate" "$model_name" "$ptype"
+                max_request_nums=$((request_duration * request_rate))
+                  if [[ "$phase" == "prefill" || "$phase" == "decode" ]]; then
+                    request_rate=$max_request_nums
+                  fi
+                  run_benchmark "$policy" "$swap_policy" "$swap_out_partial_rate" \
+                    "$request_rate" "$dataset_path" "$dataset_name" \
+                    "$model_name" "$ptype" "$max_request_nums" "$phase"
+                  sleep 20
+                  parse_result "$policy" "$swap_policy" "$swap_out_partial_rate" \
+                    "$request_rate" "$model_name" "$ptype"
             done
           done
 
@@ -135,6 +145,7 @@ for ptype in "${parallel_types[@]}"; do
           terminate_server "$ptype"
 
           sleep 5
+          done
         done
       done
     done

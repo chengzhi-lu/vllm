@@ -90,6 +90,7 @@ class EngineArgs:
     max_serving_time: int = 600
     early_terminate: bool=False
     trace_file_path: str='trace.csv'
+    phase: str="hybrid"
 
 
     scheduler_delay_factor: float = 0.0
@@ -726,6 +727,7 @@ class EngineArgs:
             default=None,
             help='Target URL to which OpenTelemetry traces will be sent.')
 
+        parser.add_argument('--phase', type=str, default="hybrid", choices=['hybrid','decode','prefill'])
         parser.add_argument('--placement-group',
                             type=str,
                             default=None,
@@ -865,6 +867,7 @@ class EngineArgs:
             early_terminate = self.early_terminate,
             waiting_iter_base=self.waiting_iter_base,
             trace_file_path=self.trace_file_path,
+            phase=self.phase,
         )
         lora_config = LoRAConfig(
             max_lora_rank=self.max_lora_rank,
